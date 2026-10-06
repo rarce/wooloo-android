@@ -73,10 +73,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.view.WindowCompat
 import dev.herdroid.app
 import dev.herdroid.connection.ConnectionStatus
 import dev.herdroid.herdr.AgentStatus
@@ -93,13 +95,48 @@ import dev.herdroid.ui.components.FieldSpec
 import dev.herdroid.ui.components.FormDialog
 import dev.herdroid.ui.components.StatusDot
 import dev.herdroid.ui.components.StatusPill
+import dev.herdroid.ui.components.fadingEdges
 import dev.herdroid.ui.session.SheetItem
+import dev.herdroid.ui.session.breadcrumb
+import dev.herdroid.ui.theme.HerdroidTheme
 import dev.herdroid.ui.theme.Mono
 import kotlinx.coroutines.launch
 
-@OptIn(ExperimentalMaterial3Api::class)
+/**
+ * The terminal is always dark, whatever the system theme: light chrome around a dark terminal
+ * reads as two different apps.
+ */
 @Composable
 fun TerminalScreen(
+    hostId: String,
+    initialPaneId: String,
+    onBack: () -> Unit,
+    onEditHost: () -> Unit,
+) {
+    val view = LocalView.current
+    DisposableEffect(view) {
+        val window = (view.context as? Activity)?.window
+        val bars = window?.let { WindowCompat.getInsetsController(it, view) }
+        val lightStatus = bars?.isAppearanceLightStatusBars
+        val lightNavigation = bars?.isAppearanceLightNavigationBars
+        bars?.isAppearanceLightStatusBars = false
+        bars?.isAppearanceLightNavigationBars = false
+        onDispose {
+            lightStatus?.let { bars.isAppearanceLightStatusBars = it }
+            lightNavigation?.let { bars.isAppearanceLightNavigationBars = it }
+        }
+    }
+    HerdroidTheme(darkTheme = true) {
+        // Surface resets LocalContentColor, which otherwise leaks in from the app's light theme.
+        Surface(color = MaterialTheme.colorScheme.surface) {
+            TerminalScreenContent(hostId, initialPaneId, onBack, onEditHost)
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun TerminalScreenContent(
     hostId: String,
     initialPaneId: String,
     onBack: () -> Unit,
@@ -404,10 +441,8 @@ internal fun TerminalTopBar(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            val ws = pane?.let { snapshot?.workspace(it.workspaceId)?.label }
-            val tab = pane?.let { snapshot?.tab(it.tabId)?.label }
             Text(
-                listOfNotNull(ws, tab?.takeIf { it.isNotBlank() }, pane?.shortCwd).joinToString(" › "),
+                pane?.let { breadcrumb(snapshot?.workspace(it.workspaceId), snapshot?.tab(it.tabId), it.shortCwd) }.orEmpty(),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
@@ -454,6 +489,7 @@ internal fun PaneSwitcher(snapshot: SessionSnapshot, current: PaneInfo, onSelect
     val listState = rememberLazyListState()
     LazyRow(
         state = listState,
+        modifier = Modifier.fadingEdges(listState),
         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
         horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {

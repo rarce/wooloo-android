@@ -45,7 +45,13 @@ data class TabInfo(
     val focused: Boolean = false,
     @SerialName("pane_count") val paneCount: Int = 0,
     @SerialName("agent_status") val agentStatus: AgentStatus = AgentStatus.UNKNOWN,
-)
+) {
+    /** herdr labels unnamed tabs with their position ("1", "2"); `number` is an internal id, not shown. */
+    val hasCustomLabel: Boolean get() = label.isNotBlank() && label.toIntOrNull() == null
+
+    val displayLabel: String
+        get() = if (hasCustomLabel) label else "Tab ${label.ifBlank { number.toString() }}"
+}
 
 @Serializable
 data class PaneScrollInfo(
