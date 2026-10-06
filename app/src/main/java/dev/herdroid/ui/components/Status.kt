@@ -7,7 +7,7 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
@@ -74,23 +74,34 @@ fun StatusDot(status: AgentStatus, modifier: Modifier = Modifier, size: Dp = 10.
     }
 }
 
+/** Solid when the agent needs you (blocked, done), outlined while working, plain text otherwise. */
 @Composable
 fun StatusPill(status: AgentStatus, label: String, modifier: Modifier = Modifier) {
-    val color = LocalStatusColors.current.of(status)
+    val colors = LocalStatusColors.current
+    val shape = RoundedCornerShape(50)
+    val solid = colors.isSolid(status)
     Row(
         modifier
-            .clip(RoundedCornerShape(50))
-            .background(color.copy(alpha = 0.16f))
-            .padding(start = 2.dp, end = 10.dp, top = 1.dp, bottom = 1.dp),
+            .clip(shape)
+            .then(
+                when {
+                    solid -> Modifier.background(colors.of(status))
+                    status == AgentStatus.WORKING -> Modifier.border(1.dp, MaterialTheme.colorScheme.outline, shape)
+                    else -> Modifier
+                }
+            )
+            .padding(horizontal = 10.dp, vertical = 3.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(2.dp),
     ) {
-        StatusDot(status, size = 7.dp)
         Text(
             label,
             style = MaterialTheme.typography.labelMedium,
-            fontWeight = FontWeight.SemiBold,
-            color = color,
+            fontWeight = if (solid) FontWeight.Bold else FontWeight.Medium,
+            color = when {
+                solid -> colors.onSolid
+                status == AgentStatus.WORKING -> MaterialTheme.colorScheme.onSurface
+                else -> MaterialTheme.colorScheme.onSurfaceVariant
+            },
             maxLines = 1,
         )
     }

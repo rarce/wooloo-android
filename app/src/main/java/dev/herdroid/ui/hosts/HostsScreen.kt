@@ -1,7 +1,7 @@
 package dev.herdroid.ui.hosts
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -24,7 +25,6 @@ import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Dns
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.Key
-import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
@@ -50,6 +50,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -63,7 +64,9 @@ import dev.herdroid.connection.HerdrConnection
 import dev.herdroid.data.HostProfile
 import dev.herdroid.herdr.AgentStatus
 import dev.herdroid.ui.components.EmptyState
-import dev.herdroid.ui.components.StatusDot
+import dev.herdroid.ui.session.MiniatureRow
+import dev.herdroid.ui.session.TabMiniature
+import dev.herdroid.ui.session.count
 import dev.herdroid.ui.theme.LocalStatusColors
 import dev.herdroid.ui.theme.Mono
 
@@ -98,6 +101,8 @@ fun HostsScreen(
             if (hosts.isNotEmpty()) {
                 ExtendedFloatingActionButton(
                     onClick = onAddHost,
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary,
                     icon = { Icon(Icons.Outlined.Add, null) },
                     text = { Text("Add machine") },
                 )
@@ -174,107 +179,105 @@ private fun HostCard(
     val status = connection?.status?.collectAsState()?.value ?: ConnectionStatus.Idle
     val snapshot = connection?.snapshot?.collectAsState()?.value
     val statusColors = LocalStatusColors.current
+    val live = status is ConnectionStatus.Connected
 
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(20.dp))
-            .combinedClickable(onClick = onOpen, onLongClick = { menu = true }),
+            .combinedClickable(onLongClickLabel = "Machine actions", onLongClick = { menu = true }, onClick = onOpen),
         shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
+        colors = CardDefaults.cardColors(
+            containerColor = if (connection == null) Color.Transparent else MaterialTheme.colorScheme.surfaceContainer,
+        ),
+        border = if (connection == null) BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant) else null,
     ) {
-        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-            Avatar(host.displayName)
-            Column(Modifier.weight(1f).padding(horizontal = 14.dp)) {
-                Text(
-                    host.displayName,
-                    style = MaterialTheme.typography.titleMedium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                    host.target + if (host.session != "default") " · ${host.session}" else "",
-                    style = MaterialTheme.typography.bodySmall,
-                    fontFamily = Mono,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Spacer(Modifier.height(6.dp))
-                when {
-                    status is ConnectionStatus.Connected && snapshot != null -> {
-                        val agents = snapshot.agents
-                        val needing = agents.count { it.agentStatus == AgentStatus.BLOCKED }
-                        val done = agents.count { it.agentStatus == AgentStatus.DONE }
-                        val working = agents.count { it.agentStatus == AgentStatus.WORKING }
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            if (needing > 0) Summary(AgentStatus.BLOCKED, "$needing need you")
-                            if (done > 0) Summary(AgentStatus.DONE, "$done done")
-                            if (working > 0) Summary(AgentStatus.WORKING, "$working working")
-                            if (needing + done + working == 0) {
-                                Text(
-                                    "${snapshot.workspaces.size} workspaces · ${agents.size} agents",
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = statusColors.done,
-                                )
-                            }
+        Box {
+            Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(
+                        host.displayName,
+                        style = MaterialTheme.typography.titleLarge,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Text(
+                        host.target + if (host.session != "default") " ${host.session}" else "",
+                        style = MaterialTheme.typography.bodySmall,
+                        fontFamily = Mono,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.widthIn(max = 180.dp),
+                    )
+                }
+                // The whole herd at a glance; dimmed while it's only the last known state.
+                if (snapshot != null && snapshot.workspaces.isNotEmpty()) {
+                    Row(Modifier.alpha(if (live) 1f else 0.45f), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        snapshot.workspaces.take(5).forEach { workspace ->
+                            snapshot.activeTabId(workspace)?.let { TabMiniature(snapshot, it, MiniatureRow) }
                         }
                     }
-                    else -> Text(
+                }
+                if (live && snapshot != null) {
+                    val agents = snapshot.agents
+                    val needing = agents.count { it.agentStatus == AgentStatus.BLOCKED }
+                    val done = agents.count { it.agentStatus == AgentStatus.DONE }
+                    val working = agents.count { it.agentStatus == AgentStatus.WORKING }
+                    Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                        if (needing > 0) Summary(if (needing == 1) "1 needs you" else "$needing need you", statusColors.blocked)
+                        if (done > 0) Summary("$done done", statusColors.done)
+                        if (working > 0) Summary("$working working", MaterialTheme.colorScheme.onSurfaceVariant)
+                        if (needing + done + working == 0) {
+                            Summary(
+                                "${count(snapshot.workspaces.size, "workspace")}, no agents busy",
+                                MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                } else {
+                    Text(
                         statusLine(status, host),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = when (status) {
-                            is ConnectionStatus.Failed -> MaterialTheme.colorScheme.error
-                            is ConnectionStatus.Reconnecting -> statusColors.blocked
-                            else -> MaterialTheme.colorScheme.onSurfaceVariant
-                        },
-                        maxLines = 1,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = if (status is ConnectionStatus.Failed) MaterialTheme.colorScheme.error
+                        else MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
             }
-            Box {
-                IconButton(onClick = { menu = true }) { Icon(Icons.Outlined.MoreVert, "More") }
-                DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+            DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                DropdownMenuItem(
+                    text = { Text("Edit") },
+                    leadingIcon = { Icon(Icons.Outlined.Edit, null) },
+                    onClick = { menu = false; onEdit() },
+                )
+                if (connection != null) {
                     DropdownMenuItem(
-                        text = { Text("Edit") },
-                        leadingIcon = { Icon(Icons.Outlined.Edit, null) },
-                        onClick = { menu = false; onEdit() },
-                    )
-                    if (connection != null) {
-                        DropdownMenuItem(
-                            text = { Text("Disconnect") },
-                            leadingIcon = { Icon(Icons.AutoMirrored.Outlined.Logout, null) },
-                            onClick = { menu = false; onDisconnect() },
-                        )
-                    }
-                    DropdownMenuItem(
-                        text = { Text("Remove") },
-                        leadingIcon = { Icon(Icons.Outlined.Delete, null) },
-                        onClick = { menu = false; onDelete() },
+                        text = { Text("Disconnect") },
+                        leadingIcon = { Icon(Icons.AutoMirrored.Outlined.Logout, null) },
+                        onClick = { menu = false; onDisconnect() },
                     )
                 }
+                DropdownMenuItem(
+                    text = { Text("Remove") },
+                    leadingIcon = { Icon(Icons.Outlined.Delete, null) },
+                    onClick = { menu = false; onDelete() },
+                )
             }
         }
     }
 }
 
 @Composable
-private fun Summary(status: AgentStatus, text: String) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        StatusDot(status, size = 7.dp)
-        Text(
-            text,
-            style = MaterialTheme.typography.labelMedium,
-            fontWeight = FontWeight.SemiBold,
-            color = LocalStatusColors.current.of(status),
-        )
-    }
+private fun Summary(text: String, color: Color) {
+    Text(text, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Medium, color = color)
 }
 
 private fun statusLine(status: ConnectionStatus, host: HostProfile): String = when (status) {
     is ConnectionStatus.Connecting -> status.step
-    is ConnectionStatus.Reconnecting -> "Reconnecting · ${status.reason}"
+    is ConnectionStatus.Reconnecting -> "Offline. Reconnecting: ${status.reason}"
     is ConnectionStatus.Failed -> status.message.lineSequence().first()
     ConnectionStatus.Connected -> "Connected"
     ConnectionStatus.Idle -> host.lastConnectedAt?.let { "Last connected ${relativeTime(it)}" }
@@ -291,25 +294,3 @@ fun relativeTime(epochMs: Long): String {
     }
 }
 
-@Composable
-fun Avatar(name: String, modifier: Modifier = Modifier) {
-    val palette = listOf(
-        Color(0xFF2EA043), Color(0xFF388BFD), Color(0xFFA371F7),
-        Color(0xFFDB61A2), Color(0xFFD29922), Color(0xFF39C5CF),
-    )
-    val color = palette[(name.hashCode() and 0x7FFFFFFF) % palette.size]
-    Box(
-        modifier
-            .size(44.dp)
-            .clip(RoundedCornerShape(14.dp))
-            .background(color.copy(alpha = 0.22f)),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(
-            name.firstOrNull()?.uppercase() ?: "?",
-            style = MaterialTheme.typography.titleMedium,
-            color = color,
-            fontWeight = FontWeight.Bold,
-        )
-    }
-}

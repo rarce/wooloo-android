@@ -186,6 +186,8 @@ data class SessionSnapshot(
     fun workspace(id: String) = workspaces.firstOrNull { it.workspaceId == id }
     fun tab(id: String) = tabs.firstOrNull { it.tabId == id }
     fun layout(tabId: String) = layouts.firstOrNull { it.tabId == tabId }
+    fun activeTabId(workspace: WorkspaceInfo): String? =
+        workspace.activeTabId.ifBlank { null } ?: tabsOf(workspace.workspaceId).firstOrNull()?.tabId
 
     /** Agents sorted the way a phone user wants them: whoever needs you first. */
     val agentsByAttention: List<AgentInfo>

@@ -5,7 +5,6 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
@@ -20,13 +19,10 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
-import androidx.compose.material.icons.automirrored.outlined.Chat
 import androidx.compose.material.icons.automirrored.outlined.Logout
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.ChevronRight
@@ -41,6 +37,7 @@ import androidx.compose.material.icons.outlined.Terminal
 import androidx.compose.material.icons.outlined.ViewAgenda
 import androidx.compose.material.icons.outlined.ViewColumn
 import androidx.compose.material.icons.outlined.Workspaces
+import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -93,7 +90,6 @@ import dev.herdroid.ui.components.ConnectionPrompts
 import dev.herdroid.ui.components.EmptyState
 import dev.herdroid.ui.components.FieldSpec
 import dev.herdroid.ui.components.FormDialog
-import dev.herdroid.ui.components.fadingEdges
 import dev.herdroid.ui.components.StatusDot
 import dev.herdroid.ui.components.StatusPill
 import dev.herdroid.ui.theme.LocalStatusColors
@@ -312,10 +308,10 @@ fun SessionScreen(
 private fun subtitle(status: ConnectionStatus, snapshot: SessionSnapshot?, connection: HerdrConnection): String =
     when (status) {
         ConnectionStatus.Connected -> buildString {
-            append(connection.profile.session)
+            append("Session ").append(connection.profile.session)
             snapshot?.let {
-                append(" · ").append(count(it.workspaces.size, "workspace"))
-                if (it.version.isNotBlank()) append(" · herdr ").append(it.version)
+                append(", ").append(count(it.workspaces.size, "workspace"))
+                if (it.version.isNotBlank()) append(", herdr ").append(it.version)
             }
         }
         is ConnectionStatus.Connecting -> "Connecting…"
@@ -364,28 +360,10 @@ internal fun SessionContent(
             items(attention, key = { "att-" + it.paneId }) { agent ->
                 AttentionCard(
                     agent = agent,
-                    workspace = snapshot.workspace(agent.workspaceId),
-                    tab = snapshot.tab(agent.tabId),
+                    snapshot = snapshot,
                     onOpen = { onOpenPane(agent.paneId) },
                     onReply = { onCompose(agent) },
                 )
-            }
-        }
-        if (snapshot.agents.isNotEmpty()) {
-            item(key = "agents") {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    SectionLabel("Agents", snapshot.agents.size)
-                    val rowState = rememberLazyListState()
-                    LazyRow(
-                        state = rowState,
-                        modifier = Modifier.fadingEdges(rowState),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        items(snapshot.agentsByAttention, key = { "chip-" + it.paneId }) { agent ->
-                            AgentChip(agent, snapshot.workspace(agent.workspaceId)) { onOpenPane(agent.paneId) }
-                        }
-                    }
-                }
             }
         }
         item(key = "ws-title") { SectionLabel("Workspaces", snapshot.workspaces.size) }
@@ -440,80 +418,54 @@ private fun SectionLabel(text: String, count: Int) {
 @Composable
 private fun AttentionCard(
     agent: AgentInfo,
-    workspace: WorkspaceInfo?,
-    tab: TabInfo?,
+    snapshot: SessionSnapshot,
     onOpen: () -> Unit,
     onReply: () -> Unit,
 ) {
-    val color = LocalStatusColors.current.of(agent.agentStatus)
+    val status = LocalStatusColors.current
+    val kind = (agent.displayAgent ?: agent.agent)?.takeIf { !it.equals(agent.displayName, ignoreCase = true) }
+    val where = breadcrumb(snapshot.workspace(agent.workspaceId), snapshot.tab(agent.tabId))
     Card(
         onClick = onOpen,
         shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(containerColor = color.copy(alpha = 0.12f)),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
     ) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                StatusDot(agent.agentStatus, size = 9.dp)
-                Spacer(Modifier.size(6.dp))
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                TabMiniature(snapshot, agent.tabId, MiniatureRow, highlightPaneId = agent.paneId)
                 Column(Modifier.weight(1f)) {
-                    Text(agent.displayName, style = MaterialTheme.typography.titleMedium)
+                    Text(agent.displayName, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Text(
-                        breadcrumb(workspace, tab),
+                        listOfNotNull(kind, where.ifBlank { null }).joinToString(" in "),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                     )
                 }
-                StatusPill(agent.agentStatus, agent.statusLabel())
             }
             agent.subtitle?.let {
-                Text(it, style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(it, style = MaterialTheme.typography.bodyLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
-            // Both actions take the agent's status color so they read as one pair.
+            // The answer is the main action and takes the agent's color; opening the pane is secondary.
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                FilledTonalButton(
-                    onClick = onOpen,
-                    colors = ButtonDefaults.filledTonalButtonColors(
-                        containerColor = color.copy(alpha = 0.24f),
-                        contentColor = MaterialTheme.colorScheme.onSurface,
-                    ),
-                ) {
-                    Icon(Icons.Outlined.Terminal, null, Modifier.size(18.dp))
-                    Text("  Open")
-                }
-                if (agent.agentStatus == AgentStatus.BLOCKED || agent.agentStatus == AgentStatus.DONE) {
-                    OutlinedButton(
+                if (status.isSolid(agent.agentStatus)) {
+                    Button(
                         onClick = onReply,
-                        colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.onSurface),
-                        border = BorderStroke(1.dp, color.copy(alpha = 0.6f)),
-                    ) {
-                        Icon(Icons.AutoMirrored.Outlined.Chat, null, Modifier.size(18.dp))
-                        Text(if (agent.agentStatus == AgentStatus.BLOCKED) "  Reply" else "  Follow up")
-                    }
+                        shape = RoundedCornerShape(14.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = status.of(agent.agentStatus),
+                            contentColor = status.onSolid,
+                        ),
+                    ) { Text(if (agent.agentStatus == AgentStatus.BLOCKED) "Reply" else "Follow up") }
                 }
+                OutlinedButton(
+                    onClick = onOpen,
+                    shape = RoundedCornerShape(14.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.onSurface),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+                ) { Text("Open pane", fontWeight = FontWeight.Medium) }
             }
-        }
-    }
-}
-
-@Composable
-private fun AgentChip(agent: AgentInfo, workspace: WorkspaceInfo?, onClick: () -> Unit) {
-    Row(
-        Modifier
-            .clip(RoundedCornerShape(14.dp))
-            .background(MaterialTheme.colorScheme.surfaceContainer)
-            .clickable(onClick = onClick)
-            .padding(start = 4.dp, end = 12.dp, top = 6.dp, bottom = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        StatusDot(agent.agentStatus, size = 8.dp)
-        Column {
-            Text(agent.displayName, style = MaterialTheme.typography.labelLarge, maxLines = 1)
-            Text(
-                listOfNotNull(workspace?.label, agent.statusLabel()).joinToString(" · "),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-            )
         }
     }
 }
@@ -545,31 +497,19 @@ private fun WorkspaceCard(
                     onLongClick = { menu = true },
                     onClick = onToggle,
                 )
-                .padding(start = 16.dp, end = 4.dp, top = 14.dp, bottom = 14.dp),
+                .padding(start = 16.dp, end = 4.dp, top = 12.dp, bottom = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(
-                workspace.number.toString(),
-                fontFamily = Mono,
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f))
-                    .padding(horizontal = 8.dp, vertical = 2.dp),
-            )
-            Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
+            val activeTab = snapshot.activeTabId(workspace)
+            if (activeTab != null) TabMiniature(snapshot, activeTab, MiniatureRow)
+            Column(Modifier.weight(1f).padding(horizontal = 14.dp)) {
                 Text(workspace.label.ifBlank { "workspace ${workspace.number}" }, style = MaterialTheme.typography.titleMedium, maxLines = 1)
                 Text(
-                    "${count(workspace.tabCount, "tab")} · ${count(workspace.paneCount, "pane")}" +
-                        if (workspace.focused) " · focused" else "",
+                    "${count(workspace.tabCount, "tab")}, ${count(workspace.paneCount, "pane")}" +
+                        if (workspace.focused) ", focused" else "",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-            }
-            if (workspace.agentStatus != AgentStatus.UNKNOWN && workspace.agentStatus != AgentStatus.IDLE) {
-                StatusDot(workspace.agentStatus, size = 8.dp)
-                Spacer(Modifier.size(12.dp))
             }
             Box {
                 Icon(
@@ -625,7 +565,8 @@ private fun TabSection(
             Text(
                 tab.displayLabel,
                 style = MaterialTheme.typography.labelLarge,
-                color = if (tab.focused) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                fontWeight = FontWeight.Bold,
+                color = if (tab.focused) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.weight(1f),
             )
             Box {
@@ -659,8 +600,8 @@ private fun TabSection(
                 }
             }
         }
-        snapshot.layout(tab.tabId)?.takeIf { it.panes.size > 1 }?.let { layout ->
-            LayoutPreview(layout, snapshot, onOpenPane)
+        if ((snapshot.layout(tab.tabId)?.panes?.size ?: 0) > 1) {
+            LayoutPreview(snapshot, tab.tabId, onOpenPane)
         }
         panes.forEach { pane ->
             PaneRow(

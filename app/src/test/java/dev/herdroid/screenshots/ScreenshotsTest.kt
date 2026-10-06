@@ -39,6 +39,7 @@ import dev.herdroid.ui.components.ConnectionBanner
 import dev.herdroid.ui.session.SessionContent
 import dev.herdroid.ui.terminal.ExtraKeysBar
 import dev.herdroid.ui.terminal.PaneSwitcher
+import dev.herdroid.ui.terminal.QuickAnswers
 import dev.herdroid.ui.terminal.TerminalTopBar
 import dev.herdroid.ui.theme.HerdroidTheme
 import org.junit.Rule
@@ -160,6 +161,7 @@ class ScreenshotsTest {
                             }
                         },
                     )
+                    QuickAnswers {}
                     ExtraKeysBar(
                         modifiers = ModifierState().apply { ctrl = true },
                         haptics = false,
