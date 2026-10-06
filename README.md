@@ -4,9 +4,9 @@ A native Android client (Kotlin + Jetpack Compose) for [herdr](https://github.co
 multiplexer for coding agents. Herdroid connects over SSH and uses herdr's own protocols to show your agents and
 workspaces, let you reply to them, and drive any pane from your phone.
 
-| Your herd | Live pane | Connection states |
-| --- | --- | --- |
-| ![session](docs/screenshots/session.png) | ![terminal](docs/screenshots/terminal.png) | ![banners](docs/screenshots/banners.png) |
+| Your spaces | Inside a space | Live pane | Connection states |
+| --- | --- | --- | --- |
+| ![spaces](docs/screenshots/session.png) | ![space](docs/screenshots/space.png) | ![terminal](docs/screenshots/terminal.png) | ![banners](docs/screenshots/banners.png) |
 
 ## How it talks to herdr
 
@@ -30,9 +30,11 @@ Requires a herdr server with `terminal session control` and `remote-api-bridge`.
 
 ## UX highlights
 
-- **"Needs you" first.** Blocked agents (pulsing amber) and finished ones (green) sit at the top with *Open* and
-  *Reply* buttons. Everything else follows: an agent strip, then workspaces → tabs → panes.
-- **Layout miniature.** Each tab is drawn with herdr's real pane geometry, colored by agent state. Tap a pane to open it.
+- **Spaces first, like herdr's sidebar.** A machine opens on its spaces (herdr workspaces), with the ones whose
+  agents need you on top. Go into a space to see its agents: blocked (amber) and done (blue) ones first, with
+  *Reply* and *Open pane*, then its tabs and shells.
+- **Layout miniature.** Each tab is drawn with herdr's real pane geometry, colored by agent state. It identifies
+  every space and doubles as the pane switcher. Tap a pane to open it.
 - **Composer for agents.** A real multi-line text field (autocorrect, swipe typing, voice) that sends with
   `agent.prompt`, plus one-tap quick replies (`Enter`, `1/2/3`, `y/n`, `Esc`, `⇧Tab`, `Ctrl-C`) for permission prompts.
 - **Terminal built for touch.** Server-rendered frames drawn on a Canvas. Swipe scrolls herdr's scrollback with
@@ -41,8 +43,8 @@ Requires a herdr server with `terminal session control` and `remote-api-bridge`.
   history, or to open OSC 8 links.
 - **Extra keys.** Sticky `ctrl`/`alt` (double-tap locks), auto-repeating arrows, `esc`, `tab`, `^C`, symbols,
   `pgup`/`pgdn`, and bracketed paste.
-- **Pane switcher.** Chips for sibling panes and agents in other tabs. When another agent needs you, an in-app
-  snackbar offers to jump to it.
+- **Moving between agents.** Inside a pane, swipe the title sideways or tap the miniature to move between the
+  space's agents. When an agent in another space needs you, a snackbar offers to jump to it through its space.
 - **Shared control.** If your desktop herdr already controls a pane, you can choose **Take control** or
   **Watch only**. If someone takes control from you, you can take it back.
 - **Resilient connections.** Automatic reconnect with backoff, plus an immediate retry when the network returns.

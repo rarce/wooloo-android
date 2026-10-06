@@ -36,7 +36,8 @@ import dev.herdroid.terminal.ModifierState
 import dev.herdroid.terminal.TerminalModel
 import dev.herdroid.terminal.TerminalView
 import dev.herdroid.ui.components.ConnectionBanner
-import dev.herdroid.ui.session.SessionContent
+import dev.herdroid.ui.session.SpaceContent
+import dev.herdroid.ui.session.SpacesContent
 import dev.herdroid.ui.terminal.ExtraKeysBar
 import dev.herdroid.ui.terminal.PaneSwitcher
 import dev.herdroid.ui.terminal.QuickAnswers
@@ -80,42 +81,50 @@ class ScreenshotsTest {
         }
     }
 
-    @Test
-    fun sessionOverview() = capture("session") {
+    @Composable
+    private fun Screen(title: String, subtitle: String, content: @Composable () -> Unit) {
         Frame {
             Scaffold(
                 topBar = {
                     TopAppBar(
                         title = {
                             Column {
-                                Text("devbox")
+                                Text(title)
                                 Text(
-                                    "default · 3 workspaces · herdr 0.9.3",
+                                    subtitle,
                                     style = MaterialTheme.typography.labelMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                             }
                         },
                         navigationIcon = { IconButton({}) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, null) } },
-                        actions = {
-                            IconButton({}) { Icon(Icons.Outlined.DashboardCustomize, null) }
-                            IconButton({}) { Icon(Icons.Outlined.MoreVert, null) }
-                        },
+                        actions = { IconButton({}) { Icon(Icons.Outlined.MoreVert, null) } },
                     )
                 },
-            ) { padding ->
-                Column(Modifier.padding(padding)) {
-                    SessionContent(
-                        snapshot = snapshot,
-                        stale = false,
-                        onOpenPane = {},
-                        onPaneMenu = {},
-                        onCompose = {},
-                        onWorkspaceAction = {},
-                        onSplit = { _, _ -> },
-                    )
-                }
-            }
+            ) { padding -> Column(Modifier.padding(padding)) { content() } }
+        }
+    }
+
+    @Test
+    fun spacesOverview() = capture("session") {
+        Screen("devbox", "Session default, herdr 0.9.3") {
+            SpacesContent(snapshot = snapshot, stale = false, onOpenSpace = {}, onSpaceAction = {})
+        }
+    }
+
+    @Test
+    fun insideASpace() = capture("space") {
+        Screen("api", "devbox") {
+            SpaceContent(
+                snapshot = snapshot,
+                workspaceId = "w1",
+                stale = false,
+                onOpenPane = {},
+                onPaneMenu = {},
+                onCompose = {},
+                onAction = {},
+                onSplit = { _, _ -> },
+            )
         }
     }
 

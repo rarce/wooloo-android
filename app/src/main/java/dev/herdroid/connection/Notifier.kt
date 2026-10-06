@@ -52,7 +52,7 @@ class Notifier(private val context: Context) {
             .setCategory(NotificationCompat.CATEGORY_MESSAGE)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setAutoCancel(true)
-            .setContentIntent(openPaneIntent(alert.hostId, agent.paneId))
+            .setContentIntent(openPaneIntent(alert.hostId, agent.paneId, agent.workspaceId))
             .build()
         post((alert.hostId + agent.paneId).hashCode(), notification)
     }
@@ -77,11 +77,12 @@ class Notifier(private val context: Context) {
         NotificationManagerCompat.from(context).notify(id, notification)
     }
 
-    private fun openPaneIntent(hostId: String, paneId: String?): PendingIntent {
+    private fun openPaneIntent(hostId: String, paneId: String?, workspaceId: String? = null): PendingIntent {
         val intent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
             putExtra(MainActivity.EXTRA_HOST_ID, hostId)
             paneId?.let { putExtra(MainActivity.EXTRA_PANE_ID, it) }
+            workspaceId?.let { putExtra(MainActivity.EXTRA_WORKSPACE_ID, it) }
         }
         return PendingIntent.getActivity(
             context,

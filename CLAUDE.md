@@ -82,5 +82,9 @@ lint/format tooling configured beyond `kotlin.code.style=official`. Dependencies
 - Persistence is JSON files under `filesDir/store` (written via `writeAtomically`). Private keys and saved
   passwords live only in `SecretStore` (Android Keystore–encrypted), keyed by `SecretStore.privateKey(id)` /
   `passwordKey(hostId)` — never in the JSON profiles.
-- Navigation is a single Compose `NavHost` in `ui/HerdroidRoot.kt` (hosts → session → terminal, plus edit/keys/
-  settings). Notification taps arrive as `OpenRequest`s from `MainActivity` and deep-link to a pane.
+- Navigation is a single Compose `NavHost` in `ui/HerdroidRoot.kt` and mirrors herdr's hierarchy: hosts → session
+  (the host's spaces, i.e. herdr workspaces) → space (its agents, tabs, shells) → terminal, plus edit/keys/settings.
+  Spaces are the top-level unit, as in herdr's sidebar: don't surface agents across spaces outside of alerts. The
+  terminal's switcher and swipe stay within the current space; jumping to another space's agent goes through that
+  space so back walks up the hierarchy. Notification taps arrive as `OpenRequest`s (host, space, pane) from
+  `MainActivity` and deep-link the same way.

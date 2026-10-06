@@ -195,4 +195,22 @@ data class SessionSnapshot(
             compareByDescending<AgentInfo> { it.agentStatus.attention }
                 .thenByDescending { it.stateChangeSeq }
         )
+
+    /** A space's agents, whoever needs you first. */
+    fun agentsIn(workspaceId: String) = agentsByAttention.filter { it.workspaceId == workspaceId }
+
+    /** A space's agents in where they sit (tab by tab, pane by pane), stable as states change. */
+    fun agentsInLayoutOrder(workspaceId: String): List<AgentInfo> =
+        tabsOf(workspaceId).flatMap { panesOf(it.tabId) }.mapNotNull { agentFor(it.paneId) }
+
+    /** The space's state rolled up from its agents, as herdr's sidebar shows it. */
+    fun spaceStatus(workspace: WorkspaceInfo): AgentStatus =
+        (agentsIn(workspace.workspaceId).map { it.agentStatus } + workspace.agentStatus)
+            .maxBy { it.attention }
+
+    /** Spaces with whoever needs you first, then in herdr's own order. */
+    val spacesByAttention: List<WorkspaceInfo>
+        get() = workspaces.sortedWith(
+            compareByDescending<WorkspaceInfo> { spaceStatus(it).attention }.thenBy { it.number }
+        )
 }

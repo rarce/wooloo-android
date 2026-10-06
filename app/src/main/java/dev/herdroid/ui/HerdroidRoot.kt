@@ -24,6 +24,7 @@ import dev.herdroid.ui.hosts.HostEditScreen
 import dev.herdroid.ui.hosts.HostsScreen
 import dev.herdroid.ui.hosts.KeysScreen
 import dev.herdroid.ui.session.SessionScreen
+import dev.herdroid.ui.session.SpaceScreen
 import dev.herdroid.ui.terminal.TerminalScreen
 import kotlinx.coroutines.flow.MutableStateFlow
 import java.net.URLDecoder
@@ -35,11 +36,13 @@ private object Routes {
     const val KEYS = "keys?import={import}"
     const val SETTINGS = "settings"
     const val SESSION = "session/{hostId}"
+    const val SPACE = "space/{hostId}/{workspaceId}"
     const val TERMINAL = "terminal/{hostId}/{paneId}"
 
     fun edit(hostId: String?) = if (hostId == null) "edit" else "edit?hostId=$hostId"
     fun keys(import: Boolean = false) = "keys?import=$import"
     fun session(hostId: String) = "session/$hostId"
+    fun space(hostId: String, workspaceId: String) = "space/$hostId/${URLEncoder.encode(workspaceId, "UTF-8")}"
     fun terminal(hostId: String, paneId: String) =
         "terminal/$hostId/${URLEncoder.encode(paneId, "UTF-8")}"
 }
@@ -62,7 +65,9 @@ fun HerdroidRoot(openRequests: MutableStateFlow<OpenRequest?>) {
         val r = request ?: return@LaunchedEffect
         openRequests.value = null
         if (context.app.hosts.get(r.hostId) == null) return@LaunchedEffect
-        nav.navigate(Routes.session(r.hostId)) { launchSingleTop = true }
+        // Host › space › agent, so back walks up the same hierarchy.
+        nav.navigate(Routes.session(r.hostId)) { popUpTo(Routes.HOSTS) }
+        r.workspaceId?.let { nav.navigate(Routes.space(r.hostId, it)) }
         r.paneId?.let { nav.navigate(Routes.terminal(r.hostId, it)) }
     }
 
@@ -111,6 +116,17 @@ fun HerdroidRoot(openRequests: MutableStateFlow<OpenRequest?>) {
             SessionScreen(
                 hostId = hostId,
                 onBack = { nav.popBackStack() },
+                onOpenSpace = { nav.navigate(Routes.space(hostId, it)) },
+                onEditHost = { nav.navigate(Routes.edit(hostId)) },
+            )
+        }
+        composable(Routes.SPACE) { entry ->
+            val hostId = entry.arguments?.getString("hostId").orEmpty()
+            val workspaceId = URLDecoder.decode(entry.arguments?.getString("workspaceId").orEmpty(), "UTF-8")
+            SpaceScreen(
+                hostId = hostId,
+                workspaceId = workspaceId,
+                onBack = { nav.popBackStack() },
                 onOpenPane = { nav.navigate(Routes.terminal(hostId, it)) },
                 onEditHost = { nav.navigate(Routes.edit(hostId)) },
             )
@@ -122,6 +138,11 @@ fun HerdroidRoot(openRequests: MutableStateFlow<OpenRequest?>) {
                 hostId = hostId,
                 initialPaneId = paneId,
                 onBack = { nav.popBackStack() },
+                // An agent in another space: re-enter through that space so back stays honest.
+                onOpenInSpace = { workspaceId, otherPane ->
+                    nav.navigate(Routes.space(hostId, workspaceId)) { popUpTo(Routes.SESSION) }
+                    nav.navigate(Routes.terminal(hostId, otherPane))
+                },
                 onEditHost = { nav.navigate(Routes.edit(hostId)) },
             )
         }

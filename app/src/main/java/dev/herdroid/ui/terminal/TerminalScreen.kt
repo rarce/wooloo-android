@@ -8,6 +8,7 @@ import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -72,9 +73,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -114,6 +119,7 @@ fun TerminalScreen(
     initialPaneId: String,
     onBack: () -> Unit,
     onEditHost: () -> Unit,
+    onOpenInSpace: (workspaceId: String, paneId: String) -> Unit,
 ) {
     val view = LocalView.current
     DisposableEffect(view) {
@@ -131,7 +137,7 @@ fun TerminalScreen(
     HerdroidTheme(darkTheme = true) {
         // Surface resets LocalContentColor, which otherwise leaks in from the app's light theme.
         Surface(color = MaterialTheme.colorScheme.surface) {
-            TerminalScreenContent(hostId, initialPaneId, onBack, onEditHost)
+            TerminalScreenContent(hostId, initialPaneId, onBack, onEditHost, onOpenInSpace)
         }
     }
 }
@@ -143,6 +149,7 @@ private fun TerminalScreenContent(
     initialPaneId: String,
     onBack: () -> Unit,
     onEditHost: () -> Unit,
+    onOpenInSpace: (workspaceId: String, paneId: String) -> Unit,
 ) {
     val context = LocalContext.current
     val app = context.app
@@ -185,13 +192,20 @@ private fun TerminalScreenContent(
     LaunchedEffect(connection) {
         connection.alerts.collect { alert ->
             if (alert.agent.paneId == paneId) return@collect
+            val here = connection.snapshot.value?.pane(paneId)?.workspaceId
+            val elsewhere = alert.agent.workspaceId != here
             val verb = if (alert.agent.agentStatus == AgentStatus.BLOCKED) "needs input" else "finished"
+            val where = alert.workspaceLabel?.takeIf { elsewhere }?.let { " in $it" }.orEmpty()
             val result = snackbar.showSnackbar(
-                message = "${alert.agent.displayName} $verb",
+                message = "${alert.agent.displayName}$where $verb",
                 actionLabel = "Open",
                 withDismissAction = true,
             )
-            if (result == SnackbarResult.ActionPerformed) paneId = alert.agent.paneId
+            if (result == SnackbarResult.ActionPerformed) {
+                // Same space: switch in place. Another space: go through it, so back leads there.
+                if (elsewhere) onOpenInSpace(alert.agent.workspaceId, alert.agent.paneId)
+                else paneId = alert.agent.paneId
+            }
         }
     }
 
@@ -255,6 +269,11 @@ private fun TerminalScreenContent(
                 onRename = { renaming = true },
                 onClosePane = { closing = true },
                 onReconnect = { controller.open() },
+                onSwipeAgent = { step ->
+                    val agents = snapshot?.let { snap -> pane?.let { snap.agentsInLayoutOrder(it.workspaceId) } }.orEmpty()
+                    val index = agents.indexOfFirst { it.paneId == paneId }
+                    agents.getOrNull(if (index < 0) 0 else (index + step).mod(agents.size))?.let { paneId = it.paneId }
+                },
             )
             ConnectionBanner(status, onRetry = { connection.retryNow() }, onEditHost = onEditHost)
             snapshot?.let { snap ->
@@ -433,13 +452,37 @@ internal fun TerminalTopBar(
     onRename: () -> Unit,
     onClosePane: () -> Unit,
     onReconnect: () -> Unit,
+    onSwipeAgent: ((Int) -> Unit)? = null,
 ) {
     Row(
         Modifier.fillMaxWidth().height(56.dp).padding(end = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, "Back") }
-        Column(Modifier.weight(1f)) {
+        // Swipe the title sideways to move between this space's agents.
+        Column(
+            Modifier
+                .weight(1f)
+                .then(
+                    if (onSwipeAgent == null) Modifier
+                    else Modifier
+                        .pointerInput(onSwipeAgent) {
+                            var dragged = 0f
+                            detectHorizontalDragGestures(
+                                onDragStart = { dragged = 0f },
+                                onDragEnd = {
+                                    if (dragged <= -SWIPE_PX) onSwipeAgent(1) else if (dragged >= SWIPE_PX) onSwipeAgent(-1)
+                                },
+                            ) { _, delta -> dragged += delta }
+                        }
+                        .semantics {
+                            customActions = listOf(
+                                CustomAccessibilityAction("Next agent in this space") { onSwipeAgent(1); true },
+                                CustomAccessibilityAction("Previous agent in this space") { onSwipeAgent(-1); true },
+                            )
+                        }
+                ),
+        ) {
             Text(
                 agentName ?: pane?.displayTitle ?: "Terminal",
                 style = MaterialTheme.typography.titleMedium,
@@ -485,11 +528,12 @@ private fun MenuItem(icon: androidx.compose.ui.graphics.vector.ImageVector, text
     DropdownMenuItem(text = { Text(text) }, leadingIcon = { Icon(icon, null) }, onClick = onClick)
 }
 
-/** The current tab as a miniature (tap a pane to switch), then the other agents, one tap away. */
+/** The current tab as a miniature (tap a pane to switch), then the space's other agents, one tap away. */
 @Composable
 internal fun PaneSwitcher(snapshot: SessionSnapshot, current: PaneInfo, onSelect: (String) -> Unit) {
     val siblings = snapshot.panesOf(current.tabId)
-    val otherAgents = snapshot.agentsByAttention.filter { it.tabId != current.tabId }
+    // Only this space's agents: changing space means going back up to the spaces list.
+    val otherAgents = snapshot.agentsIn(current.workspaceId).filter { it.tabId != current.tabId }
     if (siblings.size <= 1 && otherAgents.isEmpty()) return
     val listState = rememberLazyListState()
     LazyRow(
@@ -616,3 +660,5 @@ private fun PaneOverlay(
         }
     }
 }
+
+private const val SWIPE_PX = 120f

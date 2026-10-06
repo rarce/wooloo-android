@@ -10,7 +10,12 @@ import dev.herdroid.ui.HerdroidRoot
 import dev.herdroid.ui.theme.HerdroidTheme
 
 /** Deep link payload from a notification tap. */
-data class OpenRequest(val hostId: String, val paneId: String?, val nonce: Long = System.nanoTime())
+data class OpenRequest(
+    val hostId: String,
+    val paneId: String?,
+    val workspaceId: String? = null,
+    val nonce: Long = System.nanoTime(),
+)
 
 class MainActivity : ComponentActivity() {
     private val openRequests = MutableStateFlow<OpenRequest?>(null)
@@ -33,12 +38,13 @@ class MainActivity : ComponentActivity() {
 
     private fun handleIntent(intent: Intent?) {
         val hostId = intent?.getStringExtra(EXTRA_HOST_ID) ?: return
-        openRequests.value = OpenRequest(hostId, intent.getStringExtra(EXTRA_PANE_ID))
+        openRequests.value = OpenRequest(hostId, intent.getStringExtra(EXTRA_PANE_ID), intent.getStringExtra(EXTRA_WORKSPACE_ID))
         intent.removeExtra(EXTRA_HOST_ID)
     }
 
     companion object {
         const val EXTRA_HOST_ID = "host_id"
         const val EXTRA_PANE_ID = "pane_id"
+        const val EXTRA_WORKSPACE_ID = "workspace_id"
     }
 }
