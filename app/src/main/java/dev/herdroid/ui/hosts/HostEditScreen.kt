@@ -12,10 +12,12 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
@@ -62,6 +64,7 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.herdroid.app
 import dev.herdroid.data.AuthMethod
@@ -348,14 +351,17 @@ private fun KeyPicker(
             }
         }
     }
+    // Short single-line labels: at large font sizes "Generate new" wrapped inside half the width.
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         OutlinedButton(onClick = onGenerate, modifier = Modifier.weight(1f)) {
-            Icon(Icons.Outlined.AutoAwesome, null)
-            Text(" Generate new")
+            Icon(Icons.Outlined.AutoAwesome, null, Modifier.size(18.dp))
+            Spacer(Modifier.width(8.dp))
+            Text("New key", maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         OutlinedButton(onClick = onImport, modifier = Modifier.weight(1f)) {
-            Icon(Icons.Outlined.FileDownload, null)
-            Text(" Import")
+            Icon(Icons.Outlined.FileDownload, null, Modifier.size(18.dp))
+            Spacer(Modifier.width(8.dp))
+            Text("Import", maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
     if (isError && keys.isEmpty()) {
@@ -384,12 +390,10 @@ fun PublicKeyCard(key: SshKeyInfo) {
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            Text(
-                command,
-                fontFamily = Mono,
-                style = MaterialTheme.typography.bodySmall,
-                maxLines = 4,
-            )
+            // Shown whole and selectable: it's what the user pastes on the machine, so it must be checkable.
+            SelectionContainer {
+                Text(command, fontFamily = Mono, style = MaterialTheme.typography.bodySmall)
+            }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 TextButton(onClick = {
                     clipboard.setText(AnnotatedString(command))
