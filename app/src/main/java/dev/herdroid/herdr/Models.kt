@@ -45,7 +45,13 @@ data class TabInfo(
     val focused: Boolean = false,
     @SerialName("pane_count") val paneCount: Int = 0,
     @SerialName("agent_status") val agentStatus: AgentStatus = AgentStatus.UNKNOWN,
-)
+) {
+    /** herdr labels unnamed tabs with their position ("1", "2"); `number` is an internal id, not shown. */
+    val hasCustomLabel: Boolean get() = label.isNotBlank() && label.toIntOrNull() == null
+
+    val displayLabel: String
+        get() = if (hasCustomLabel) label else "Tab ${label.ifBlank { number.toString() }}"
+}
 
 @Serializable
 data class PaneScrollInfo(
@@ -180,6 +186,8 @@ data class SessionSnapshot(
     fun workspace(id: String) = workspaces.firstOrNull { it.workspaceId == id }
     fun tab(id: String) = tabs.firstOrNull { it.tabId == id }
     fun layout(tabId: String) = layouts.firstOrNull { it.tabId == tabId }
+    fun activeTabId(workspace: WorkspaceInfo): String? =
+        workspace.activeTabId.ifBlank { null } ?: tabsOf(workspace.workspaceId).firstOrNull()?.tabId
 
     /** Agents sorted the way a phone user wants them: whoever needs you first. */
     val agentsByAttention: List<AgentInfo>

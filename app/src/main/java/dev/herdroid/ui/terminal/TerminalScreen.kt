@@ -6,6 +6,7 @@ import android.net.Uri
 import android.view.WindowManager
 import android.widget.Toast
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -45,7 +46,6 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -71,18 +71,21 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.view.WindowCompat
 import dev.herdroid.app
 import dev.herdroid.connection.ConnectionStatus
 import dev.herdroid.herdr.AgentStatus
 import dev.herdroid.herdr.PaneInfo
 import dev.herdroid.herdr.SessionSnapshot
-import dev.herdroid.terminal.SpecialKey
 import dev.herdroid.terminal.TerminalView
 import dev.herdroid.terminal.TerminalViewListener
 import dev.herdroid.ui.components.ComposerSheet
@@ -91,15 +94,51 @@ import dev.herdroid.ui.components.ConnectionBanner
 import dev.herdroid.ui.components.ConnectionPrompts
 import dev.herdroid.ui.components.FieldSpec
 import dev.herdroid.ui.components.FormDialog
-import dev.herdroid.ui.components.StatusDot
 import dev.herdroid.ui.components.StatusPill
+import dev.herdroid.ui.components.fadingEdges
 import dev.herdroid.ui.session.SheetItem
+import dev.herdroid.ui.session.TabMiniature
+import dev.herdroid.ui.session.breadcrumb
+import dev.herdroid.ui.theme.HerdroidTheme
+import dev.herdroid.ui.theme.LocalStatusColors
 import dev.herdroid.ui.theme.Mono
 import kotlinx.coroutines.launch
 
-@OptIn(ExperimentalMaterial3Api::class)
+/**
+ * The terminal is always dark, whatever the system theme: light chrome around a dark terminal
+ * reads as two different apps.
+ */
 @Composable
 fun TerminalScreen(
+    hostId: String,
+    initialPaneId: String,
+    onBack: () -> Unit,
+    onEditHost: () -> Unit,
+) {
+    val view = LocalView.current
+    DisposableEffect(view) {
+        val window = (view.context as? Activity)?.window
+        val bars = window?.let { WindowCompat.getInsetsController(it, view) }
+        val lightStatus = bars?.isAppearanceLightStatusBars
+        val lightNavigation = bars?.isAppearanceLightNavigationBars
+        bars?.isAppearanceLightStatusBars = false
+        bars?.isAppearanceLightNavigationBars = false
+        onDispose {
+            lightStatus?.let { bars.isAppearanceLightStatusBars = it }
+            lightNavigation?.let { bars.isAppearanceLightNavigationBars = it }
+        }
+    }
+    HerdroidTheme(darkTheme = true) {
+        // Surface resets LocalContentColor, which otherwise leaks in from the app's light theme.
+        Surface(color = MaterialTheme.colorScheme.surface) {
+            TerminalScreenContent(hostId, initialPaneId, onBack, onEditHost)
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun TerminalScreenContent(
     hostId: String,
     initialPaneId: String,
     onBack: () -> Unit,
@@ -260,6 +299,9 @@ fun TerminalScreen(
                     onRetry = { controller.open() },
                     onBack = onBack)
             }
+            if (agent?.agentStatus == AgentStatus.BLOCKED && !controller.readOnly) {
+                QuickAnswers(onAnswer = controller::input)
+            }
             ExtraKeysBar(
                 modifiers = controller.modifiers,
                 haptics = haptics,
@@ -404,10 +446,8 @@ internal fun TerminalTopBar(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            val ws = pane?.let { snapshot?.workspace(it.workspaceId)?.label }
-            val tab = pane?.let { snapshot?.tab(it.tabId)?.label }
             Text(
-                listOfNotNull(ws, tab?.takeIf { it.isNotBlank() }, pane?.shortCwd).joinToString(" › "),
+                pane?.let { breadcrumb(snapshot?.workspace(it.workspaceId), snapshot?.tab(it.tabId), it.shortCwd) }.orEmpty(),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
@@ -445,7 +485,7 @@ private fun MenuItem(icon: androidx.compose.ui.graphics.vector.ImageVector, text
     DropdownMenuItem(text = { Text(text) }, leadingIcon = { Icon(icon, null) }, onClick = onClick)
 }
 
-/** Sibling panes of the current tab plus other agents, one tap away. */
+/** The current tab as a miniature (tap a pane to switch), then the other agents, one tap away. */
 @Composable
 internal fun PaneSwitcher(snapshot: SessionSnapshot, current: PaneInfo, onSelect: (String) -> Unit) {
     val siblings = snapshot.panesOf(current.tabId)
@@ -454,30 +494,78 @@ internal fun PaneSwitcher(snapshot: SessionSnapshot, current: PaneInfo, onSelect
     val listState = rememberLazyListState()
     LazyRow(
         state = listState,
-        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        modifier = Modifier.fadingEdges(listState),
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 10.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        items(siblings, key = { "p-" + it.paneId }) { pane ->
-            val agent = snapshot.agentFor(pane.paneId)
-            FilterChip(
-                selected = pane.paneId == current.paneId,
-                onClick = { onSelect(pane.paneId) },
-                leadingIcon = agent?.let { { StatusDot(it.agentStatus, size = 6.dp) } },
-                label = { Text(agent?.displayName ?: pane.displayTitle, maxLines = 1) },
-            )
+        if (siblings.size > 1) {
+            item(key = "tab") {
+                TabMiniature(
+                    snapshot = snapshot,
+                    tabId = current.tabId,
+                    modifier = Modifier.size(112.dp, 44.dp),
+                    highlightPaneId = current.paneId,
+                    gap = 3.dp,
+                    corner = 6.dp,
+                    onPaneClick = onSelect,
+                )
+            }
+            if (otherAgents.isNotEmpty()) {
+                item(key = "divider") {
+                    Box(Modifier.size(1.dp, 32.dp).background(MaterialTheme.colorScheme.outlineVariant))
+                }
+            }
         }
         items(otherAgents, key = { "a-" + it.paneId }) { agent ->
-            FilterChip(
-                selected = false,
-                onClick = { onSelect(agent.paneId) },
-                leadingIcon = { StatusDot(agent.agentStatus, size = 6.dp) },
-                label = {
-                    Text(
-                        agent.displayName + (snapshot.workspace(agent.workspaceId)?.label?.let { " · $it" } ?: ""),
-                        maxLines = 1,
-                    )
-                },
-            )
+            Row(
+                Modifier
+                    .height(44.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(MaterialTheme.colorScheme.surfaceContainer)
+                    .clickable { onSelect(agent.paneId) }
+                    .padding(start = 8.dp, end = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                TabMiniature(snapshot, agent.tabId, Modifier.size(28.dp, 18.dp), highlightPaneId = agent.paneId, corner = 3.dp)
+                Text(agent.displayName, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Medium, maxLines = 1)
+                snapshot.workspace(agent.workspaceId)?.label?.takeIf { it.isNotBlank() }?.let {
+                    Text(it, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+                }
+            }
+        }
+    }
+}
+
+/** One-tap answers for a blocked agent's numbered prompt, above the extra keys (which have esc). */
+@Composable
+internal fun QuickAnswers(onAnswer: (String) -> Unit) {
+    val blocked = LocalStatusColors.current.blocked
+    val onSolid = LocalStatusColors.current.onSolid
+    val shape = RoundedCornerShape(12.dp)
+    Row(
+        Modifier.fillMaxWidth().padding(start = 8.dp, end = 8.dp, top = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        listOf("1", "2", "3").forEachIndexed { index, answer ->
+            val first = index == 0
+            Box(
+                Modifier
+                    .weight(1f)
+                    .height(44.dp)
+                    .clip(shape)
+                    .then(if (first) Modifier.background(blocked) else Modifier.border(1.dp, blocked, shape))
+                    .clickable(onClickLabel = "Answer $answer") { onAnswer(answer) },
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    answer,
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = if (first) FontWeight.Bold else FontWeight.Medium,
+                    color = if (first) onSolid else MaterialTheme.colorScheme.onSurface,
+                )
+            }
         }
     }
 }

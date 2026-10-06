@@ -38,4 +38,14 @@ class ModelsTest {
         assertEquals(AgentStatus.UNKNOWN, snapshot.agents[1].agentStatus)
         assertEquals("w1:p1", snapshot.agentsByAttention.first().paneId)
     }
+
+    @Test
+    fun tabLabelUsesPositionNotInternalNumber() {
+        // herdr 0.9.3: tab id w1E:t6 sits second, so label is "2" while number is 6.
+        val positional = TabInfo(tabId = "w1E:t6", workspaceId = "w1E", number = 6, label = "2")
+        assertEquals("Tab 2", positional.displayLabel)
+        assertEquals(false, positional.hasCustomLabel)
+        val named = TabInfo(tabId = "w1:t1", workspaceId = "w1", number = 1, label = "logs")
+        assertEquals("logs", named.displayLabel)
+    }
 }

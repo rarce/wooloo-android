@@ -44,10 +44,10 @@ data class TerminalTheme(
         fun argb(r: Int, g: Int, b: Int) = (0xFF shl 24) or (r shl 16) or (g shl 8) or b
 
         val Default = TerminalTheme(
-            background = 0xFF0E1116.toInt(),
-            foreground = 0xFFE6EDF3.toInt(),
-            cursor = 0xFF7CE38B.toInt(),
-            selection = 0x664493F8,
+            background = 0xFF0F171B.toInt(),
+            foreground = 0xFFE9EDE8.toInt(),
+            cursor = 0xFFE9EDE8.toInt(),
+            selection = 0x6667B0F0,
             ansi = intArrayOf(
                 0xFF484F58.toInt(), 0xFFFF7B72.toInt(), 0xFF3FB950.toInt(), 0xFFD29922.toInt(),
                 0xFF58A6FF.toInt(), 0xFFBC8CFF.toInt(), 0xFF39C5CF.toInt(), 0xFFB1BAC4.toInt(),

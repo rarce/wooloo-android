@@ -3,8 +3,8 @@ package dev.herdroid.ui.session
 import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
@@ -19,12 +19,10 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
-import androidx.compose.material.icons.automirrored.outlined.Chat
 import androidx.compose.material.icons.automirrored.outlined.Logout
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.ChevronRight
@@ -39,6 +37,8 @@ import androidx.compose.material.icons.outlined.Terminal
 import androidx.compose.material.icons.outlined.ViewAgenda
 import androidx.compose.material.icons.outlined.ViewColumn
 import androidx.compose.material.icons.outlined.Workspaces
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
@@ -273,20 +273,20 @@ fun SessionScreen(
         ) { (label) -> dialog = null; act("Rename") { renameWorkspace(d.workspace.workspaceId, label) } }
         is SessionDialog.CloseWorkspace -> ConfirmDialog(
             title = "Close ${d.workspace.label}?",
-            body = "Closes ${d.workspace.tabCount} tabs and ${d.workspace.paneCount} panes, stopping their processes.",
+            body = "Closes ${count(d.workspace.tabCount, "tab")} and ${count(d.workspace.paneCount, "pane")}, stopping their processes.",
             confirm = "Close workspace",
             onDismiss = { dialog = null },
         ) { act("Close workspace") { closeWorkspace(d.workspace.workspaceId) } }
         is SessionDialog.RenameTab -> FormDialog(
             title = "Rename tab",
-            fields = listOf(FieldSpec("Name", d.tab.label)),
+            fields = listOf(FieldSpec("Name", d.tab.label.takeIf { d.tab.hasCustomLabel }.orEmpty())),
             confirm = "Rename",
             requireFirst = true,
             onDismiss = { dialog = null },
         ) { (label) -> dialog = null; act("Rename") { renameTab(d.tab.tabId, label) } }
         is SessionDialog.CloseTab -> ConfirmDialog(
-            title = "Close tab ${d.tab.label}?",
-            body = "Closes ${d.tab.paneCount} panes and stops their processes.",
+            title = "Close ${d.tab.displayLabel}?",
+            body = "Closes ${count(d.tab.paneCount, "pane")} and stops their processes.",
             confirm = "Close tab",
             onDismiss = { dialog = null },
         ) { act("Close tab") { closeTab(d.tab.tabId) } }
@@ -308,10 +308,10 @@ fun SessionScreen(
 private fun subtitle(status: ConnectionStatus, snapshot: SessionSnapshot?, connection: HerdrConnection): String =
     when (status) {
         ConnectionStatus.Connected -> buildString {
-            append(connection.profile.session)
+            append("Session ").append(connection.profile.session)
             snapshot?.let {
-                append(" · ").append(it.workspaces.size).append(" workspaces")
-                if (it.version.isNotBlank()) append(" · herdr ").append(it.version)
+                append(", ").append(count(it.workspaces.size, "workspace"))
+                if (it.version.isNotBlank()) append(", herdr ").append(it.version)
             }
         }
         is ConnectionStatus.Connecting -> "Connecting…"
@@ -356,30 +356,17 @@ internal fun SessionContent(
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         if (attention.isNotEmpty()) {
-            item(key = "attention-title") { SectionLabel("Needs you") }
+            item(key = "attention-title") { SectionLabel("Needs you", attention.size) }
             items(attention, key = { "att-" + it.paneId }) { agent ->
                 AttentionCard(
                     agent = agent,
-                    workspace = snapshot.workspace(agent.workspaceId),
-                    tab = snapshot.tab(agent.tabId),
+                    snapshot = snapshot,
                     onOpen = { onOpenPane(agent.paneId) },
                     onReply = { onCompose(agent) },
                 )
             }
         }
-        if (snapshot.agents.isNotEmpty()) {
-            item(key = "agents") {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    SectionLabel("Agents")
-                    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        items(snapshot.agentsByAttention, key = { "chip-" + it.paneId }) { agent ->
-                            AgentChip(agent, snapshot.workspace(agent.workspaceId)) { onOpenPane(agent.paneId) }
-                        }
-                    }
-                }
-            }
-        }
-        item(key = "ws-title") { SectionLabel("Workspaces") }
+        item(key = "ws-title") { SectionLabel("Workspaces", snapshot.workspaces.size) }
         items(snapshot.workspaces, key = { "ws-" + it.workspaceId }) { workspace ->
             val isExpanded = expanded[workspace.workspaceId]
                 ?: (workspace.focused || snapshot.workspaces.size <= 2 ||
@@ -399,83 +386,86 @@ internal fun SessionContent(
     }
 }
 
+internal fun count(n: Int, noun: String) = if (n == 1) "1 $noun" else "$n ${noun}s"
+
+/**
+ * "workspace › tab › extra", skipping parts that add nothing: the tab when it has herdr's default
+ * numeric label and is the workspace's only tab, and repeats (a cwd named like its workspace).
+ */
+internal fun breadcrumb(workspace: WorkspaceInfo?, tab: TabInfo?, extra: String? = null): String =
+    listOfNotNull(
+        workspace?.label?.takeIf { it.isNotBlank() },
+        tab?.takeIf { it.hasCustomLabel || (workspace?.tabCount ?: 0) > 1 }?.displayLabel,
+        extra?.takeIf { it.isNotBlank() },
+    ).distinct().joinToString(" › ")
+
 @Composable
-private fun SectionLabel(text: String) {
-    Text(
-        text.uppercase(),
-        style = MaterialTheme.typography.labelMedium,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        fontWeight = FontWeight.Bold,
-        modifier = Modifier.padding(top = 4.dp, start = 4.dp),
-    )
+private fun SectionLabel(text: String, count: Int) {
+    Row(
+        Modifier.padding(top = 4.dp, start = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalAlignment = Alignment.Bottom,
+    ) {
+        Text(text, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+        Text(
+            count.toString(),
+            style = MaterialTheme.typography.titleSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
 }
 
 @Composable
 private fun AttentionCard(
     agent: AgentInfo,
-    workspace: WorkspaceInfo?,
-    tab: TabInfo?,
+    snapshot: SessionSnapshot,
     onOpen: () -> Unit,
     onReply: () -> Unit,
 ) {
-    val color = LocalStatusColors.current.of(agent.agentStatus)
+    val status = LocalStatusColors.current
+    val kind = (agent.displayAgent ?: agent.agent)?.takeIf { !it.equals(agent.displayName, ignoreCase = true) }
+    val where = breadcrumb(snapshot.workspace(agent.workspaceId), snapshot.tab(agent.tabId))
     Card(
         onClick = onOpen,
         shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(containerColor = color.copy(alpha = 0.12f)),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
     ) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                StatusDot(agent.agentStatus, size = 9.dp)
-                Spacer(Modifier.size(6.dp))
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                TabMiniature(snapshot, agent.tabId, MiniatureRow, highlightPaneId = agent.paneId)
                 Column(Modifier.weight(1f)) {
-                    Text(agent.displayName, style = MaterialTheme.typography.titleMedium)
+                    Text(agent.displayName, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Text(
-                        listOfNotNull(workspace?.label, tab?.label?.takeIf { it.isNotBlank() }).joinToString(" › "),
+                        listOfNotNull(kind, where.ifBlank { null }).joinToString(" in "),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                     )
                 }
-                StatusPill(agent.agentStatus, agent.statusLabel())
             }
             agent.subtitle?.let {
-                Text(it, style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(it, style = MaterialTheme.typography.bodyLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
+            // The answer is the main action and takes the agent's color; opening the pane is secondary.
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                FilledTonalButton(onClick = onOpen) {
-                    Icon(Icons.Outlined.Terminal, null, Modifier.size(18.dp))
-                    Text("  Open")
+                if (status.isSolid(agent.agentStatus)) {
+                    Button(
+                        onClick = onReply,
+                        shape = RoundedCornerShape(14.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = status.of(agent.agentStatus),
+                            contentColor = status.onSolid,
+                        ),
+                    ) { Text(if (agent.agentStatus == AgentStatus.BLOCKED) "Reply" else "Follow up") }
                 }
-                if (agent.agentStatus == AgentStatus.BLOCKED || agent.agentStatus == AgentStatus.DONE) {
-                    OutlinedButton(onClick = onReply) {
-                        Icon(Icons.AutoMirrored.Outlined.Chat, null, Modifier.size(18.dp))
-                        Text(if (agent.agentStatus == AgentStatus.BLOCKED) "  Reply" else "  Follow up")
-                    }
-                }
+                OutlinedButton(
+                    onClick = onOpen,
+                    shape = RoundedCornerShape(14.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.onSurface),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+                ) { Text("Open pane", fontWeight = FontWeight.Medium) }
             }
-        }
-    }
-}
-
-@Composable
-private fun AgentChip(agent: AgentInfo, workspace: WorkspaceInfo?, onClick: () -> Unit) {
-    Row(
-        Modifier
-            .clip(RoundedCornerShape(14.dp))
-            .background(MaterialTheme.colorScheme.surfaceContainer)
-            .clickable(onClick = onClick)
-            .padding(start = 4.dp, end = 12.dp, top = 6.dp, bottom = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        StatusDot(agent.agentStatus, size = 8.dp)
-        Column {
-            Text(agent.displayName, style = MaterialTheme.typography.labelLarge, maxLines = 1)
-            Text(
-                listOfNotNull(workspace?.label, agent.statusLabel()).joinToString(" · "),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-            )
         }
     }
 }
@@ -501,34 +491,32 @@ private fun WorkspaceCard(
         Row(
             Modifier
                 .fillMaxWidth()
-                .clickable(onClick = onToggle)
-                .padding(start = 16.dp, end = 4.dp, top = 10.dp, bottom = 10.dp),
+                .combinedClickable(
+                    onClickLabel = if (expanded) "Collapse" else "Expand",
+                    onLongClickLabel = "Workspace actions",
+                    onLongClick = { menu = true },
+                    onClick = onToggle,
+                )
+                .padding(start = 16.dp, end = 4.dp, top = 12.dp, bottom = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(
-                workspace.number.toString(),
-                fontFamily = Mono,
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f))
-                    .padding(horizontal = 8.dp, vertical = 2.dp),
-            )
-            Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
+            val activeTab = snapshot.activeTabId(workspace)
+            if (activeTab != null) TabMiniature(snapshot, activeTab, MiniatureRow)
+            Column(Modifier.weight(1f).padding(horizontal = 14.dp)) {
                 Text(workspace.label.ifBlank { "workspace ${workspace.number}" }, style = MaterialTheme.typography.titleMedium, maxLines = 1)
                 Text(
-                    "${workspace.tabCount} tabs · ${workspace.paneCount} panes" +
-                        if (workspace.focused) " · focused" else "",
+                    "${count(workspace.tabCount, "tab")}, ${count(workspace.paneCount, "pane")}" +
+                        if (workspace.focused) ", focused" else "",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            if (workspace.agentStatus != AgentStatus.UNKNOWN && workspace.agentStatus != AgentStatus.IDLE) {
-                StatusDot(workspace.agentStatus, size = 8.dp)
-            }
             Box {
-                IconButton(onClick = { menu = true }) { Icon(Icons.Outlined.MoreVert, "Workspace actions") }
+                Icon(
+                    if (expanded) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore,
+                    null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
                 DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                     DropdownMenuItem(
                         text = { Text("New tab") },
@@ -547,8 +535,7 @@ private fun WorkspaceCard(
                     )
                 }
             }
-            Icon(if (expanded) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore, null)
-            Spacer(Modifier.size(8.dp))
+            Spacer(Modifier.size(12.dp))
         }
         AnimatedVisibility(expanded) {
             Column(Modifier.padding(start = 12.dp, end = 12.dp, bottom = 12.dp)) {
@@ -576,9 +563,10 @@ private fun TabSection(
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 4.dp)) {
             Text(
-                "${tab.number}  ${tab.label.ifBlank { "tab" }}",
+                tab.displayLabel,
                 style = MaterialTheme.typography.labelLarge,
-                color = if (tab.focused) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                fontWeight = FontWeight.Bold,
+                color = if (tab.focused) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.weight(1f),
             )
             Box {
@@ -612,8 +600,8 @@ private fun TabSection(
                 }
             }
         }
-        snapshot.layout(tab.tabId)?.takeIf { it.panes.size > 1 }?.let { layout ->
-            LayoutPreview(layout, snapshot, onOpenPane)
+        if ((snapshot.layout(tab.tabId)?.panes?.size ?: 0) > 1) {
+            LayoutPreview(snapshot, tab.tabId, onOpenPane)
         }
         panes.forEach { pane ->
             PaneRow(
