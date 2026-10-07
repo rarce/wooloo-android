@@ -292,6 +292,33 @@ class HerdrConnection(
         }
     }
 
+    /** Uploads [bytes] as [name] into a private temp directory on the host; returns its path. */
+    suspend fun uploadFile(name: String, bytes: ByteArray): Result<String> {
+        val session = ssh?.takeIf { it.isConnected }
+            ?: return Result.failure(IllegalStateException("Not connected"))
+        return try {
+            val channel = session.exec(RemoteCommand.uploadFile(name))
+            val output = try {
+                withTimeout(120_000) {
+                    runInterruptible(Dispatchers.IO) {
+                        channel.stdin.use { it.write(bytes) }
+                        channel.stdout.readBytes()
+                    }
+                }
+            } finally {
+                channel.close()
+            }
+            output.toString(Charsets.UTF_8).trim().takeIf { it.startsWith("/") }?.let { Result.success(it) }
+                ?: Result.failure(IllegalStateException("Couldn't store $name on the host"))
+        } catch (e: TimeoutCancellationException) {
+            Result.failure(IllegalStateException("Uploading $name timed out"))
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
     private suspend fun readRemoteHome(session: SshSession): String? =
         kotlinx.coroutines.withContext(Dispatchers.IO) {
             session.exec("/bin/sh -c 'printf %s \"\$HOME\"'").use { channel ->

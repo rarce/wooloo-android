@@ -87,6 +87,19 @@ object RemoteCommand {
         return "/bin/sh -c " + shellQuote(script) + " sh " + shellQuote(path)
     }
 
+    /**
+     * Stores stdin as [name] in a private per-user temp directory on the host and prints the
+     * file's absolute path. Used for images attached to prompts: agents read them by path.
+     */
+    fun uploadFile(name: String): String {
+        val script = """
+            dir=${'$'}{TMPDIR:-/tmp}
+            dir=${'$'}{dir%/}/herdroid-${'$'}(id -u)
+            mkdir -p "${'$'}dir" && chmod 700 "${'$'}dir" && f="${'$'}dir/${'$'}1" && cat > "${'$'}f" && printf '%s' "${'$'}f"
+        """.trimIndent()
+        return "/bin/sh -c " + shellQuote(script) + " sh " + shellQuote(name)
+    }
+
     private fun expandHome(path: String): String =
         if (path == "~" || path.startsWith("~/")) "\$HOME" + path.removePrefix("~") else path
 

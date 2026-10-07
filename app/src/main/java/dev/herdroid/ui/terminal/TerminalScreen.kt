@@ -91,6 +91,7 @@ import dev.herdroid.connection.ConnectionStatus
 import dev.herdroid.herdr.AgentStatus
 import dev.herdroid.herdr.PaneInfo
 import dev.herdroid.herdr.SessionSnapshot
+import dev.herdroid.herdr.RemoteCommand
 import dev.herdroid.terminal.TerminalView
 import dev.herdroid.terminal.TerminalViewListener
 import dev.herdroid.ui.components.ComposerSheet
@@ -99,6 +100,7 @@ import dev.herdroid.ui.components.ConnectionBanner
 import dev.herdroid.ui.components.ConnectionPrompts
 import dev.herdroid.ui.components.FieldSpec
 import dev.herdroid.ui.components.FormDialog
+import dev.herdroid.ui.components.ImageAttachments
 import dev.herdroid.ui.components.StatusPill
 import dev.herdroid.ui.components.fadingEdges
 import dev.herdroid.ui.session.SheetItem
@@ -358,9 +360,17 @@ private fun TerminalScreenContent(
             isAgent = isAgent,
             onDismiss = { composer = false },
             onQuickReply = { reply -> controller.input(reply.input) },
-            onSend = { text ->
-                if (isAgent) act("Prompt") { promptAgent(paneId, text) }
-                else controller.input(text.replace("\n", "\r") + "\r")
+            onSend = { text, images ->
+                when {
+                    isAgent -> act("Prompt") {
+                        promptAgent(paneId, ImageAttachments.withPaths(text, ImageAttachments.upload(connection, images)))
+                    }
+                    images.isEmpty() -> controller.input(text.replace("\n", "\r") + "\r")
+                    else -> act("Send") {
+                        val paths = ImageAttachments.upload(connection, images).joinToString(" ") { RemoteCommand.shellQuote(it) }
+                        controller.input(listOf(text.trim(), paths).filter { it.isNotEmpty() }.joinToString(" ").replace("\n", "\r") + "\r")
+                    }
+                }
             },
         )
     }

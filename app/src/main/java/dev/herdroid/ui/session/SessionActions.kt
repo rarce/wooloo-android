@@ -40,6 +40,7 @@ import dev.herdroid.ui.components.ComposerSheet
 import dev.herdroid.ui.components.ConfirmDialog
 import dev.herdroid.ui.components.FieldSpec
 import dev.herdroid.ui.components.FormDialog
+import dev.herdroid.ui.components.ImageAttachments
 import kotlinx.coroutines.launch
 
 /** A pending dialog on the spaces or space screen. */
@@ -99,7 +100,11 @@ internal fun SessionOverlays(ui: SessionUi, connection: HerdrConnection, onOpenP
             isAgent = true,
             onDismiss = { ui.composeFor = null },
             onQuickReply = { reply -> act("Send") { sendText(agent.paneId, reply.input) } },
-            onSend = { text -> act("Prompt") { promptAgent(agent.paneId, text) } },
+            onSend = { text, images ->
+                act("Prompt") {
+                    promptAgent(agent.paneId, ImageAttachments.withPaths(text, ImageAttachments.upload(connection, images)))
+                }
+            },
         )
     }
 
