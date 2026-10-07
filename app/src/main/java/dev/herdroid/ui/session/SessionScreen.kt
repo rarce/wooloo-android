@@ -283,7 +283,7 @@ private fun SpaceCard(
                 Column(Modifier.weight(1f)) {
                     // herdr's space row: its state mark, then the name.
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        StatusDot(workspace.agentStatus, Modifier.offset(x = (-4).dp), size = 8.dp)
+                        StatusDot(snapshot.spaceStatus(workspace), Modifier.offset(x = (-4).dp), size = 8.dp)
                         Text(
                             workspace.label.ifBlank { "Space ${workspace.number}" },
                             style = MaterialTheme.typography.titleMedium,

@@ -28,6 +28,9 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import dev.herdroid.ui.components.StatusDot
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.material.icons.outlined.Terminal
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.ContentCopy
@@ -104,7 +107,6 @@ import dev.herdroid.ui.components.ImageAttachments
 import dev.herdroid.ui.components.StatusPill
 import dev.herdroid.ui.components.fadingEdges
 import dev.herdroid.ui.session.SheetItem
-import dev.herdroid.ui.session.TabMiniature
 import dev.herdroid.ui.session.breadcrumb
 import dev.herdroid.ui.theme.HerdroidTheme
 import dev.herdroid.ui.theme.LocalStatusColors
@@ -272,9 +274,9 @@ private fun TerminalScreenContent(
                 onClosePane = { closing = true },
                 onReconnect = { controller.open() },
                 onSwipeAgent = { step ->
-                    val agents = snapshot?.let { snap -> pane?.let { snap.agentsInLayoutOrder(it.workspaceId) } }.orEmpty()
-                    val index = agents.indexOfFirst { it.paneId == paneId }
-                    agents.getOrNull(if (index < 0) 0 else (index + step).mod(agents.size))?.let { paneId = it.paneId }
+                    val panes = snapshot?.let { snap -> pane?.let { snap.panesInLayoutOrder(it.workspaceId) } }.orEmpty()
+                    val index = panes.indexOfFirst { it.paneId == paneId }
+                    panes.getOrNull(if (index < 0) 0 else (index + step).mod(panes.size))?.let { paneId = it.paneId }
                 },
             )
             ConnectionBanner(status, onRetry = { connection.retryNow() }, onEditHost = onEditHost)
@@ -538,55 +540,66 @@ private fun MenuItem(icon: androidx.compose.ui.graphics.vector.ImageVector, text
     DropdownMenuItem(text = { Text(text) }, leadingIcon = { Icon(icon, null) }, onClick = onClick)
 }
 
-/** The current tab as a miniature (tap a pane to switch), then the space's other agents, one tap away. */
+/**
+ * Every pane of the current space, agents and ordinary terminals alike, in layout order: herdr's
+ * state mark for agents, a terminal glyph for shells. The current pane is highlighted.
+ */
 @Composable
 internal fun PaneSwitcher(snapshot: SessionSnapshot, current: PaneInfo, onSelect: (String) -> Unit) {
-    val siblings = snapshot.panesOf(current.tabId)
-    // Only this space's agents: changing space means going back up to the spaces list.
-    val otherAgents = snapshot.agentsIn(current.workspaceId).filter { it.tabId != current.tabId }
-    if (siblings.size <= 1 && otherAgents.isEmpty()) return
+    // Only this space's panes: changing space means going back up to the spaces list.
+    val panes = snapshot.panesInLayoutOrder(current.workspaceId)
+    if (panes.size <= 1) return
     val listState = rememberLazyListState()
+    LaunchedEffect(current.paneId) {
+        panes.indexOfFirst { it.paneId == current.paneId }.takeIf { it >= 0 }?.let { listState.animateScrollToItem(it) }
+    }
     LazyRow(
         state = listState,
         modifier = Modifier.fadingEdges(listState),
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 10.dp),
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        if (siblings.size > 1) {
-            item(key = "tab") {
-                TabMiniature(
-                    snapshot = snapshot,
-                    tabId = current.tabId,
-                    modifier = Modifier.size(112.dp, 44.dp),
-                    highlightPaneId = current.paneId,
-                    gap = 3.dp,
-                    corner = 6.dp,
-                    onPaneClick = onSelect,
-                )
-            }
-            if (otherAgents.isNotEmpty()) {
-                item(key = "divider") {
-                    Box(Modifier.size(1.dp, 32.dp).background(MaterialTheme.colorScheme.outlineVariant))
-                }
-            }
-        }
-        items(otherAgents, key = { "a-" + it.paneId }) { agent ->
+        items(panes, key = { it.paneId }) { pane ->
+            val agent = snapshot.agentFor(pane.paneId)
+            val selected = pane.paneId == current.paneId
+            val shape = RoundedCornerShape(12.dp)
             Row(
                 Modifier
-                    .height(44.dp)
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(MaterialTheme.colorScheme.surfaceContainer)
-                    .clickable { onSelect(agent.paneId) }
-                    .padding(start = 8.dp, end = 12.dp),
+                    .height(40.dp)
+                    .clip(shape)
+                    .background(
+                        if (selected) MaterialTheme.colorScheme.surfaceContainerHighest
+                        else MaterialTheme.colorScheme.surfaceContainer
+                    )
+                    .then(if (selected) Modifier.border(1.dp, MaterialTheme.colorScheme.outline, shape) else Modifier)
+                    .clickable(enabled = !selected) { onSelect(pane.paneId) }
+                    .padding(start = 4.dp, end = 12.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-                TabMiniature(snapshot, agent.tabId, Modifier.size(28.dp, 18.dp), highlightPaneId = agent.paneId, corner = 3.dp)
-                Text(agent.displayName, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Medium, maxLines = 1)
-                snapshot.workspace(agent.workspaceId)?.label?.takeIf { it.isNotBlank() }?.let {
-                    Text(it, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+                if (agent != null) {
+                    StatusDot(agent.agentStatus, size = 9.dp)
+                } else {
+                    Box(Modifier.size(18.dp + 4.dp), contentAlignment = Alignment.Center) {
+                        Icon(
+                            Icons.Outlined.Terminal, null,
+                            Modifier.size(16.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                 }
+                Text(
+                    agent?.displayName ?: pane.displayTitle,
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                    fontFamily = if (agent == null) Mono else null,
+                    color = if (selected || agent != null) MaterialTheme.colorScheme.onSurface
+                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.widthIn(max = 160.dp),
+                )
             }
         }
     }

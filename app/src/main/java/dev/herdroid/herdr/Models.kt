@@ -199,9 +199,9 @@ data class SessionSnapshot(
     /** A space's agents, whoever needs you first. */
     fun agentsIn(workspaceId: String) = agentsByAttention.filter { it.workspaceId == workspaceId }
 
-    /** A space's agents in where they sit (tab by tab, pane by pane), stable as states change. */
-    fun agentsInLayoutOrder(workspaceId: String): List<AgentInfo> =
-        tabsOf(workspaceId).flatMap { panesOf(it.tabId) }.mapNotNull { agentFor(it.paneId) }
+    /** All of a space's panes, agents and shells, tab by tab in layout order. */
+    fun panesInLayoutOrder(workspaceId: String): List<PaneInfo> =
+        tabsOf(workspaceId).flatMap { panesOf(it.tabId) }
 
     /** The space's state rolled up from its agents, as herdr's sidebar shows it. */
     fun spaceStatus(workspace: WorkspaceInfo): AgentStatus =

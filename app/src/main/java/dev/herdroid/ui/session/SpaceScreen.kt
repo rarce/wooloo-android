@@ -243,7 +243,7 @@ private fun AttentionCard(
     ) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                TabMiniature(snapshot, agent.tabId, MiniatureRow, highlightPaneId = agent.paneId)
+                StatusDot(agent.agentStatus, size = 12.dp)
                 Column(Modifier.weight(1f)) {
                     Text(agent.displayName, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     if (detail.isNotEmpty()) {
