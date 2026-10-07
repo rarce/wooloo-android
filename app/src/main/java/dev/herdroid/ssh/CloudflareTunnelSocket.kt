@@ -230,9 +230,9 @@ class CloudflareTunnelSocket internal constructor(
             status == 404 || status == 502 || status == 503 || status == 530 -> CloudflareTunnelException(
                 if (tunnel.isQuickTunnel) {
                     "Cloudflare tunnel $host isn't running (HTTP $status). Quick tunnel hostnames change " +
-                        "every time Remote Access restarts: scan the new QR code in xherdr."
+                        "every time Remote Access restarts: scan the new QR code in wooloo."
                 } else {
-                    "Cloudflare tunnel $host isn't running (HTTP $status). Is Remote Access on in xherdr?"
+                    "Cloudflare tunnel $host isn't running (HTTP $status). Is Remote Access on in wooloo?"
                 },
                 status,
                 t,

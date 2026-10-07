@@ -27,7 +27,7 @@ data class HostProfile(
     val transport: Transport = Transport.SSH,
     /** Cloudflare Access service token client ID, when the tunnel hostname is behind Access. */
     val accessClientId: String? = null,
-    /** Host keys trusted without asking (`SHA256:…`), e.g. from xherdr's QR code. */
+    /** Host keys trusted without asking (`SHA256:…`), e.g. from wooloo's QR code. */
     val hostKeyFingerprints: List<String> = emptyList(),
     val username: String = "",
     val auth: AuthMethod = AuthMethod.KEY,

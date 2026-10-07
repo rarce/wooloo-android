@@ -20,7 +20,7 @@ no ports are opened:
 | Live terminal | `herdr --session <s> terminal session control <pane> --cols C --rows R [--takeover]` | NDJSON `terminal.frame` records (base64 ANSI) out; `terminal.input` / `resize` / `scroll` / `mouse` / `release` in |
 | Watch-only | `herdr terminal session observe <pane>` | same frames, read-only |
 
-The SSH connection is either a direct TCP port or a **Cloudflare Tunnel** (e.g. xherdr's Remote Access, or
+The SSH connection is either a direct TCP port or a **Cloudflare Tunnel** (e.g. wooloo's Remote Access, or
 `cloudflared tunnel --url ssh://localhost:22`). For a tunnel, herdroid opens a WebSocket to `wss://<hostname>/` and
 carries the raw SSH stream in binary messages, exactly like `cloudflared access ssh`, so no `cloudflared` is needed
 on the phone. Hostnames behind Cloudflare Access take a service token (`CF-Access-Client-Id` / `-Secret`).
@@ -60,7 +60,7 @@ Requires a herdr server with `terminal session control` and `remote-api-bridge`.
 - **Keys and security.** Generate an Ed25519 key on the phone (with a copyable `authorized_keys` one-liner) or
   import OpenSSH/PEM/PKCS#8 keys. Private keys and saved passwords are encrypted with the Android Keystore. Host
   keys are trust-on-first-use, with a loud warning if a key changes.
-- **Cloudflare Tunnel and QR import.** Scanning xherdr's QR code (a `herdroid://add-host?…` link) opens the host
+- **Cloudflare Tunnel and QR import.** Scanning wooloo's QR code (a `herdroid://add-host?…` link) opens the host
   editor prefilled with the tunnel hostname, user, session, herdr path and the machine's host key fingerprints,
   which are then trusted without a prompt. You still pick the key and save; a link never connects by itself.
   Quick tunnel hostnames change on every restart, so scanning a new code updates the matching machine (same

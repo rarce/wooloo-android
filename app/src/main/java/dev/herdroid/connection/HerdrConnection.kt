@@ -462,7 +462,7 @@ class HerdrConnection(
     }
 
     private suspend fun askHostKey(challenge: HostKeyChallenge): Boolean {
-        // A pinned key (from xherdr's QR code) is trusted as if the user had accepted it.
+        // A pinned key (from wooloo's QR code) is trusted as if the user had accepted it.
         val accepted = challenge.fingerprint in profile.hostKeyFingerprints ||
             (ask<Boolean> { UserPrompt.HostKey(challenge, CompletableDeferred()) } ?: false)
         if (accepted) {
@@ -540,11 +540,11 @@ class HerdrConnection(
         return when {
             chain.any { it is UnknownHostException } && quick ->
                 "Cloudflare tunnel $host no longer exists. Quick tunnel hostnames change every time " +
-                    "Remote Access restarts: scan the new QR code in xherdr."
+                    "Remote Access restarts: scan the new QR code in wooloo."
             chain.any { it is UnknownHostException } ->
                 "Can't resolve $host. Check the tunnel hostname and your network."
             chain.any { it is SocketTimeoutException || it is ConnectException } ->
-                "Cloudflare tunnel $host not reachable. Is Remote Access on in xherdr?"
+                "Cloudflare tunnel $host not reachable. Is Remote Access on in wooloo?"
             else -> null
         }
     }

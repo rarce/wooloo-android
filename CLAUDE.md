@@ -96,6 +96,6 @@ lint/format tooling configured beyond `kotlin.code.style=official`. Dependencies
   terminal's switcher and swipe stay within the current space; jumping to another space's agent goes through that
   space so back walks up the hierarchy. Notification taps arrive as `OpenRequest`s (host, space, pane) from
   `MainActivity` and deep-link the same way.
-- `herdroid://add-host?…` links (xherdr's QR code) are parsed by `data/HostLink` and open the host editor
+- `herdroid://add-host?…` links (wooloo's QR code) are parsed by `data/HostLink` and open the host editor
   prefilled (the raw link travels base64url-encoded in the `edit` route). A Cloudflare link matching a saved
   machine's label + user + session updates that machine. Links never connect by themselves.

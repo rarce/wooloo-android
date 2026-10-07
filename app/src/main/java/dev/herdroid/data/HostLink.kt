@@ -4,7 +4,7 @@ import java.net.URI
 import java.net.URLDecoder
 
 /**
- * A machine shared as `herdroid://add-host?...`, e.g. from the QR code xherdr shows:
+ * A machine shared as `herdroid://add-host?...`, e.g. from the QR code wooloo shows:
  *
  * `herdroid://add-host?transport=cloudflare&host=<hostname>&user=<user>&session=<s>&label=<name>&herdr=<path>&fp=<SHA256:…>`
  *
