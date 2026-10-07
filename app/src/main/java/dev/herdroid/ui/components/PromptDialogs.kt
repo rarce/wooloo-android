@@ -71,7 +71,7 @@ private fun HostKeyDialog(prompt: UserPrompt.HostKey, onResult: (Boolean) -> Uni
                         "The key for ${c.host} doesn't match the one you trusted before. " +
                             "This can mean the server was reinstalled — or that someone is intercepting the connection."
                     } else {
-                        "First connection to ${c.host}:${c.port}. Compare the fingerprint with " +
+                        "First connection to ${c.displayTarget}. Compare the fingerprint with " +
                             "`ssh-keygen -lf /etc/ssh/ssh_host_*_key.pub` on the machine."
                     },
                     style = MaterialTheme.typography.bodyMedium,

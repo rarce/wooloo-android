@@ -20,6 +20,11 @@ no ports are opened:
 | Live terminal | `herdr --session <s> terminal session control <pane> --cols C --rows R [--takeover]` | NDJSON `terminal.frame` records (base64 ANSI) out; `terminal.input` / `resize` / `scroll` / `mouse` / `release` in |
 | Watch-only | `herdr terminal session observe <pane>` | same frames, read-only |
 
+The SSH connection is either a direct TCP port or a **Cloudflare Tunnel** (e.g. xherdr's Remote Access, or
+`cloudflared tunnel --url ssh://localhost:22`). For a tunnel, herdroid opens a WebSocket to `wss://<hostname>/` and
+carries the raw SSH stream in binary messages, exactly like `cloudflared access ssh`, so no `cloudflared` is needed
+on the phone. Hostnames behind Cloudflare Access take a service token (`CF-Access-Client-Id` / `-Secret`).
+
 `remote-api-bridge` is the stdio bridge herdr uses for its own saved SSH machines. As herdr's docs recommend,
 events only *invalidate* state, and the authoritative view always comes from `session.snapshot`.
 Non-interactive SSH sessions often lack `~/.local/bin` on `PATH`, so the app looks for herdr in the usual install
@@ -55,7 +60,13 @@ Requires a herdr server with `terminal session control` and `remote-api-bridge`.
 - **Keys and security.** Generate an Ed25519 key on the phone (with a copyable `authorized_keys` one-liner) or
   import OpenSSH/PEM/PKCS#8 keys. Private keys and saved passwords are encrypted with the Android Keystore. Host
   keys are trust-on-first-use, with a loud warning if a key changes.
-- Pastes like `user@host:2222` are split into separate fields automatically. Several machines can be connected at once.
+- **Cloudflare Tunnel and QR import.** Scanning xherdr's QR code (a `herdroid://add-host?…` link) opens the host
+  editor prefilled with the tunnel hostname, user, session, herdr path and the machine's host key fingerprints,
+  which are then trusted without a prompt. You still pick the key and save; a link never connects by itself.
+  Quick tunnel hostnames change on every restart, so scanning a new code updates the matching machine (same
+  name, user and session) instead of adding a duplicate.
+- Pastes like `user@host:2222` (or a tunnel's `https://` URL) are split into separate fields automatically.
+  Several machines can be connected at once.
 
 ## Build
 
@@ -71,6 +82,9 @@ Optional checks:
 HERDROID_E2E_HOST=127.0.0.1 HERDROID_E2E_PORT=2222 HERDROID_E2E_USER=herd \
 HERDROID_E2E_AUTHORIZED_KEYS=/home/herd/.ssh/authorized_keys ./gradlew testDebugUnitTest --tests '*HerdrEndToEndTest*'
 
+# Through a real Cloudflare quick tunnel (`cloudflared tunnel --url ssh://localhost:22`)
+HERDROID_CF_TUNNEL_HOST=name.trycloudflare.com ./gradlew testDebugUnitTest --tests '*CloudflareTunnelSocketTest*'
+
 # Re-render the screenshots above (Robolectric native graphics, no device needed)
 ./gradlew testDebugUnitTest -Pscreenshots --tests '*ScreenshotsTest*'
 ```
@@ -81,7 +95,8 @@ Requires JDK 17+ and Android SDK 36. minSdk 26.
 
 ```
 app/src/main/java/dev/herdroid/
-  ssh/          SshSession: sshj transport, TOFU host keys, key/password/keyboard-interactive auth
+  ssh/          SshSession: sshj transport, TOFU host keys, key/password/keyboard-interactive auth;
+                CloudflareTunnelSocket: SSH over a Cloudflare Tunnel WebSocket
   herdr/        HerdrApi (socket API over remote-api-bridge), TerminalStream, models, RemoteCommand
   connection/   HerdrConnection (lifecycle, reconnect, event-driven refresh, alerts), ConnectionManager, Notifier
   terminal/     TerminalEmulator (ANSI → grid), TerminalView (Canvas renderer + IME + gestures), KeyEncoder

@@ -30,7 +30,11 @@ data class HostKeyChallenge(
     val fingerprint: String,
     /** Fingerprint previously trusted for this host, if the key changed. */
     val previousFingerprint: String?,
-)
+) {
+    /** `host:port`, without the port for a Cloudflare tunnel (it's always 443 there). */
+    val displayTarget: String
+        get() = if (port == CloudflareTunnelSocketFactory.TUNNEL_PORT) host else "$host:$port"
+}
 
 sealed interface SshCredential {
     data class Key(val provider: () -> KeyProvider) : SshCredential
@@ -43,14 +47,19 @@ class HostKeyRejectedException(message: String) : Exception(message)
 /**
  * One authenticated SSH transport. herdr traffic is multiplexed over it as independent
  * exec channels: short-lived API requests, the event subscription and terminal streams.
+ *
+ * With a [tunnel], SSH runs inside a Cloudflare Tunnel WebSocket and [port] is ignored.
  */
 class SshSession(
     private val host: String,
-    private val port: Int,
+    port: Int,
     private val username: String,
     private val knownFingerprint: (host: String, port: Int) -> String?,
+    private val tunnel: CloudflareTunnel? = null,
     private val verifyHostKey: suspend (HostKeyChallenge) -> Boolean,
 ) {
+    private val port = if (tunnel != null) CloudflareTunnelSocketFactory.TUNNEL_PORT else port
+
     private val client = SSHClient(AndroidConfig().apply {
         keepAliveProvider = KeepAliveProvider.KEEP_ALIVE
     })
@@ -60,6 +69,7 @@ class SshSession(
 
     suspend fun connect(credential: SshCredential) = withContext(Dispatchers.IO) {
         client.connectTimeout = CONNECT_TIMEOUT_MS
+        tunnel?.let { client.socketFactory = CloudflareTunnelSocketFactory(it) }
         client.addHostKeyVerifier(object : HostKeyVerifier {
             override fun verify(hostname: String, port: Int, key: PublicKey): Boolean {
                 val fingerprint = fingerprintOf(key)

@@ -157,6 +157,7 @@ fun HostsScreen(
                     app.connections.disconnect(host.id)
                     app.hosts.delete(host.id)
                     app.secrets.remove(dev.herdroid.data.SecretStore.passwordKey(host.id))
+                    app.secrets.remove(dev.herdroid.data.SecretStore.accessSecretKey(host.id))
                     pendingDelete = null
                 }) { Text("Remove", color = MaterialTheme.colorScheme.error) }
             },

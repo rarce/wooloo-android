@@ -12,7 +12,7 @@ import javax.crypto.spec.GCMParameterSpec
 
 /**
  * Small secret vault backed by an AES-GCM key that never leaves the Android Keystore.
- * Used for SSH passwords and private key material.
+ * Used for SSH passwords, Cloudflare Access secrets and private key material.
  */
 class SecretStore(context: Context) {
     private val prefs = context.getSharedPreferences("herdroid_secrets", Context.MODE_PRIVATE)
@@ -65,6 +65,7 @@ class SecretStore(context: Context) {
         private const val IV_LENGTH = 12
 
         fun passwordKey(hostId: String) = "password:$hostId"
+        fun accessSecretKey(hostId: String) = "cf-access-secret:$hostId"
         fun privateKey(keyId: String) = "key:$keyId"
     }
 }

@@ -6,6 +6,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import kotlinx.coroutines.flow.MutableStateFlow
+import dev.herdroid.data.HostLink
 import dev.herdroid.ui.HerdroidRoot
 import dev.herdroid.ui.theme.HerdroidTheme
 import dev.herdroid.ui.theme.LocalStatusIndicators
@@ -22,8 +23,12 @@ data class OpenRequest(
     val nonce: Long = System.nanoTime(),
 )
 
+/** A `herdroid://add-host` link to open in the host editor (never connects by itself). */
+data class HostLinkRequest(val link: String, val nonce: Long = System.nanoTime())
+
 class MainActivity : ComponentActivity() {
     private val openRequests = MutableStateFlow<OpenRequest?>(null)
+    private val hostLinks = MutableStateFlow<HostLinkRequest?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
@@ -35,7 +40,7 @@ class MainActivity : ComponentActivity() {
                 LocalStatusIndicators provides if (symbols) StatusIndicators.SYMBOLS else StatusIndicators.DOTS
             ) {
                 HerdroidTheme {
-                    HerdroidRoot(openRequests = openRequests)
+                    HerdroidRoot(openRequests = openRequests, hostLinks = hostLinks)
                 }
             }
         }
@@ -47,6 +52,13 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun handleIntent(intent: Intent?) {
+        val data = intent?.data
+        if (intent?.action == Intent.ACTION_VIEW && data?.scheme == HostLink.SCHEME) {
+            hostLinks.value = HostLinkRequest(data.toString())
+            // Handled once: don't reopen the editor when the activity is recreated.
+            intent.data = null
+            return
+        }
         val hostId = intent?.getStringExtra(EXTRA_HOST_ID) ?: return
         openRequests.value = OpenRequest(hostId, intent.getStringExtra(EXTRA_PANE_ID), intent.getStringExtra(EXTRA_WORKSPACE_ID))
         intent.removeExtra(EXTRA_HOST_ID)

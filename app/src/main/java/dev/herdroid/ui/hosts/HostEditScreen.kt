@@ -68,39 +68,65 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.herdroid.app
 import dev.herdroid.data.AuthMethod
+import dev.herdroid.data.HostLink
 import dev.herdroid.data.HostProfile
 import dev.herdroid.data.SecretStore
 import dev.herdroid.data.SshKeyInfo
+import dev.herdroid.data.Transport
 import dev.herdroid.ui.theme.Mono
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun HostEditScreen(hostId: String?, onDone: (savedId: String?, connect: Boolean) -> Unit, onImportKey: () -> Unit) {
+fun HostEditScreen(
+    hostId: String?,
+    onDone: (savedId: String?, connect: Boolean) -> Unit,
+    onImportKey: () -> Unit,
+    link: String? = null,
+) {
     val context = LocalContext.current
     val app = context.app
     val existing = remember(hostId) { hostId?.let { app.hosts.get(it) } }
     val keys by app.keys.keys.collectAsState()
+    // A herdroid://add-host link prefills the machine; the user still chooses how to sign in.
+    val imported = remember(link) { link?.let(HostLink::parse) }
+    val initial = remember(hostId, link) {
+        val base = existing ?: HostProfile()
+        imported?.applyTo(base) ?: base
+    }
 
-    var label by rememberSaveable { mutableStateOf(existing?.label.orEmpty()) }
-    var hostname by rememberSaveable { mutableStateOf(existing?.hostname.orEmpty()) }
-    var port by rememberSaveable { mutableStateOf((existing?.port ?: 22).toString()) }
-    var username by rememberSaveable { mutableStateOf(existing?.username.orEmpty()) }
-    var auth by rememberSaveable { mutableStateOf(existing?.auth ?: AuthMethod.KEY) }
+    var label by rememberSaveable { mutableStateOf(initial.label) }
+    var transport by rememberSaveable { mutableStateOf(initial.transport) }
+    var hostname by rememberSaveable { mutableStateOf(initial.hostname) }
+    var port by rememberSaveable { mutableStateOf(initial.port.toString()) }
+    var username by rememberSaveable { mutableStateOf(initial.username) }
+    var accessClientId by rememberSaveable { mutableStateOf(initial.accessClientId.orEmpty()) }
+    var accessSecret by rememberSaveable { mutableStateOf("") }
+    // Joined with newlines: a plain String is always saveable.
+    var pinnedKeys by rememberSaveable { mutableStateOf(initial.hostKeyFingerprints.joinToString("\n")) }
+    var auth by rememberSaveable { mutableStateOf(initial.auth) }
     var keyId by rememberSaveable { mutableStateOf(existing?.keyId ?: keys.lastOrNull()?.id) }
     var password by rememberSaveable { mutableStateOf("") }
-    var session by rememberSaveable { mutableStateOf(existing?.session ?: "default") }
-    var herdrPath by rememberSaveable { mutableStateOf(existing?.herdrPath.orEmpty()) }
-    var notifyBlocked by rememberSaveable { mutableStateOf(existing?.notifyWhenBlocked ?: true) }
-    var notifyDone by rememberSaveable { mutableStateOf(existing?.notifyWhenDone ?: true) }
+    var session by rememberSaveable { mutableStateOf(initial.session) }
+    var herdrPath by rememberSaveable { mutableStateOf(initial.herdrPath.orEmpty()) }
+    var notifyBlocked by rememberSaveable { mutableStateOf(initial.notifyWhenBlocked) }
+    var notifyDone by rememberSaveable { mutableStateOf(initial.notifyWhenDone) }
     var advanced by rememberSaveable { mutableStateOf(false) }
     var showErrors by remember { mutableStateOf(false) }
 
     val hasSavedPassword = remember(hostId) {
         hostId != null && app.secrets.get(SecretStore.passwordKey(hostId)) != null
     }
+    val hasSavedAccessSecret = remember(hostId) {
+        hostId != null && app.secrets.get(SecretStore.accessSecretKey(hostId)) != null
+    }
+    val tunnel = transport == Transport.CLOUDFLARE
 
-    // Accept "user@host:port" pasted into the host field.
+    // Accept "user@host:port" pasted into the host field, or a tunnel's https:// URL.
     fun splitTarget() {
+        if (tunnel) {
+            hostname = HostLink.normalizeHostname(hostname)
+            return
+        }
         var h = hostname.trim().removePrefix("ssh://")
         if ('@' in h) {
             if (username.isBlank()) username = h.substringBefore('@')
@@ -116,7 +142,7 @@ fun HostEditScreen(hostId: String?, onDone: (savedId: String?, connect: Boolean)
     val portValue = port.toIntOrNull()
     val hostError = hostname.isBlank()
     val userError = username.isBlank()
-    val portError = portValue == null || portValue !in 1..65535
+    val portError = !tunnel && (portValue == null || portValue !in 1..65535)
     val keyError = auth == AuthMethod.KEY && keyId == null
     val valid = !hostError && !userError && !portError && !keyError
 
@@ -126,8 +152,11 @@ fun HostEditScreen(hostId: String?, onDone: (savedId: String?, connect: Boolean)
         val profile = (existing ?: HostProfile()).copy(
             label = label.trim(),
             hostname = hostname.trim(),
-            port = portValue ?: 22,
+            port = if (tunnel) initial.port else portValue ?: 22,
             username = username.trim(),
+            transport = transport,
+            accessClientId = accessClientId.trim().takeIf { tunnel && it.isNotEmpty() },
+            hostKeyFingerprints = pinnedKeys.lines().filter { it.isNotBlank() },
             auth = auth,
             keyId = keyId,
             session = session.trim().ifEmpty { "default" },
@@ -140,6 +169,11 @@ fun HostEditScreen(hostId: String?, onDone: (savedId: String?, connect: Boolean)
             app.secrets.put(SecretStore.passwordKey(profile.id), password)
         }
         if (auth == AuthMethod.KEY) app.secrets.remove(SecretStore.passwordKey(profile.id))
+        if (profile.accessClientId == null) {
+            app.secrets.remove(SecretStore.accessSecretKey(profile.id))
+        } else if (accessSecret.isNotEmpty()) {
+            app.secrets.put(SecretStore.accessSecretKey(profile.id), accessSecret)
+        }
         app.connections.profileChanged(profile.id)
         onDone(profile.id, connect)
     }
@@ -165,15 +199,31 @@ fun HostEditScreen(hostId: String?, onDone: (savedId: String?, connect: Boolean)
                 .padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
+            imported?.let { ImportNotice(updating = existing?.displayName) }
+
             SectionTitle("Machine")
+            SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                Transport.entries.forEachIndexed { index, option ->
+                    SegmentedButton(
+                        selected = transport == option,
+                        onClick = { transport = option },
+                        shape = SegmentedButtonDefaults.itemShape(index, Transport.entries.size),
+                    ) { Text(if (option == Transport.SSH) "SSH" else "Cloudflare Tunnel") }
+                }
+            }
             OutlinedTextField(
                 value = hostname,
                 onValueChange = { hostname = it },
-                label = { Text("Host") },
-                placeholder = { Text("devbox.local or user@203.0.113.7") },
+                label = { Text(if (tunnel) "Tunnel hostname" else "Host") },
+                placeholder = { Text(if (tunnel) "name.trycloudflare.com" else "devbox.local or user@203.0.113.7") },
                 singleLine = true,
                 isError = showErrors && hostError,
-                supportingText = { Text("Tip: paste user@host:port and it's split for you") },
+                supportingText = {
+                    Text(
+                        if (tunnel) "The tunnel's public hostname; a pasted https:// URL is fine"
+                        else "Tip: paste user@host:port and it's split for you"
+                    )
+                },
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Next),
                 modifier = Modifier.fillMaxWidth().onFocusChanged { if (!it.isFocused) splitTarget() },
             )
@@ -187,15 +237,17 @@ fun HostEditScreen(hostId: String?, onDone: (savedId: String?, connect: Boolean)
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii, imeAction = ImeAction.Next),
                     modifier = Modifier.weight(1f),
                 )
-                OutlinedTextField(
-                    value = port,
-                    onValueChange = { port = it.filter(Char::isDigit).take(5) },
-                    label = { Text("Port") },
-                    singleLine = true,
-                    isError = showErrors && portError,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Next),
-                    modifier = Modifier.width(100.dp),
-                )
+                if (!tunnel) {
+                    OutlinedTextField(
+                        value = port,
+                        onValueChange = { port = it.filter(Char::isDigit).take(5) },
+                        label = { Text("Port") },
+                        singleLine = true,
+                        isError = showErrors && portError,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Next),
+                        modifier = Modifier.width(100.dp),
+                    )
+                }
             }
             OutlinedTextField(
                 value = label,
@@ -205,6 +257,33 @@ fun HostEditScreen(hostId: String?, onDone: (savedId: String?, connect: Boolean)
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
             )
+
+            if (tunnel) {
+                SectionTitle("Cloudflare Access (optional)")
+                OutlinedTextField(
+                    value = accessClientId,
+                    onValueChange = { accessClientId = it.trim() },
+                    label = { Text("Service token client ID") },
+                    singleLine = true,
+                    supportingText = { Text("Only if the hostname is protected by Cloudflare Access.") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii, imeAction = ImeAction.Next),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                if (accessClientId.isNotBlank()) {
+                    OutlinedTextField(
+                        value = accessSecret,
+                        onValueChange = { accessSecret = it.trim() },
+                        label = {
+                            Text(if (hasSavedAccessSecret) "Client secret (saved — leave empty to keep)" else "Client secret")
+                        },
+                        singleLine = true,
+                        visualTransformation = PasswordVisualTransformation(),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                        supportingText = { Text("Stored encrypted with the Android Keystore.") },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+            }
 
             SectionTitle("Sign in with")
             SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
@@ -267,6 +346,17 @@ fun HostEditScreen(hostId: String?, onDone: (savedId: String?, connect: Boolean)
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
                     )
+                    if (pinnedKeys.isNotBlank()) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text("Trusted host keys", style = MaterialTheme.typography.bodyMedium)
+                                pinnedKeys.lines().forEach {
+                                    Text(it, fontFamily = Mono, style = MaterialTheme.typography.bodySmall)
+                                }
+                            }
+                            TextButton(onClick = { pinnedKeys = "" }) { Text("Forget") }
+                        }
+                    }
                     ToggleRow("Notify when an agent needs input", notifyBlocked) { notifyBlocked = it }
                     ToggleRow("Notify when an agent finishes", notifyDone) { notifyDone = it }
                 }
@@ -281,6 +371,7 @@ fun HostEditScreen(hostId: String?, onDone: (savedId: String?, connect: Boolean)
             if (showErrors && !valid) {
                 Text(
                     when {
+                        hostError && tunnel -> "Enter the tunnel's hostname."
                         hostError -> "Enter the machine's hostname or IP."
                         userError -> "Enter the SSH user."
                         portError -> "Port must be between 1 and 65535."
@@ -292,6 +383,26 @@ fun HostEditScreen(hostId: String?, onDone: (savedId: String?, connect: Boolean)
             }
             Spacer(Modifier.navigationBarsPadding().height(24.dp))
         }
+    }
+}
+
+/** Shown when the editor was opened from a herdroid://add-host link. */
+@Composable
+private fun ImportNotice(updating: String?) {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
+        shape = RoundedCornerShape(16.dp),
+        modifier = Modifier.padding(top = 8.dp),
+    ) {
+        Text(
+            if (updating != null) {
+                "Updating $updating from a link: new address and host keys. Check them, then save."
+            } else {
+                "Machine details from a link. Check them, choose how to sign in, then save."
+            },
+            style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.padding(14.dp),
+        )
     }
 }
 

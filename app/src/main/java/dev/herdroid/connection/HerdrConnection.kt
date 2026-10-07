@@ -4,6 +4,7 @@ import dev.herdroid.data.AuthMethod
 import dev.herdroid.data.HostProfile
 import dev.herdroid.data.KnownHost
 import dev.herdroid.data.SecretStore
+import dev.herdroid.data.Transport
 import dev.herdroid.herdr.AgentInfo
 import dev.herdroid.herdr.AgentStatus
 import dev.herdroid.herdr.DirListing
@@ -13,6 +14,8 @@ import dev.herdroid.herdr.HerdrNotFoundException
 import dev.herdroid.herdr.RemoteCommand
 import dev.herdroid.herdr.SessionSnapshot
 import dev.herdroid.herdr.TerminalStream
+import dev.herdroid.ssh.CloudflareTunnel
+import dev.herdroid.ssh.CloudflareTunnelException
 import dev.herdroid.ssh.HostKeyChallenge
 import dev.herdroid.ssh.HostKeyRejectedException
 import dev.herdroid.ssh.SshAuthException
@@ -200,7 +203,11 @@ class HerdrConnection(
         while (scope.isActive) {
             try {
                 _status.value = ConnectionStatus.Connecting(
-                    if (attempt == 0) "Opening SSH to ${profile.hostname}…" else "Reconnecting…"
+                    when {
+                        attempt > 0 -> "Reconnecting…"
+                        profile.transport == Transport.CLOUDFLARE -> "Opening Cloudflare tunnel to ${profile.hostname}…"
+                        else -> "Opening SSH to ${profile.hostname}…"
+                    }
                 )
                 val session = openSsh()
                 ssh = session
@@ -415,11 +422,21 @@ class HerdrConnection(
     }
 
     private suspend fun openSsh(): SshSession {
+        val tunnel = if (profile.transport == Transport.CLOUDFLARE) {
+            CloudflareTunnel(
+                hostname = profile.hostname,
+                accessClientId = profile.accessClientId,
+                accessClientSecret = deps.secrets.get(SecretStore.accessSecretKey(profile.id)),
+            )
+        } else {
+            null
+        }
         val session = SshSession(
             host = profile.hostname,
             port = profile.port,
             username = profile.username,
             knownFingerprint = { host, port -> deps.knownHosts.find(host, port)?.fingerprint },
+            tunnel = tunnel,
             verifyHostKey = { challenge -> askHostKey(challenge) },
         )
         session.connect(credential())
@@ -445,7 +462,9 @@ class HerdrConnection(
     }
 
     private suspend fun askHostKey(challenge: HostKeyChallenge): Boolean {
-        val accepted = ask<Boolean> { UserPrompt.HostKey(challenge, CompletableDeferred()) } ?: false
+        // A pinned key (from xherdr's QR code) is trusted as if the user had accepted it.
+        val accepted = challenge.fingerprint in profile.hostKeyFingerprints ||
+            (ask<Boolean> { UserPrompt.HostKey(challenge, CompletableDeferred()) } ?: false)
         if (accepted) {
             deps.knownHosts.trust(
                 KnownHost(challenge.host, challenge.port, challenge.keyType, challenge.fingerprint)
@@ -486,6 +505,7 @@ class HerdrConnection(
         val chain = generateSequence(e) { it.cause }.toList()
         return when {
             chain.any { it is SshAuthException } -> FailureKind.AUTH
+            chain.any { it is CloudflareTunnelException && it.isAccessDenied } -> FailureKind.AUTH
             chain.any { it is HostKeyRejectedException } -> FailureKind.HOST_KEY
             chain.any { it is HerdrNotFoundException } -> FailureKind.HERDR_MISSING
             chain.any { it is HerdrApiException && it.code == "unsupported_version" } -> FailureKind.OUTDATED
@@ -500,6 +520,8 @@ class HerdrConnection(
 
     private fun friendlyMessage(e: Throwable): String {
         val chain = generateSequence(e) { it.cause }.toList()
+        chain.firstOrNull { it is CloudflareTunnelException }?.let { return it.message.orEmpty() }
+        if (profile.transport == Transport.CLOUDFLARE) tunnelMessage(chain)?.let { return it }
         chain.firstOrNull { it is UnknownHostException }?.let {
             return "Can't resolve ${profile.hostname}. Check the hostname and your network."
         }
@@ -510,6 +532,21 @@ class HerdrConnection(
             return "Timed out reaching ${profile.hostname}."
         }
         return e.message?.takeIf { it.isNotBlank() } ?: e::class.java.simpleName
+    }
+
+    private fun tunnelMessage(chain: List<Throwable>): String? {
+        val host = profile.hostname
+        val quick = host.endsWith(".trycloudflare.com", ignoreCase = true)
+        return when {
+            chain.any { it is UnknownHostException } && quick ->
+                "Cloudflare tunnel $host no longer exists. Quick tunnel hostnames change every time " +
+                    "Remote Access restarts: scan the new QR code in xherdr."
+            chain.any { it is UnknownHostException } ->
+                "Can't resolve $host. Check the tunnel hostname and your network."
+            chain.any { it is SocketTimeoutException || it is ConnectException } ->
+                "Cloudflare tunnel $host not reachable. Is Remote Access on in xherdr?"
+            else -> null
+        }
     }
 
     companion object {

@@ -18,7 +18,10 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import android.widget.Toast
+import dev.herdroid.HostLinkRequest
 import dev.herdroid.OpenRequest
+import dev.herdroid.data.HostLink
 import dev.herdroid.app
 import dev.herdroid.ui.hosts.HostEditScreen
 import dev.herdroid.ui.hosts.HostsScreen
@@ -28,11 +31,12 @@ import dev.herdroid.ui.session.SpaceScreen
 import dev.herdroid.ui.terminal.TerminalScreen
 import kotlinx.coroutines.flow.MutableStateFlow
 import java.net.URLDecoder
+import java.util.Base64
 import java.net.URLEncoder
 
 private object Routes {
     const val HOSTS = "hosts"
-    const val EDIT = "edit?hostId={hostId}"
+    const val EDIT = "edit?hostId={hostId}&link={link}"
     const val KEYS = "keys?import={import}"
     const val SETTINGS = "settings"
     const val SESSION = "session/{hostId}"
@@ -40,6 +44,11 @@ private object Routes {
     const val TERMINAL = "terminal/{hostId}/{paneId}"
 
     fun edit(hostId: String?) = if (hostId == null) "edit" else "edit?hostId=$hostId"
+    // Base64url so the link's own escaping survives navigation's query decoding untouched.
+    fun edit(hostId: String?, link: String): String {
+        val encoded = Base64.getUrlEncoder().withoutPadding().encodeToString(link.toByteArray())
+        return if (hostId == null) "edit?link=$encoded" else "edit?hostId=$hostId&link=$encoded"
+    }
     fun keys(import: Boolean = false) = "keys?import=$import"
     fun session(hostId: String) = "session/$hostId"
     fun space(hostId: String, workspaceId: String) = "space/$hostId/${URLEncoder.encode(workspaceId, "UTF-8")}"
@@ -48,10 +57,11 @@ private object Routes {
 }
 
 @Composable
-fun HerdroidRoot(openRequests: MutableStateFlow<OpenRequest?>) {
+fun HerdroidRoot(openRequests: MutableStateFlow<OpenRequest?>, hostLinks: MutableStateFlow<HostLinkRequest?>) {
     val nav = rememberNavController()
     val context = LocalContext.current
     val request by openRequests.collectAsState()
+    val hostLink by hostLinks.collectAsState()
 
     val notificationPermission = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -69,6 +79,19 @@ fun HerdroidRoot(openRequests: MutableStateFlow<OpenRequest?>) {
         nav.navigate(Routes.session(r.hostId)) { popUpTo(Routes.HOSTS) }
         r.workspaceId?.let { nav.navigate(Routes.space(r.hostId, it)) }
         r.paneId?.let { nav.navigate(Routes.terminal(r.hostId, it)) }
+    }
+
+    // herdroid://add-host link: open the editor prefilled, refreshing the matching machine if there is one.
+    LaunchedEffect(hostLink) {
+        val r = hostLink ?: return@LaunchedEffect
+        hostLinks.value = null
+        val link = HostLink.parse(r.link)
+        if (link == null) {
+            Toast.makeText(context, "That herdroid link isn't valid", Toast.LENGTH_LONG).show()
+            return@LaunchedEffect
+        }
+        val existing = link.findExisting(context.app.hosts.hosts.value)
+        nav.navigate(Routes.edit(existing?.id, r.link)) { popUpTo(Routes.HOSTS) }
     }
 
     NavHost(
@@ -90,10 +113,14 @@ fun HerdroidRoot(openRequests: MutableStateFlow<OpenRequest?>) {
         }
         composable(
             Routes.EDIT,
-            arguments = listOf(navArgument("hostId") { type = NavType.StringType; nullable = true }),
+            arguments = listOf(
+                navArgument("hostId") { type = NavType.StringType; nullable = true },
+                navArgument("link") { type = NavType.StringType; nullable = true },
+            ),
         ) { entry ->
             HostEditScreen(
                 hostId = entry.arguments?.getString("hostId"),
+                link = entry.arguments?.getString("link")?.let { String(Base64.getUrlDecoder().decode(it)) },
                 onDone = { savedId, connect ->
                     nav.popBackStack()
                     if (connect && savedId != null) {

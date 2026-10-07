@@ -19,6 +19,9 @@ Requires JDK 17+ and Android SDK 36 (minSdk 26).
 ./gradlew testDebugUnitTest --tests '*KeyEncoderTest*'     # single test class
 ./gradlew testDebugUnitTest --tests 'dev.herdroid.terminal.TerminalEmulatorTest.someMethod'
 
+# Live Cloudflare tunnel check (skipped unless set): cloudflared tunnel --url ssh://localhost:22
+HERDROID_CF_TUNNEL_HOST=name.trycloudflare.com ./gradlew testDebugUnitTest --tests '*CloudflareTunnelSocketTest*'
+
 # Re-render docs/screenshots/*.png (Robolectric native graphics; skipped unless -Pscreenshots)
 ./gradlew testDebugUnitTest -Pscreenshots --tests '*ScreenshotsTest*'
 
@@ -38,6 +41,11 @@ lint/format tooling configured beyond `kotlin.code.style=official`. Dependencies
 
 - `SshSession` wraps one sshj transport (TOFU host keys, key/password/keyboard-interactive auth) and hands out
   exec channels. Everything else multiplexes over it.
+- `HostProfile.transport` is `SSH` (TCP) or `CLOUDFLARE`: then `CloudflareTunnelSocketFactory` gives sshj a
+  `CloudflareTunnelSocket`, an OkHttp WebSocket to `wss://<hostname>/` whose binary messages are the raw SSH
+  stream (what `cloudflared access ssh` does). The port is ignored (known hosts use 443). Optional Cloudflare
+  Access service token: `accessClientId` in the profile, secret under `SecretStore.accessSecretKey(hostId)`.
+  `hostKeyFingerprints` are pinned keys trusted without the TOFU prompt.
 - `RemoteCommand` builds every remote command line. It wraps herdr invocations in `/bin/sh -c` and probes a list
   of install locations (non-interactive SSH often lacks `~/.local/bin` on PATH), exiting 127 with
   `NOT_FOUND_MESSAGE` if herdr isn't found — that's how `HerdrNotFoundException` / `FailureKind.HERDR_MISSING`
@@ -88,3 +96,6 @@ lint/format tooling configured beyond `kotlin.code.style=official`. Dependencies
   terminal's switcher and swipe stay within the current space; jumping to another space's agent goes through that
   space so back walks up the hierarchy. Notification taps arrive as `OpenRequest`s (host, space, pane) from
   `MainActivity` and deep-link the same way.
+- `herdroid://add-host?…` links (xherdr's QR code) are parsed by `data/HostLink` and open the host editor
+  prefilled (the raw link travels base64url-encoded in the `edit` route). A Cloudflare link matching a saved
+  machine's label + user + session updates that machine. Links never connect by themselves.
