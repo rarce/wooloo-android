@@ -43,6 +43,7 @@ class ConnectionService : Service() {
             .setContentTitle(if (count == 1) "Connected to 1 herd" else "Connected to $count herds")
             .setContentText("You'll be notified when an agent needs you")
             .setOngoing(true)
+            .setGroup(Notifier.GROUP_CONNECTION)
             .setContentIntent(open)
             .addAction(0, "Disconnect", disconnect)
             .build()

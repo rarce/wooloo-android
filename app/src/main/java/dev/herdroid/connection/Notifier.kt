@@ -52,6 +52,7 @@ class Notifier(private val context: Context) {
             .setCategory(NotificationCompat.CATEGORY_MESSAGE)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setAutoCancel(true)
+            .setGroup(GROUP_AGENTS)
             .setContentIntent(openPaneIntent(alert.hostId, agent.paneId, agent.workspaceId))
             .build()
         post((alert.hostId + agent.paneId).hashCode(), notification)
@@ -64,6 +65,7 @@ class Notifier(private val context: Context) {
             .setContentTitle("${profile.displayName} needs confirmation")
             .setContentText("Open Herdroid to finish connecting")
             .setAutoCancel(true)
+            .setGroup(GROUP_AGENTS)
             .setContentIntent(openPaneIntent(profile.id, null))
             .build()
         post(profile.id.hashCode(), notification)
@@ -95,5 +97,12 @@ class Notifier(private val context: Context) {
     companion object {
         const val CHANNEL_AGENTS = "agents"
         const val CHANNEL_CONNECTION = "connection"
+
+        /*
+         * Explicit groups keep Android from auto-bundling alerts with the ongoing connection
+         * notification: that bundle inherits "ongoing", so neither swipe nor "Clear all" removes them.
+         */
+        const val GROUP_AGENTS = "agents"
+        const val GROUP_CONNECTION = "connection"
     }
 }
