@@ -6,9 +6,11 @@ import dev.herdroid.data.KnownHost
 import dev.herdroid.data.SecretStore
 import dev.herdroid.herdr.AgentInfo
 import dev.herdroid.herdr.AgentStatus
+import dev.herdroid.herdr.DirListing
 import dev.herdroid.herdr.HerdrApi
 import dev.herdroid.herdr.HerdrApiException
 import dev.herdroid.herdr.HerdrNotFoundException
+import dev.herdroid.herdr.RemoteCommand
 import dev.herdroid.herdr.SessionSnapshot
 import dev.herdroid.herdr.TerminalStream
 import dev.herdroid.ssh.HostKeyChallenge
@@ -36,6 +38,9 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.runInterruptible
+import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
 import java.net.ConnectException
 import java.net.NoRouteToHostException
@@ -252,6 +257,38 @@ class HerdrConnection(
             path == "~" -> home
             path.startsWith("~/") -> home.trimEnd('/') + path.substring(1)
             else -> path
+        }
+    }
+
+    /** `/home/me/x` → `~/x`, for display; the inverse of [expandPath]. */
+    fun abbreviatePath(path: String): String {
+        val home = remoteHome?.trimEnd('/')?.takeIf { it.isNotEmpty() } ?: return path
+        return when {
+            path == home -> "~"
+            path.startsWith("$home/") -> "~" + path.substring(home.length)
+            else -> path
+        }
+    }
+
+    /** Subdirectories of [path] on the host (nearest existing ancestor if it doesn't exist). */
+    suspend fun listDirectories(path: String): Result<DirListing> {
+        val session = ssh?.takeIf { it.isConnected }
+            ?: return Result.failure(IllegalStateException("Not connected"))
+        return try {
+            val channel = session.exec(RemoteCommand.listDirectories(expandPath(path)))
+            val output = try {
+                withTimeout(15_000) { runInterruptible(Dispatchers.IO) { channel.stdout.readBytes() } }
+            } finally {
+                channel.close()
+            }
+            DirListing.parse(output.toString(Charsets.UTF_8))?.let { Result.success(it) }
+                ?: Result.failure(IllegalStateException("Couldn't list $path"))
+        } catch (e: TimeoutCancellationException) {
+            Result.failure(IllegalStateException("Listing $path timed out"))
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Result.failure(e)
         }
     }
 

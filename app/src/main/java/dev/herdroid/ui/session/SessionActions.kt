@@ -106,14 +106,9 @@ internal fun SessionOverlays(ui: SessionUi, connection: HerdrConnection, onOpenP
     val dismiss = { ui.dialog = null }
     when (val d = ui.dialog) {
         null -> Unit
-        SessionDialog.NewSpace -> FormDialog(
-            title = "New space",
-            fields = listOf(FieldSpec("Name", placeholder = "api"), FieldSpec("Directory", placeholder = "~/project (optional)")),
-            confirm = "Create",
-            onDismiss = dismiss,
-        ) { (label, cwd) ->
+        SessionDialog.NewSpace -> NewSpaceDialog(connection, onDismiss = dismiss) { label, cwd ->
             dismiss()
-            act("Create space") { createWorkspace(label, cwd.takeIf { it.isNotBlank() }?.let(connection::expandPath)) }
+            act("Create space") { createWorkspace(label, cwd?.let(connection::expandPath)) }
         }
         is SessionDialog.NewTab -> FormDialog(
             title = "New tab in ${d.workspace.label}",

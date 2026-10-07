@@ -67,6 +67,26 @@ object RemoteCommand {
             "--cols", cols.toString(), "--rows", rows.toString(),
         )
 
+    /**
+     * Lists the subdirectories of [path] (empty means home) for the directory picker. Falls back
+     * to the nearest existing ancestor, prints the resolved directory first, then one entry per
+     * line: `g/name` for git checkouts, `d/name` for other directories. Parse with [DirListing.parse].
+     */
+    fun listDirectories(path: String): String {
+        val script = """
+            d=${'$'}1
+            case "${'$'}d" in "" | "~") d=${'$'}HOME ;; "~/"*) d=${'$'}HOME/${'$'}{d#"~/"} ;; esac
+            while [ ! -d "${'$'}d" ] && [ "${'$'}d" != / ] && [ "${'$'}d" != . ]; do d=${'$'}(dirname -- "${'$'}d"); done
+            cd -- "${'$'}d" 2>/dev/null || cd || exit 2
+            pwd
+            for e in * .[!.]* ..?*; do
+              [ -d "${'$'}e" ] || continue
+              if [ -e "${'$'}e/.git" ]; then printf 'g/%s\n' "${'$'}e"; else printf 'd/%s\n' "${'$'}e"; fi
+            done
+        """.trimIndent()
+        return "/bin/sh -c " + shellQuote(script) + " sh " + shellQuote(path)
+    }
+
     private fun expandHome(path: String): String =
         if (path == "~" || path.startsWith("~/")) "\$HOME" + path.removePrefix("~") else path
 
