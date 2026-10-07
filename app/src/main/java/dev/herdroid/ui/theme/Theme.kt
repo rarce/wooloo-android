@@ -31,8 +31,8 @@ private val CorralHigh = Color(0xFF24323A)
 private val Fence = Color(0xFF2C3A40) // lines
 private val Wool = Color(0xFFE9EDE8) // text
 private val Mist = Color(0xFF8FA09A) // secondary text
-private val Lantern = Color(0xFFF59A3C) // blocked
-private val Sky = Color(0xFF67B0F0) // done
+private val Lantern = Color(0xFFF59A3C) // warm accent
+private val Sky = Color(0xFF67B0F0) // cool accent
 
 // Light
 private val Meadow = Color(0xFFE9EEEA)
@@ -129,25 +129,34 @@ data class StatusColors(
     fun isSolid(status: AgentStatus) = status == AgentStatus.BLOCKED || status == AgentStatus.DONE
 }
 
-private val DarkStatus = StatusColors(
-    blocked = Lantern,
-    done = Sky,
-    working = Wool,
-    idle = Mist,
-    unknown = Fence,
+/*
+ * herdr's own state colors (`status_color` in herdr's client): working → yellow, blocked → red,
+ * done → teal, idle → green, unknown → overlay0, from its default Catppuccin themes.
+ */
+private val DarkStatus = StatusColors( // Catppuccin Mocha
+    blocked = Color(0xFFF38BA8),
+    done = Color(0xFF94E2D5),
+    working = Color(0xFFF9E2AF),
+    idle = Color(0xFFA6E3A1),
+    unknown = Color(0xFF6C7086),
     onSolid = PastureNight,
 )
 
-private val LightStatus = StatusColors(
-    blocked = LanternDay,
-    done = SkyDay,
-    working = Ink,
-    idle = Moss,
-    unknown = Hedge,
+private val LightStatus = StatusColors( // Catppuccin Latte
+    blocked = Color(0xFFD20F39),
+    done = Color(0xFF179299),
+    working = Color(0xFFDF8E1D),
+    idle = Color(0xFF40A02B),
+    unknown = Color(0xFF9CA0B0),
     onSolid = Color.White,
 )
 
 val LocalStatusColors = staticCompositionLocalOf { DarkStatus }
+
+/** herdr's `ui.status_indicators`: color dots (● ○ ·) or distinct symbols (× ◐ ✓ ○ ·). */
+enum class StatusIndicators { DOTS, SYMBOLS }
+
+val LocalStatusIndicators = staticCompositionLocalOf { StatusIndicators.DOTS }
 
 @OptIn(ExperimentalTextApi::class)
 private fun variable(res: Int, weight: Int) =

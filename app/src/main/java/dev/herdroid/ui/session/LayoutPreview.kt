@@ -88,7 +88,9 @@ fun TabMiniature(
                     .then(
                         when {
                             solid -> Modifier.background(status.of(state!!))
-                            state == AgentStatus.WORKING -> Modifier.background(status.working.copy(alpha = 0.16f))
+                            state == AgentStatus.WORKING -> Modifier
+                                .background(status.working.copy(alpha = 0.12f))
+                                .border(1.dp, status.working.copy(alpha = 0.7f), shape)
                             else -> Modifier.border(1.dp, scheme.outlineVariant, shape)
                         }
                     )

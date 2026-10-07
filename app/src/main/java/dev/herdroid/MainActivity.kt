@@ -8,6 +8,11 @@ import androidx.activity.enableEdgeToEdge
 import kotlinx.coroutines.flow.MutableStateFlow
 import dev.herdroid.ui.HerdroidRoot
 import dev.herdroid.ui.theme.HerdroidTheme
+import dev.herdroid.ui.theme.LocalStatusIndicators
+import dev.herdroid.ui.theme.StatusIndicators
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 
 /** Deep link payload from a notification tap. */
 data class OpenRequest(
@@ -25,8 +30,13 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         handleIntent(intent)
         setContent {
-            HerdroidTheme {
-                HerdroidRoot(openRequests = openRequests)
+            val symbols by app.preferences.statusSymbols.collectAsState()
+            CompositionLocalProvider(
+                LocalStatusIndicators provides if (symbols) StatusIndicators.SYMBOLS else StatusIndicators.DOTS
+            ) {
+                HerdroidTheme {
+                    HerdroidRoot(openRequests = openRequests)
+                }
             }
         }
     }

@@ -3,6 +3,10 @@ package dev.herdroid.ui
 import android.content.Intent
 import android.provider.Settings
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
@@ -20,14 +24,20 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import dev.herdroid.BuildConfig
 import dev.herdroid.app
+import dev.herdroid.herdr.AgentStatus
 import dev.herdroid.terminal.TerminalView
+import dev.herdroid.ui.components.StatusDot
+import dev.herdroid.ui.theme.LocalStatusIndicators
+import dev.herdroid.ui.theme.StatusIndicators
 import dev.herdroid.ui.theme.Mono
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -38,6 +48,7 @@ fun SettingsScreen(onBack: () -> Unit) {
     val fontSize by prefs.fontSize.collectAsState()
     val keepScreenOn by prefs.keepScreenOn.collectAsState()
     val haptics by prefs.haptics.collectAsState()
+    val statusSymbols by prefs.statusSymbols.collectAsState()
 
     Scaffold(
         topBar = {
@@ -70,6 +81,26 @@ fun SettingsScreen(onBack: () -> Unit) {
                 headlineContent = { Text("Keep screen on in terminal") },
                 supportingContent = { Text("Handy while watching an agent work") },
                 trailingContent = { Switch(keepScreenOn, onCheckedChange = prefs::setKeepScreenOn) },
+            )
+            ListItem(
+                headlineContent = { Text("Distinct status symbols") },
+                supportingContent = {
+                    Column {
+                        Text("Like herdr's status_indicators = \"symbols\": tell states apart by shape, not only color")
+                        CompositionLocalProvider(
+                            LocalStatusIndicators provides if (statusSymbols) StatusIndicators.SYMBOLS else StatusIndicators.DOTS
+                        ) {
+                            Row(Modifier.horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically) {
+                                AgentStatus.entries.forEach { status ->
+                                    StatusDot(status, size = 9.dp)
+                                    Text(status.name.lowercase(), style = MaterialTheme.typography.labelSmall)
+                                    Spacer(Modifier.width(6.dp))
+                                }
+                            }
+                        }
+                    }
+                },
+                trailingContent = { Switch(statusSymbols, onCheckedChange = prefs::setStatusSymbols) },
             )
             ListItem(
                 headlineContent = { Text("Key haptics") },

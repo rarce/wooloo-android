@@ -16,6 +16,10 @@ class UiPreferences(private val prefs: SharedPreferences) {
     private val _haptics = MutableStateFlow(prefs.getBoolean(KEY_HAPTICS, true))
     val haptics: StateFlow<Boolean> = _haptics.asStateFlow()
 
+    /** Mirrors herdr's `ui.status_indicators = "symbols"`: tell states apart by shape too. */
+    private val _statusSymbols = MutableStateFlow(prefs.getBoolean(KEY_STATUS_SYMBOLS, false))
+    val statusSymbols: StateFlow<Boolean> = _statusSymbols.asStateFlow()
+
     fun setFontSize(sp: Float) {
         _fontSize.value = sp
         prefs.edit().putFloat(KEY_FONT, sp).apply()
@@ -31,9 +35,15 @@ class UiPreferences(private val prefs: SharedPreferences) {
         prefs.edit().putBoolean(KEY_HAPTICS, on).apply()
     }
 
+    fun setStatusSymbols(on: Boolean) {
+        _statusSymbols.value = on
+        prefs.edit().putBoolean(KEY_STATUS_SYMBOLS, on).apply()
+    }
+
     private companion object {
         const val KEY_FONT = "font_size"
         const val KEY_SCREEN_ON = "keep_screen_on"
         const val KEY_HAPTICS = "haptics"
+        const val KEY_STATUS_SYMBOLS = "status_symbols"
     }
 }

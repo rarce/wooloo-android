@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -65,6 +66,7 @@ import dev.herdroid.herdr.WorkspaceInfo
 import dev.herdroid.ui.components.ConnectionBanner
 import dev.herdroid.ui.components.ConnectionPrompts
 import dev.herdroid.ui.components.EmptyState
+import dev.herdroid.ui.components.StatusDot
 import dev.herdroid.ui.theme.LocalStatusColors
 import kotlinx.coroutines.launch
 
@@ -279,12 +281,16 @@ private fun SpaceCard(
             ) {
                 snapshot.activeTabId(workspace)?.let { TabMiniature(snapshot, it, MiniatureRow) }
                 Column(Modifier.weight(1f)) {
-                    Text(
-                        workspace.label.ifBlank { "Space ${workspace.number}" },
-                        style = MaterialTheme.typography.titleMedium,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
+                    // herdr's space row: its state mark, then the name.
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        StatusDot(workspace.agentStatus, Modifier.offset(x = (-4).dp), size = 8.dp)
+                        Text(
+                            workspace.label.ifBlank { "Space ${workspace.number}" },
+                            style = MaterialTheme.typography.titleMedium,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
                     Text(
                         line,
                         style = MaterialTheme.typography.bodySmall,
