@@ -144,7 +144,7 @@ private val DarkStatus = StatusColors( // Catppuccin Mocha
 
 private val LightStatus = StatusColors( // Catppuccin Latte
     blocked = Color(0xFFD20F39),
-    done = Color(0xFF179299),
+    done = Color(0xFF137C83), // darkened for legible white status labels
     working = Color(0xFFDF8E1D),
     idle = Color(0xFF40A02B),
     unknown = Color(0xFF9CA0B0),

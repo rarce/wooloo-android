@@ -6,6 +6,7 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -53,6 +54,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -103,6 +105,7 @@ fun SpaceScreen(
     Scaffold(
         topBar = {
             TopAppBar(
+                expandedHeight = maxOf(64.dp, 48.dp * LocalDensity.current.fontScale),
                 title = {
                     Column {
                         Text(workspace?.label ?: "Space", maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -235,17 +238,21 @@ private fun AttentionCard(
 ) {
     val status = LocalStatusColors.current
     val kind = (agent.displayAgent ?: agent.agent)?.takeIf { !it.equals(agent.displayName, ignoreCase = true) }
-    val detail = listOfNotNull(kind, tab?.displayLabel).joinToString(" in ")
+    val detail = listOfNotNull(kind, tab?.displayLabel?.takeUnless { it == agent.displayName }).joinToString(" in ")
+    val compact = agent.agentStatus == AgentStatus.DONE
     Card(
         onClick = onOpen,
         shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
     ) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Column(
+            Modifier.padding(if (compact) 12.dp else 16.dp),
+            verticalArrangement = Arrangement.spacedBy(if (compact) 8.dp else 12.dp),
+        ) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                 StatusDot(agent.agentStatus, size = 12.dp)
                 Column(Modifier.weight(1f)) {
-                    Text(agent.displayName, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(agent.displayName, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
                     if (detail.isNotEmpty()) {
                         Text(
                             detail,
@@ -258,11 +265,13 @@ private fun AttentionCard(
                 }
                 StatusPill(agent.agentStatus, agent.statusLabel())
             }
-            agent.subtitle?.let {
+            agent.subtitle?.takeUnless {
+                it == agent.displayName || it == tab?.displayLabel || it == detail
+            }?.let {
                 Text(it, style = MaterialTheme.typography.bodyLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
             // The answer is the main action and takes the agent's color; opening the pane is secondary.
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(
                     onClick = onReply,
                     shape = RoundedCornerShape(14.dp),

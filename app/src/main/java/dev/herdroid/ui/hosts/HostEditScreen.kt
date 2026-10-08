@@ -5,16 +5,22 @@ import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.selection.SelectionContainer
@@ -53,18 +59,24 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import dev.herdroid.app
 import dev.herdroid.data.AuthMethod
@@ -74,6 +86,7 @@ import dev.herdroid.data.SecretStore
 import dev.herdroid.data.SshKeyInfo
 import dev.herdroid.data.Transport
 import dev.herdroid.ui.theme.Mono
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -111,7 +124,16 @@ fun HostEditScreen(
     var notifyBlocked by rememberSaveable { mutableStateOf(initial.notifyWhenBlocked) }
     var notifyDone by rememberSaveable { mutableStateOf(initial.notifyWhenDone) }
     var advanced by rememberSaveable { mutableStateOf(false) }
-    var showErrors by remember { mutableStateOf(false) }
+    var showErrors by rememberSaveable { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    val hostFocus = remember { FocusRequester() }
+    val userFocus = remember { FocusRequester() }
+    val portFocus = remember { FocusRequester() }
+    val keyFocus = remember { FocusRequester() }
+    val hostIntoView = remember { BringIntoViewRequester() }
+    val userIntoView = remember { BringIntoViewRequester() }
+    val portIntoView = remember { BringIntoViewRequester() }
+    val keyIntoView = remember { BringIntoViewRequester() }
 
     val hasSavedPassword = remember(hostId) {
         hostId != null && app.secrets.get(SecretStore.passwordKey(hostId)) != null
@@ -143,16 +165,32 @@ fun HostEditScreen(
     val hostError = hostname.isBlank()
     val userError = username.isBlank()
     val portError = !tunnel && (portValue == null || portValue !in 1..65535)
-    val keyError = auth == AuthMethod.KEY && keyId == null
-    val valid = !hostError && !userError && !portError && !keyError
+    val keyError = auth == AuthMethod.KEY && keys.none { it.id == keyId }
 
     fun save(connect: Boolean) {
         splitTarget()
-        if (!valid) { showErrors = true; return }
+        // Validate the normalized values now, rather than values from the previous composition.
+        val normalizedPort = port.toIntOrNull()
+        val invalid = when {
+            hostname.isBlank() -> hostFocus to hostIntoView
+            username.isBlank() -> userFocus to userIntoView
+            !tunnel && (normalizedPort == null || normalizedPort !in 1..65535) -> portFocus to portIntoView
+            keyError -> keyFocus to keyIntoView
+            else -> null
+        }
+        if (invalid != null) {
+            showErrors = true
+            scope.launch {
+                withFrameNanos { }
+                invalid.first.requestFocus()
+                invalid.second.bringIntoView()
+            }
+            return
+        }
         val profile = (existing ?: HostProfile()).copy(
             label = label.trim(),
             hostname = hostname.trim(),
-            port = if (tunnel) initial.port else portValue ?: 22,
+            port = if (tunnel) initial.port else normalizedPort ?: 22,
             username = username.trim(),
             transport = transport,
             accessClientId = accessClientId.trim().takeIf { tunnel && it.isNotEmpty() },
@@ -202,13 +240,14 @@ fun HostEditScreen(
             imported?.let { ImportNotice(updating = existing?.displayName) }
 
             SectionTitle("Machine")
-            SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+            SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
                 Transport.entries.forEachIndexed { index, option ->
                     SegmentedButton(
                         selected = transport == option,
                         onClick = { transport = option },
                         shape = SegmentedButtonDefaults.itemShape(index, Transport.entries.size),
-                    ) { Text(if (option == Transport.SSH) "SSH" else "Cloudflare Tunnel") }
+                        modifier = Modifier.fillMaxHeight(),
+                    ) { Text(if (option == Transport.SSH) "SSH" else "Cloudflare Tunnel", textAlign = TextAlign.Center) }
                 }
             }
             OutlinedTextField(
@@ -220,12 +259,15 @@ fun HostEditScreen(
                 isError = showErrors && hostError,
                 supportingText = {
                     Text(
-                        if (tunnel) "The tunnel's public hostname; a pasted https:// URL is fine"
+                        if (showErrors && hostError) {
+                            if (tunnel) "Enter the tunnel's hostname." else "Enter the machine's hostname or IP."
+                        } else if (tunnel) "The tunnel's public hostname; a pasted https:// URL is fine"
                         else "Tip: paste user@host:port and it's split for you"
                     )
                 },
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Next),
-                modifier = Modifier.fillMaxWidth().onFocusChanged { if (!it.isFocused) splitTarget() },
+                modifier = Modifier.fillMaxWidth().focusRequester(hostFocus).bringIntoViewRequester(hostIntoView)
+                    .onFocusChanged { if (!it.isFocused) splitTarget() },
             )
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 OutlinedTextField(
@@ -234,8 +276,9 @@ fun HostEditScreen(
                     label = { Text("User") },
                     singleLine = true,
                     isError = showErrors && userError,
+                    supportingText = if (showErrors && userError) ({ Text("Enter the SSH user.") }) else null,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii, imeAction = ImeAction.Next),
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier.weight(1f).focusRequester(userFocus).bringIntoViewRequester(userIntoView),
                 )
                 if (!tunnel) {
                     OutlinedTextField(
@@ -244,8 +287,10 @@ fun HostEditScreen(
                         label = { Text("Port") },
                         singleLine = true,
                         isError = showErrors && portError,
+                        supportingText = if (showErrors && portError) ({ Text("Use 1–65535.") }) else null,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Next),
-                        modifier = Modifier.width(100.dp),
+                        modifier = Modifier.width(100.dp * LocalDensity.current.fontScale.coerceAtMost(1.6f))
+                            .focusRequester(portFocus).bringIntoViewRequester(portIntoView),
                     )
                 }
             }
@@ -286,13 +331,14 @@ fun HostEditScreen(
             }
 
             SectionTitle("Sign in with")
-            SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+            SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
                 AuthMethod.entries.forEachIndexed { index, method ->
                     SegmentedButton(
                         selected = auth == method,
                         onClick = { auth = method },
                         shape = SegmentedButtonDefaults.itemShape(index, AuthMethod.entries.size),
-                    ) { Text(if (method == AuthMethod.KEY) "SSH key" else "Password") }
+                        modifier = Modifier.fillMaxHeight(),
+                    ) { Text(if (method == AuthMethod.KEY) "SSH key" else "Password", textAlign = TextAlign.Center) }
                 }
             }
 
@@ -307,6 +353,8 @@ fun HostEditScreen(
                         keyId = info.id
                     },
                     onImport = onImportKey,
+                    focus = keyFocus,
+                    intoView = keyIntoView,
                 )
                 keys.firstOrNull { it.id == keyId }?.let { PublicKeyCard(it) }
             } else {
@@ -328,7 +376,7 @@ fun HostEditScreen(
                 onValueChange = { session = it.trim() },
                 label = { Text("Session") },
                 singleLine = true,
-                supportingText = { Text("Matches `herdr --session <name>`. Most setups use \"default\".") },
+                supportingText = { Text("Use the session name from your machine. Usually \"default\".") },
                 modifier = Modifier.fillMaxWidth(),
             )
 
@@ -365,22 +413,9 @@ fun HostEditScreen(
             Spacer(Modifier.height(4.dp))
             Button(
                 onClick = { save(connect = true) },
-                modifier = Modifier.fillMaxWidth().height(52.dp),
+                modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp),
                 shape = RoundedCornerShape(16.dp),
             ) { Text("Save & connect") }
-            if (showErrors && !valid) {
-                Text(
-                    when {
-                        hostError && tunnel -> "Enter the tunnel's hostname."
-                        hostError -> "Enter the machine's hostname or IP."
-                        userError -> "Enter the SSH user."
-                        portError -> "Port must be between 1 and 65535."
-                        else -> "Pick or generate an SSH key."
-                    },
-                    color = MaterialTheme.colorScheme.error,
-                    style = MaterialTheme.typography.bodySmall,
-                )
-            }
             Spacer(Modifier.navigationBarsPadding().height(24.dp))
         }
     }
@@ -433,54 +468,62 @@ private fun KeyPicker(
     onSelect: (String) -> Unit,
     onGenerate: () -> Unit,
     onImport: () -> Unit,
+    focus: FocusRequester,
+    intoView: BringIntoViewRequester,
 ) {
     var expanded by remember { mutableStateOf(false) }
     val selected = keys.firstOrNull { it.id == selectedId }
-    if (keys.isNotEmpty()) {
-        ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = it }) {
-            OutlinedTextField(
-                value = selected?.let { "${it.name} · ${it.type}" } ?: "Choose a key",
-                onValueChange = {},
-                readOnly = true,
-                isError = isError,
-                label = { Text("Key") },
-                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
-                modifier = Modifier.fillMaxWidth().menuAnchor(MenuAnchorType.PrimaryNotEditable),
-            )
-            ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-                keys.forEach { key ->
-                    DropdownMenuItem(
-                        text = {
-                            Column {
-                                Text(key.name)
-                                Text(key.fingerprint, fontFamily = Mono, style = MaterialTheme.typography.bodySmall)
-                            }
-                        },
-                        onClick = { onSelect(key.id); expanded = false },
-                    )
+    Column(Modifier.fillMaxWidth().bringIntoViewRequester(intoView), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        if (keys.isNotEmpty()) {
+            ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = it }) {
+                OutlinedTextField(
+                    value = selected?.let { "${it.name} · ${it.type}" } ?: "Choose a key",
+                    onValueChange = {},
+                    readOnly = true,
+                    isError = isError,
+                    label = { Text("Key") },
+                    supportingText = if (isError) ({ Text("Choose an SSH key.") }) else null,
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
+                    modifier = Modifier.fillMaxWidth().focusRequester(focus)
+                        .menuAnchor(MenuAnchorType.PrimaryNotEditable),
+                )
+                ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                    keys.forEach { key ->
+                        DropdownMenuItem(
+                            text = {
+                                Column {
+                                    Text(key.name)
+                                    Text(key.fingerprint, fontFamily = Mono, style = MaterialTheme.typography.bodySmall)
+                                }
+                            },
+                            onClick = { onSelect(key.id); expanded = false },
+                        )
+                    }
                 }
             }
         }
-    }
-    // Short single-line labels: at large font sizes "Generate new" wrapped inside half the width.
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        OutlinedButton(onClick = onGenerate, modifier = Modifier.weight(1f)) {
-            Icon(Icons.Outlined.AutoAwesome, null, Modifier.size(18.dp))
-            Spacer(Modifier.width(8.dp))
-            Text("New key", maxLines = 1, overflow = TextOverflow.Ellipsis)
+        // Short single-line labels: at large font sizes "Generate new" wrapped inside half the width.
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(onClick = onGenerate, modifier = Modifier.weight(1f).then(
+                if (keys.isEmpty()) Modifier.focusRequester(focus) else Modifier
+            )) {
+                Icon(Icons.Outlined.AutoAwesome, null, Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("New key", maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            OutlinedButton(onClick = onImport, modifier = Modifier.weight(1f)) {
+                Icon(Icons.Outlined.FileDownload, null, Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Import", maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
         }
-        OutlinedButton(onClick = onImport, modifier = Modifier.weight(1f)) {
-            Icon(Icons.Outlined.FileDownload, null, Modifier.size(18.dp))
-            Spacer(Modifier.width(8.dp))
-            Text("Import", maxLines = 1, overflow = TextOverflow.Ellipsis)
+        if (isError && keys.isEmpty()) {
+            Text(
+                "Generate a key here, then add it to the machine's ~/.ssh/authorized_keys.",
+                color = MaterialTheme.colorScheme.error,
+                style = MaterialTheme.typography.bodySmall,
+            )
         }
-    }
-    if (isError && keys.isEmpty()) {
-        Text(
-            "Generate a key here, then add it to the machine's ~/.ssh/authorized_keys.",
-            color = MaterialTheme.colorScheme.error,
-            style = MaterialTheme.typography.bodySmall,
-        )
     }
 }
 
@@ -505,7 +548,7 @@ fun PublicKeyCard(key: SshKeyInfo) {
             SelectionContainer {
                 Text(command, fontFamily = Mono, style = MaterialTheme.typography.bodySmall)
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 TextButton(onClick = {
                     clipboard.setText(AnnotatedString(command))
                     Toast.makeText(context, "Command copied", Toast.LENGTH_SHORT).show()

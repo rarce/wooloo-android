@@ -86,7 +86,7 @@ fun SettingsScreen(onBack: () -> Unit) {
                 headlineContent = { Text("Distinct status symbols") },
                 supportingContent = {
                     Column {
-                        Text("Like herdr's status_indicators = \"symbols\": tell states apart by shape, not only color")
+                        Text("Use a different shape for each state, alongside its color")
                         CompositionLocalProvider(
                             LocalStatusIndicators provides if (statusSymbols) StatusIndicators.SYMBOLS else StatusIndicators.DOTS
                         ) {
@@ -121,8 +121,7 @@ fun SettingsScreen(onBack: () -> Unit) {
                 supportingContent = {
                     Text(
                         "Herdroid ${BuildConfig.VERSION_NAME}\n" +
-                            "Speaks herdr's socket API through `herdr remote-api-bridge` and streams panes with " +
-                            "`herdr terminal session control`, all over one SSH connection.",
+                            "Watch your agents, reply to them and open their terminals over SSH.",
                     )
                 },
             )

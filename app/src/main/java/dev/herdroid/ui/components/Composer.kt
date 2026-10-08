@@ -18,6 +18,8 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.input.TextFieldState
@@ -161,7 +163,8 @@ fun ComposerSheet(
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp)
                 .navigationBarsPadding()
-                .imePadding(),
+                .imePadding()
+                .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -173,6 +176,11 @@ fun ComposerSheet(
                     AssistChip(onClick = { onQuickReply(reply) }, label = { Text(reply.label) })
                 }
             }
+            Text(
+                "Quick keys send immediately to the pane.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
             if (images.isNotEmpty() || preparing > 0) {
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     items(images, key = { it.path }) { file ->
@@ -211,9 +219,9 @@ fun ComposerSheet(
             }
             Text(
                 when {
-                    images.isNotEmpty() -> "Images are uploaded to a private temp folder on the host and their paths added to the message."
-                    isAgent -> "Sent with herdr's agent prompt, like `herdr agent prompt`."
-                    else -> "Typed into the pane followed by Enter."
+                    images.isNotEmpty() -> "Images are sent to this machine with your message."
+                    isAgent -> "Send a message to this agent."
+                    else -> "Runs in this pane when you send."
                 },
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,

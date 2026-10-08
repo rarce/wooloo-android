@@ -53,6 +53,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -97,6 +98,7 @@ fun SessionScreen(
     Scaffold(
         topBar = {
             TopAppBar(
+                expandedHeight = maxOf(64.dp, 48.dp * LocalDensity.current.fontScale),
                 title = {
                     Column {
                         Text(connection.profile.displayName, maxLines = 1, overflow = TextOverflow.Ellipsis)

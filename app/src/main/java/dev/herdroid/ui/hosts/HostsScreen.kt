@@ -6,6 +6,7 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -14,7 +15,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -25,6 +25,7 @@ import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Dns
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.Key
+import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
@@ -193,78 +194,81 @@ private fun HostCard(
         ),
         border = if (connection == null) BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant) else null,
     ) {
-        Box {
-            Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text(
                         host.displayName,
                         style = MaterialTheme.typography.titleLarge,
-                        maxLines = 1,
+                        maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f),
                     )
                     Text(
                         host.target + if (host.session != "default") " ${host.session}" else "",
                         style = MaterialTheme.typography.bodySmall,
                         fontFamily = Mono,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.widthIn(max = 180.dp),
-                    )
-                }
-                // The whole herd at a glance; dimmed while it's only the last known state.
-                if (snapshot != null && snapshot.workspaces.isNotEmpty()) {
-                    Row(Modifier.alpha(if (live) 1f else 0.45f), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        snapshot.workspaces.take(5).forEach { workspace ->
-                            snapshot.activeTabId(workspace)?.let { TabMiniature(snapshot, it, MiniatureRow) }
-                        }
-                    }
-                }
-                if (live && snapshot != null) {
-                    val agents = snapshot.agents
-                    val needing = agents.count { it.agentStatus == AgentStatus.BLOCKED }
-                    val done = agents.count { it.agentStatus == AgentStatus.DONE }
-                    val working = agents.count { it.agentStatus == AgentStatus.WORKING }
-                    Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                        if (needing > 0) Summary(if (needing == 1) "1 needs you" else "$needing need you", statusColors.blocked)
-                        if (done > 0) Summary("$done done", statusColors.done)
-                        if (working > 0) Summary("$working working", MaterialTheme.colorScheme.onSurfaceVariant)
-                        if (needing + done + working == 0) {
-                            Summary(
-                                "${count(snapshot.workspaces.size, "workspace")}, no agents busy",
-                                MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                    }
-                } else {
-                    Text(
-                        statusLine(status, host),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = if (status is ConnectionStatus.Failed) MaterialTheme.colorScheme.error
-                        else MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
-            }
-            DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                DropdownMenuItem(
-                    text = { Text("Edit") },
-                    leadingIcon = { Icon(Icons.Outlined.Edit, null) },
-                    onClick = { menu = false; onEdit() },
-                )
-                if (connection != null) {
-                    DropdownMenuItem(
-                        text = { Text("Disconnect") },
-                        leadingIcon = { Icon(Icons.AutoMirrored.Outlined.Logout, null) },
-                        onClick = { menu = false; onDisconnect() },
-                    )
+                Box {
+                    IconButton(onClick = { menu = true }) {
+                        Icon(Icons.Outlined.MoreVert, "Machine actions for ${host.displayName}")
+                    }
+                    DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                        DropdownMenuItem(
+                            text = { Text("Edit") },
+                            leadingIcon = { Icon(Icons.Outlined.Edit, null) },
+                            onClick = { menu = false; onEdit() },
+                        )
+                        if (connection != null) {
+                            DropdownMenuItem(
+                                text = { Text("Disconnect") },
+                                leadingIcon = { Icon(Icons.AutoMirrored.Outlined.Logout, null) },
+                                onClick = { menu = false; onDisconnect() },
+                            )
+                        }
+                        DropdownMenuItem(
+                            text = { Text("Remove") },
+                            leadingIcon = { Icon(Icons.Outlined.Delete, null) },
+                            onClick = { menu = false; onDelete() },
+                        )
+                    }
                 }
-                DropdownMenuItem(
-                    text = { Text("Remove") },
-                    leadingIcon = { Icon(Icons.Outlined.Delete, null) },
-                    onClick = { menu = false; onDelete() },
+            }
+            // The whole herd at a glance; dimmed while it's only the last known state.
+            if (snapshot != null && snapshot.workspaces.isNotEmpty()) {
+                Row(Modifier.alpha(if (live) 1f else 0.45f), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    snapshot.workspaces.take(5).forEach { workspace ->
+                        snapshot.activeTabId(workspace)?.let { TabMiniature(snapshot, it, MiniatureRow) }
+                    }
+                }
+            }
+            if (live && snapshot != null) {
+                val agents = snapshot.agents
+                val needing = agents.count { it.agentStatus == AgentStatus.BLOCKED }
+                val done = agents.count { it.agentStatus == AgentStatus.DONE }
+                val working = agents.count { it.agentStatus == AgentStatus.WORKING }
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    if (needing > 0) Summary(if (needing == 1) "1 needs you" else "$needing need you", statusColors.blocked)
+                    if (done > 0) Summary("$done done", statusColors.done)
+                    if (working > 0) Summary("$working working", MaterialTheme.colorScheme.onSurfaceVariant)
+                    if (needing + done + working == 0) {
+                        Summary(
+                            "${count(snapshot.workspaces.size, "workspace")}, no agents busy",
+                            MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            } else {
+                Text(
+                    statusLine(status, host),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = if (status is ConnectionStatus.Failed) MaterialTheme.colorScheme.error
+                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
         }
