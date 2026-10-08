@@ -199,7 +199,7 @@ private val AppTypography = Typography().let { base ->
 val MonoSmall = TextStyle(fontFamily = Mono, fontSize = 12.sp)
 
 @Composable
-fun HerdroidTheme(darkTheme: Boolean = isSystemInDarkTheme(), content: @Composable () -> Unit) {
+fun WoolooMobileTheme(darkTheme: Boolean = isSystemInDarkTheme(), content: @Composable () -> Unit) {
     val colors = if (darkTheme) DarkColors else LightColors
     androidx.compose.runtime.CompositionLocalProvider(
         LocalStatusColors provides if (darkTheme) DarkStatus else LightStatus

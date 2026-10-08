@@ -6,7 +6,10 @@ import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.RectF
 import android.graphics.Typeface
+import android.text.Editable
 import android.text.InputType
+import android.text.Selection
+import android.graphics.Rect
 import android.util.TypedValue
 import android.view.GestureDetector
 import android.view.KeyEvent
@@ -15,6 +18,8 @@ import android.view.ScaleGestureDetector
 import android.view.View
 import android.view.inputmethod.BaseInputConnection
 import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.ExtractedText
+import android.view.inputmethod.ExtractedTextRequest
 import android.view.inputmethod.InputConnection
 import android.view.inputmethod.InputMethodManager
 import android.widget.OverScroller
@@ -27,16 +32,19 @@ import kotlin.math.roundToInt
 class ModifierState {
     var ctrl = false
     var alt = false
+    var shift = false
     var ctrlLocked = false
+    var shiftLocked = false
     var altLocked = false
     var onChange: (() -> Unit)? = null
 
     /** Returns the active modifiers and releases one-shot ones. */
-    fun consume(): Pair<Boolean, Boolean> {
-        val result = ctrl to alt
+    fun consume(): Triple<Boolean, Boolean, Boolean> {
+        val result = Triple(ctrl, alt, shift)
         var changed = false
         if (ctrl && !ctrlLocked) { ctrl = false; changed = true }
         if (alt && !altLocked) { alt = false; changed = true }
+        if (shift && !shiftLocked) { shift = false; changed = true }
         if (changed) onChange?.invoke()
         return result
     }
@@ -74,6 +82,39 @@ class TerminalView(
         set(value) { field = value; invalidate() }
 
     var inputEnabled = true
+        set(value) {
+            if (field == value) return
+            field = value
+            if (!value) { hardwareModifiers = 0; resetInputContext(force = true) }
+            restoreInputFocus()
+        }
+
+    // Enabled only by the resumed, live pane, with no dialog or composer open.
+    var retainInputFocus = false
+        set(value) { field = value; restoreInputFocus() }
+    private val restoreFocus = Runnable {
+        if (retainInputFocus && inputEnabled && isAttachedToWindow && hasWindowFocus() && !hasFocus()) {
+            requestFocus()
+        }
+    }
+
+    fun restoreInputFocus() {
+        removeCallbacks(restoreFocus)
+        if (retainInputFocus && inputEnabled) post(restoreFocus)
+    }
+
+    override fun onFocusChanged(gainFocus: Boolean, direction: Int, previouslyFocusedRect: Rect?) {
+        super.onFocusChanged(gainFocus, direction, previouslyFocusedRect)
+        if (!gainFocus) { hardwareModifiers = 0; restoreInputFocus() }
+    }
+
+    override fun onWindowFocusChanged(hasWindowFocus: Boolean) {
+        super.onWindowFocusChanged(hasWindowFocus)
+        if (hasWindowFocus) restoreInputFocus() else hardwareModifiers = 0
+    }
+
+    private var hardwareModifiers = 0
+    private var inputConnection: TerminalInputConnection? = null
 
     private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.SUBPIXEL_TEXT_FLAG).apply {
         typeface = Typeface.MONOSPACE
@@ -127,6 +168,7 @@ class TerminalView(
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         super.onSizeChanged(w, h, oldw, oldh)
         recomputeGrid()
+        restoreInputFocus()
     }
 
     private fun recomputeGrid() {
@@ -145,10 +187,14 @@ class TerminalView(
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
         postDelayed(blinkRunnable, 530)
+        restoreInputFocus()
     }
 
     override fun onDetachedFromWindow() {
         removeCallbacks(blinkRunnable)
+        removeCallbacks(restoreFocus)
+        inputConnection?.closeConnection()
+        hardwareModifiers = 0
         super.onDetachedFromWindow()
     }
 
@@ -425,36 +471,76 @@ class TerminalView(
 
     override fun onCheckIsTextEditor(): Boolean = inputEnabled
 
-    override fun onCreateInputConnection(outAttrs: EditorInfo): InputConnection {
-        outAttrs.inputType = InputType.TYPE_CLASS_TEXT or
-            InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD or
-            InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+    override fun onCreateInputConnection(outAttrs: EditorInfo): InputConnection? {
+        if (!inputEnabled) return null
+        outAttrs.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
         outAttrs.imeOptions = EditorInfo.IME_FLAG_NO_EXTRACT_UI or
-            EditorInfo.IME_FLAG_NO_FULLSCREEN or
-            EditorInfo.IME_ACTION_NONE
-        return TerminalInputConnection()
+            EditorInfo.IME_FLAG_NO_FULLSCREEN or EditorInfo.IME_ACTION_NONE
+        outAttrs.initialSelStart = 0
+        outAttrs.initialSelEnd = 0
+        inputConnection?.closeConnection()
+        return TerminalInputConnection().also { inputConnection = it }
     }
 
-    private fun sendText(text: String) {
+    private fun emitText(text: String) {
         if (!inputEnabled || text.isEmpty()) return
-        val (ctrl, alt) = modifiers.consume()
-        listener?.onInput(KeyEncoder.text(text, ctrl, alt))
+        val (ctrl, alt, shift) = modifiers.consume()
+        listener?.onInput(KeyEncoder.text(if (shift) text.uppercase() else text,
+            ctrl || hardwareModifiers and KeyEvent.META_CTRL_ON != 0,
+            alt || hardwareModifiers and KeyEvent.META_ALT_ON != 0))
+    }
+
+    /** Bar text and paste invalidate the IME's local context, just like cursor movement. */
+    fun sendText(text: String) {
+        if (!inputEnabled) return
+        resetInputContext()
+        emitText(text)
+        restoreInputFocus()
+    }
+
+    fun prepareModifierInput() {
+        resetInputContext()
+        restoreInputFocus()
+    }
+
+    fun sendPaste(text: String) {
+        if (!inputEnabled || text.isEmpty()) return
+        resetInputContext()
+        listener?.onInput("\u001b[200~$text\u001b[201~")
+        restoreInputFocus()
     }
 
     fun sendSpecial(key: SpecialKey, shift: Boolean = false) {
         if (!inputEnabled) return
-        val (ctrl, alt) = modifiers.consume()
-        listener?.onInput(KeyEncoder.special(key, ctrl, alt, shift))
+        resetInputContext()
+        val (ctrl, alt, stickyShift) = modifiers.consume()
+        listener?.onInput(KeyEncoder.special(key,
+            ctrl || hardwareModifiers and KeyEvent.META_CTRL_ON != 0,
+            alt || hardwareModifiers and KeyEvent.META_ALT_ON != 0,
+            shift || stickyShift || hardwareModifiers and KeyEvent.META_SHIFT_ON != 0))
+        restoreInputFocus()
     }
 
-    private fun sendBackspaces(count: Int) {
-        if (count <= 0) return
-        repeat(count) { sendSpecial(SpecialKey.BACKSPACE) }
+    private fun resetInputContext(force: Boolean = false) {
+        val connection = inputConnection ?: return
+        if (!force && connection.editable.isEmpty()) return
+        connection.closeConnection()
+        inputConnection = null
+        (context.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager).restartInput(this)
+    }
+
+    private fun emitSpecial(key: SpecialKey, count: Int = 1) {
+        repeat(count.coerceAtLeast(0)) { listener?.onInput(KeyEncoder.special(key)) }
     }
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
         if (!inputEnabled) return super.onKeyDown(keyCode, event)
         if (keyCode == KeyEvent.KEYCODE_BACK) return super.onKeyDown(keyCode, event)
+        val modifierMask = modifierMask(keyCode)
+        if (modifierMask != 0) {
+            hardwareModifiers = hardwareModifiers or modifierMask
+            return true
+        }
         val special = when (keyCode) {
             KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_NUMPAD_ENTER -> SpecialKey.ENTER
             KeyEvent.KEYCODE_DEL -> SpecialKey.BACKSPACE
@@ -474,73 +560,145 @@ class TerminalView(
                 SpecialKey.entries[SpecialKey.F1.ordinal + (keyCode - KeyEvent.KEYCODE_F1)]
             else -> null
         }
-        val ctrl = event.isCtrlPressed || modifiers.ctrl
-        val alt = event.isAltPressed || modifiers.alt
+        val ctrl = event.isCtrlPressed || modifiers.ctrl || hardwareModifiers and KeyEvent.META_CTRL_ON != 0
+        val alt = event.isAltPressed || modifiers.alt || hardwareModifiers and KeyEvent.META_ALT_ON != 0
         if (special != null) {
-            modifiers.consume()
-            listener?.onInput(KeyEncoder.special(special, ctrl, alt, event.isShiftPressed))
+            resetInputContext()
+            val (_, _, shift) = modifiers.consume()
+            listener?.onInput(KeyEncoder.special(special, ctrl, alt, event.isShiftPressed || shift || hardwareModifiers and KeyEvent.META_SHIFT_ON != 0))
             return true
         }
         val unicode = event.getUnicodeChar(event.metaState and (KeyEvent.META_CTRL_MASK or KeyEvent.META_ALT_MASK).inv())
         if (unicode != 0) {
-            modifiers.consume()
-            listener?.onInput(KeyEncoder.text(String(Character.toChars(unicode)), ctrl, alt))
+            resetInputContext()
+            val (_, _, shift) = modifiers.consume()
+            val text = String(Character.toChars(unicode))
+            listener?.onInput(KeyEncoder.text(if (shift) text.uppercase() else text, ctrl, alt))
             return true
         }
         return super.onKeyDown(keyCode, event)
     }
 
-    /**
-     * Converts IME editing operations into terminal keystrokes. Composing text is mirrored to
-     * the PTY as it changes, so the remote line always matches what the keyboard shows.
-     */
-    private inner class TerminalInputConnection : BaseInputConnection(this@TerminalView, false) {
-        private var composing = ""
+    private fun modifierMask(keyCode: Int): Int = when (keyCode) {
+        KeyEvent.KEYCODE_SHIFT_LEFT, KeyEvent.KEYCODE_SHIFT_RIGHT -> KeyEvent.META_SHIFT_ON
+        KeyEvent.KEYCODE_CTRL_LEFT, KeyEvent.KEYCODE_CTRL_RIGHT -> KeyEvent.META_CTRL_ON
+        KeyEvent.KEYCODE_ALT_LEFT, KeyEvent.KEYCODE_ALT_RIGHT -> KeyEvent.META_ALT_ON
+        else -> 0
+    }
 
-        override fun commitText(text: CharSequence, newCursorPosition: Int): Boolean {
-            replaceComposing(text.toString())
-            composing = ""
-            return true
+    override fun onKeyUp(keyCode: Int, event: KeyEvent): Boolean {
+        val mask = modifierMask(keyCode)
+        if (mask == 0) return super.onKeyUp(keyCode, event)
+        hardwareModifiers = hardwareModifiers and mask.inv()
+        return true
+    }
+
+    /** Editable context lets IMEs revise dictation and query the text/cursor coherently. */
+    private inner class TerminalInputConnection : BaseInputConnection(this@TerminalView, true) {
+        override fun getEditable(): Editable = requireNotNull(super.getEditable())
+
+        private var sentText = ""
+        private var sentCursor = 0
+        private var closed = false
+        private var extractedToken: Int? = null
+
+        override fun closeConnection() {
+            closed = true
+            super.closeConnection()
         }
 
-        override fun setComposingText(text: CharSequence, newCursorPosition: Int): Boolean {
-            replaceComposing(text.toString())
-            composing = text.toString()
-            return true
+        private fun edit(operation: () -> Boolean): Boolean {
+            if (closed || !inputEnabled) return false
+            val controlInput = modifiers.ctrl || modifiers.alt ||
+                hardwareModifiers and (KeyEvent.META_CTRL_ON or KeyEvent.META_ALT_ON) != 0
+            val result = operation()
+            synchronizeText()
+            if (controlInput || editable.any { it == '\n' || it == '\r' }) resetInputContext()
+            return result
         }
+
+        override fun commitText(text: CharSequence, newCursorPosition: Int) =
+            edit { super.commitText(text, newCursorPosition) }
+
+        override fun setComposingText(text: CharSequence, newCursorPosition: Int) =
+            edit { super.setComposingText(text, newCursorPosition) }
 
         override fun finishComposingText(): Boolean {
-            composing = ""
-            return true
+            if (closed) return false
+            return super.finishComposingText().also { notifySelection() }
         }
 
+        override fun setSelection(start: Int, end: Int) = edit { super.setSelection(start, end) }
+
         override fun deleteSurroundingText(beforeLength: Int, afterLength: Int): Boolean {
-            if (composing.isNotEmpty()) {
-                val keep = (composing.length - beforeLength).coerceAtLeast(0)
-                replaceComposing(composing.take(keep))
-                composing = composing.take(keep)
-            } else {
-                // Some keyboards send (0, 0) for a backspace on an empty buffer.
-                sendBackspaces(max(1, beforeLength))
+            if (closed || !inputEnabled || beforeLength < 0 || afterLength < 0) return false
+            if (editable.isEmpty()) {
+                // An empty local context does not mean the remote prompt is empty.
+                emitSpecial(SpecialKey.BACKSPACE, max(1, beforeLength))
+                emitSpecial(SpecialKey.DELETE, afterLength)
+                return true
             }
-            return true
+            return edit { super.deleteSurroundingText(beforeLength, afterLength) }
+        }
+
+        override fun deleteSurroundingTextInCodePoints(beforeLength: Int, afterLength: Int): Boolean {
+            if (closed || !inputEnabled || beforeLength < 0 || afterLength < 0) return false
+            if (editable.isEmpty()) return deleteSurroundingText(beforeLength, afterLength)
+            return edit { super.deleteSurroundingTextInCodePoints(beforeLength, afterLength) }
         }
 
         override fun sendKeyEvent(event: KeyEvent): Boolean {
-            if (event.action == KeyEvent.ACTION_DOWN) {
-                onKeyDown(event.keyCode, event)
+            if (closed || !inputEnabled) return false
+            return when (event.action) {
+                KeyEvent.ACTION_DOWN -> onKeyDown(event.keyCode, event)
+                KeyEvent.ACTION_UP -> onKeyUp(event.keyCode, event)
+                else -> false
             }
-            return true
         }
 
-        private fun replaceComposing(next: String) {
-            val old = composing
-            val common = old.commonPrefixWith(next).length
-            sendBackspaces(old.codePointCount(common, old.length))
-            sendText(next.substring(common))
+        override fun getExtractedText(request: ExtractedTextRequest?, flags: Int): ExtractedText {
+            if (flags and InputConnection.GET_EXTRACTED_TEXT_MONITOR != 0) extractedToken = request?.token
+            return ExtractedText().apply {
+                text = editable.toString()
+                startOffset = 0
+                partialStartOffset = -1
+                partialEndOffset = -1
+                selectionStart = Selection.getSelectionStart(editable).coerceAtLeast(0)
+                selectionEnd = Selection.getSelectionEnd(editable).coerceAtLeast(0)
+            }
+        }
+
+        private fun moveCursor(target: Int) {
+            if (target > sentCursor) emitSpecial(SpecialKey.RIGHT, sentText.codePointCount(sentCursor, target))
+            if (target < sentCursor) emitSpecial(SpecialKey.LEFT, sentText.codePointCount(target, sentCursor))
+            sentCursor = target
+        }
+
+        private fun synchronizeText() {
+            val next = editable.toString()
+            if (next != sentText) {
+                var common = sentText.commonPrefixWith(next).length
+                // A UTF-16 prefix can split two different emoji at their shared high surrogate.
+                if (common > 0 && common < sentText.length && sentText[common - 1].isHighSurrogate()) common--
+                moveCursor(sentText.length)
+                emitSpecial(SpecialKey.BACKSPACE, sentText.codePointCount(common, sentText.length))
+                emitText(next.substring(common))
+                sentText = next
+                sentCursor = next.length
+            }
+            moveCursor(Selection.getSelectionEnd(editable).coerceIn(0, next.length))
+            notifySelection()
+        }
+
+        private fun notifySelection() {
+            val imm = context.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+            imm.updateSelection(this@TerminalView, Selection.getSelectionStart(editable),
+                Selection.getSelectionEnd(editable), getComposingSpanStart(editable), getComposingSpanEnd(editable))
+            extractedToken?.let { imm.updateExtractedText(this@TerminalView, it, getExtractedText(null, 0)) }
         }
 
         override fun performEditorAction(actionCode: Int): Boolean {
+            if (closed || !inputEnabled) return false
             sendSpecial(SpecialKey.ENTER)
             return true
         }

@@ -28,7 +28,7 @@ class Notifier(private val context: Context) {
         manager.createNotificationChannel(
             NotificationChannel(CHANNEL_CONNECTION, "Connection", NotificationManager.IMPORTANCE_LOW)
                 .apply {
-                    description = "Shows while Herdroid keeps SSH connections open"
+                    description = "Shows while ${context.getString(R.string.app_name)} keeps SSH connections open"
                     setShowBadge(false)
                 }
         )
@@ -63,7 +63,7 @@ class Notifier(private val context: Context) {
         val notification = NotificationCompat.Builder(context, CHANNEL_AGENTS)
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle("${profile.displayName} needs confirmation")
-            .setContentText("Open Herdroid to finish connecting")
+            .setContentText("Open ${context.getString(R.string.app_name)} to finish connecting")
             .setAutoCancel(true)
             .setGroup(GROUP_AGENTS)
             .setContentIntent(openPaneIntent(profile.id, null))

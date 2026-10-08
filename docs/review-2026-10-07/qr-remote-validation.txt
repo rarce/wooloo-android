@@ -1,0 +1,22 @@
+Remote Access validation — 2026-10-07
+
+Camera QR → Cloudflare WebSocket → SSH authentication → herdr session.snapshot.
+The real tunnel QR loaded wooloo-mobile-qr-review in the Android emulator.
+The original authorized mobile SSH key was reused; authorized_keys was unchanged.
+The connected profile reused the original key ID and stored lastConnectedAt only after receiving the session snapshot.
+
+Cleanup completed: temporary tunnel stopped, isolated herdr server stopped, review profile and tunnel host key removed. Original machine and SSH identity preserved.
+The unapproved test key in the separate AVD was never authorized and was deleted with its temporary app data.
+
+CloudflareTunnelSocketTest: 11 tests, 0 failures, 0 errors, 0 skipped
+stoppedQuickTunnelAsksForTheNewQrCode: passed
+stoppedNamedTunnelPointsAtRemoteAccess: passed
+largeWritesAreSplitIntoMessages: passed
+liveTunnelSpeaksSsh: passed
+readHonorsSoTimeout: passed
+serverCloseIsEndOfStream: passed
+sendsAccessServiceTokenHeaders: passed
+bytesRoundTripBothWays: passed
+accessRejectionIsReported: passed
+closeUnblocksAPendingRead: passed
+liveTunnelCarriesSshj: passed

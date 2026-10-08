@@ -10,14 +10,14 @@ import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
-import dev.herdroid.HerdroidApp
+import dev.herdroid.WoolooMobileApp
 import dev.herdroid.MainActivity
 import dev.herdroid.R
 import dev.herdroid.connection.Notifier
 
 /**
  * Keeps the process alive while SSH connections are open so agent alerts keep arriving
- * with the screen off. It does no work itself; connections live in [HerdroidApp].
+ * with the screen off. It does no work itself; connections live in [WoolooMobileApp].
  */
 class ConnectionService : Service() {
 
@@ -25,7 +25,7 @@ class ConnectionService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_DISCONNECT_ALL) {
-            (application as HerdroidApp).connections.disconnectAll()
+            (application as WoolooMobileApp).connections.disconnectAll()
             stopSelf()
             return START_NOT_STICKY
         }

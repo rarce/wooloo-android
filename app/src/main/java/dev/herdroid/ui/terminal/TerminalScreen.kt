@@ -88,6 +88,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.core.view.WindowCompat
 import dev.herdroid.app
 import dev.herdroid.connection.ConnectionStatus
@@ -108,7 +110,7 @@ import dev.herdroid.ui.components.StatusPill
 import dev.herdroid.ui.components.fadingEdges
 import dev.herdroid.ui.session.SheetItem
 import dev.herdroid.ui.session.breadcrumb
-import dev.herdroid.ui.theme.HerdroidTheme
+import dev.herdroid.ui.theme.WoolooMobileTheme
 import dev.herdroid.ui.theme.LocalStatusColors
 import dev.herdroid.ui.theme.Mono
 import kotlinx.coroutines.launch
@@ -138,7 +140,7 @@ fun TerminalScreen(
             lightNavigation?.let { bars.isAppearanceLightNavigationBars = it }
         }
     }
-    HerdroidTheme(darkTheme = true) {
+    WoolooMobileTheme(darkTheme = true) {
         // Surface resets LocalContentColor, which otherwise leaks in from the app's light theme.
         Surface(color = MaterialTheme.colorScheme.surface) {
             TerminalScreenContent(hostId, initialPaneId, onBack, onEditHost, onOpenInSpace)
@@ -184,6 +186,10 @@ private fun TerminalScreenContent(
     var longPress by remember { mutableStateOf<Pair<Int, Int>?>(null) }
     var renaming by remember { mutableStateOf(false) }
     var closing by remember { mutableStateOf(false) }
+    val lifecycleState by LocalLifecycleOwner.current.lifecycle.currentStateFlow.collectAsState()
+    val retainInputFocus = lifecycleState == Lifecycle.State.RESUMED &&
+        controller.state is PaneState.Live && !controller.readOnly &&
+        !composer && !menu && longPress == null && !renaming && !closing && prompt == null
 
     // Keep the screen awake while watching a pane, if enabled.
     DisposableEffect(keepScreenOn) {
@@ -295,7 +301,8 @@ private fun TerminalScreenContent(
                     },
                     update = { view ->
                         terminalView = view
-                        view.inputEnabled = !controller.readOnly
+                        view.inputEnabled = retainInputFocus
+                        view.retainInputFocus = retainInputFocus
                         view.listener = object : TerminalViewListener {
                             override fun onInput(data: String) = controller.input(data)
                             override fun onGridSizeChanged(cols: Int, rows: Int, cellWidthPx: Int, cellHeightPx: Int) =
@@ -315,6 +322,11 @@ private fun TerminalScreenContent(
                             controller.onGridSize(cols, rows, 0, 0)
                         }
                     },
+                    onRelease = { view ->
+                        view.retainInputFocus = false
+                        view.listener = null
+                        if (terminalView === view) terminalView = null
+                    },
                 )
                 }
                 PaneOverlay(controller.state, onTakeOver = { controller.open(takeover = true) },
@@ -323,17 +335,18 @@ private fun TerminalScreenContent(
                     onBack = onBack)
             }
             if (agent?.agentStatus == AgentStatus.BLOCKED && !controller.readOnly) {
-                QuickAnswers(onAnswer = controller::input)
+                QuickAnswers(onAnswer = { terminalView?.sendText(it) })
             }
             ExtraKeysBar(
                 modifiers = controller.modifiers,
                 haptics = haptics,
-                onSpecial = { key -> terminalView?.sendSpecial(key) ?: controller.input(dev.herdroid.terminal.KeyEncoder.special(key)) },
-                onText = { text -> controller.input(text) },
+                onSpecial = { key -> terminalView?.sendSpecial(key) },
+                onText = { text -> terminalView?.sendText(text) },
+                onModifier = { terminalView?.prepareModifierInput() },
                 onPaste = {
                     clipboard.getText()?.text?.takeIf { it.isNotEmpty() }?.let { text ->
                         // Bracketed paste keeps shells and agents from executing line by line.
-                        controller.input("\u001b[200~$text\u001b[201~")
+                        terminalView?.sendPaste(text)
                     }
                 },
                 onToggleKeyboard = {

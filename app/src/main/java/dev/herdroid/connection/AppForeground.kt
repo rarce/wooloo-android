@@ -4,7 +4,7 @@ import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ProcessLifecycleOwner
 
-/** Tracks whether any Herdroid UI is visible, to decide between in-app banners and notifications. */
+/** Tracks whether any wooloo mobile UI is visible, to decide between in-app banners and notifications. */
 object AppForeground : DefaultLifecycleObserver {
     @Volatile
     var isForeground: Boolean = false

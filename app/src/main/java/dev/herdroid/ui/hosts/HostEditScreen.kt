@@ -225,7 +225,11 @@ fun HostEditScreen(
                         Icon(Icons.AutoMirrored.Outlined.ArrowBack, "Back")
                     }
                 },
-                actions = { TextButton(onClick = { save(connect = false) }) { Text("Save") } },
+                actions = {
+                    TextButton(onClick = { save(connect = imported != null) }) {
+                        Text(if (imported != null) "Connect" else "Save")
+                    }
+                },
             )
         },
     ) { padding ->
@@ -349,7 +353,7 @@ fun HostEditScreen(
                     isError = showErrors && keyError,
                     onSelect = { keyId = it },
                     onGenerate = {
-                        val info = app.keys.generateEd25519("herdroid@${android.os.Build.MODEL.replace(' ', '-')}")
+                        val info = app.keys.generateEd25519("wooloo-mobile@${android.os.Build.MODEL.replace(' ', '-')}")
                         keyId = info.id
                     },
                     onImport = onImportKey,
@@ -415,7 +419,7 @@ fun HostEditScreen(
                 onClick = { save(connect = true) },
                 modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp),
                 shape = RoundedCornerShape(16.dp),
-            ) { Text("Save & connect") }
+            ) { Text(if (imported != null) "Connect" else "Save & connect") }
             Spacer(Modifier.navigationBarsPadding().height(24.dp))
         }
     }
@@ -431,9 +435,9 @@ private fun ImportNotice(updating: String?) {
     ) {
         Text(
             if (updating != null) {
-                "Updating $updating from a link: new address and host keys. Check them, then save."
+                "Updating $updating from Wooloo: new address and host keys. Check them, then connect."
             } else {
-                "Machine details from a link. Check them, choose how to sign in, then save."
+                "Connection details from Wooloo. Use a key authorized on this machine or its SSH password, then connect."
             },
             style = MaterialTheme.typography.bodyMedium,
             modifier = Modifier.padding(14.dp),

@@ -42,7 +42,7 @@ import dev.herdroid.ui.terminal.ExtraKeysBar
 import dev.herdroid.ui.terminal.PaneSwitcher
 import dev.herdroid.ui.terminal.QuickAnswers
 import dev.herdroid.ui.terminal.TerminalTopBar
-import dev.herdroid.ui.theme.HerdroidTheme
+import dev.herdroid.ui.theme.WoolooMobileTheme
 import org.junit.Rule
 import org.junit.Test
 
@@ -76,7 +76,7 @@ class ScreenshotsTest {
 
     @Composable
     private fun Frame(content: @Composable () -> Unit) {
-        HerdroidTheme(darkTheme = true) {
+        WoolooMobileTheme(darkTheme = true) {
             Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surface) { content() }
         }
     }

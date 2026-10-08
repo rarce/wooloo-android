@@ -1,7 +1,7 @@
-# Herdroid
+# wooloo mobile
 
-A native Android client (Kotlin + Jetpack Compose) for [herdr](https://github.com/herdrdev/herdr), the terminal
-multiplexer for coding agents. Herdroid connects over SSH and uses herdr's own protocols to show your agents and
+The Android companion to [wooloo](https://github.com/rarce/wooloo), built with Kotlin + Jetpack Compose for [herdr](https://github.com/herdrdev/herdr), the terminal
+multiplexer for coding agents. wooloo mobile connects over SSH and uses herdr's own protocols to show your agents and
 workspaces, let you reply to them, and drive any pane from your phone.
 
 | Your spaces | Inside a space | Live pane | Connection states |
@@ -21,7 +21,7 @@ no ports are opened:
 | Watch-only | `herdr terminal session observe <pane>` | same frames, read-only |
 
 The SSH connection is either a direct TCP port or a **Cloudflare Tunnel** (e.g. wooloo's Remote Access, or
-`cloudflared tunnel --url ssh://localhost:22`). For a tunnel, herdroid opens a WebSocket to `wss://<hostname>/` and
+`cloudflared tunnel --url ssh://localhost:22`). For a tunnel, wooloo mobile opens a WebSocket to `wss://<hostname>/` and
 carries the raw SSH stream in binary messages, exactly like `cloudflared access ssh`, so no `cloudflared` is needed
 on the phone. Hostnames behind Cloudflare Access take a service token (`CF-Access-Client-Id` / `-Secret`).
 
@@ -44,9 +44,10 @@ Requires a herdr server with `terminal session control` and `remote-api-bridge`.
   `agent.prompt`, plus one-tap quick replies (`Enter`, `1/2/3`, `y/n`, `Esc`, `⇧Tab`, `Ctrl-C`) for permission prompts.
 - **Terminal built for touch.** Server-rendered frames drawn on a Canvas. Swipe scrolls herdr's scrollback with
   fling, pinch zooms (and resizes the remote pane), and tap clicks for mouse-aware TUIs. The IME bridge turns
-  Gboard/SwiftKey composition into correct keystrokes. Long-press to copy a line, the screen, or 400 lines of
+  Gboard/SwiftKey composition and dictation revisions into correct keystrokes, with readable text/cursor
+  context for the keyboard. The active pane retains input focus unless a dialog or composer is open. Long-press to copy a line, the screen, or 400 lines of
   history, or to open OSC 8 links.
-- **Extra keys.** Sticky `ctrl`/`alt` (double-tap locks), auto-repeating arrows, `esc`, `tab`, `^C`, symbols,
+- **Extra keys.** Sticky `ctrl`/`alt`/`shift` (tap applies to the next key; double-tap locks), auto-repeating arrows, `esc`, `tab`, `^C`, symbols,
   `pgup`/`pgdn`, and bracketed paste.
 - **Moving between agents.** Inside a pane, swipe the title sideways or tap the miniature to move between the
   space's agents. When an agent in another space needs you, a snackbar offers to jump to it through its space.
@@ -60,13 +61,23 @@ Requires a herdr server with `terminal session control` and `remote-api-bridge`.
 - **Keys and security.** Generate an Ed25519 key on the phone (with a copyable `authorized_keys` one-liner) or
   import OpenSSH/PEM/PKCS#8 keys. Private keys and saved passwords are encrypted with the Android Keystore. Host
   keys are trust-on-first-use, with a loud warning if a key changes.
-- **Cloudflare Tunnel and QR import.** Scanning wooloo's QR code (a `herdroid://add-host?…` link) opens the host
+- **Cloudflare Tunnel and QR import.** Use **Scan QR** in the machine list to scan wooloo's Remote Access QR
+  with the phone's camera, choose a QR image, or paste the copied machine link. The bundled reader works offline
+  and camera permission is requested only when opening the scanner. A `herdroid://add-host?…` link opens the host
   editor prefilled with the tunnel hostname, user, session, herdr path and the machine's host key fingerprints,
-  which are then trusted without a prompt. You still pick the key and save; a link never connects by itself.
+  which are then trusted without a prompt. Review the details, choose an authorized SSH key or password and tap
+  **Connect**. The QR carries connection details, not SSH credentials; a link never connects by itself.
   Quick tunnel hostnames change on every restart, so scanning a new code updates the matching machine (same
   name, user and session) instead of adding a duplicate.
 - Pastes like `user@host:2222` (or a tunnel's `https://` URL) are split into separate fields automatically.
   Several machines can be connected at once.
+
+## Naming and compatibility
+
+The app and Gradle project are named **wooloo mobile** (`wooloo-mobile` in Gradle). The existing Android
+application ID and Kotlin namespace (`dev.herdroid`), encrypted storage identifiers, `HERDROID_*` test
+variables and `herdroid://add-host` links stay compatible with earlier installs and wooloo's QR codes.
+Updating the app keeps saved machines, keys and preferences.
 
 ## Build
 

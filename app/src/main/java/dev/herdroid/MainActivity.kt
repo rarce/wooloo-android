@@ -7,8 +7,8 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import kotlinx.coroutines.flow.MutableStateFlow
 import dev.herdroid.data.HostLink
-import dev.herdroid.ui.HerdroidRoot
-import dev.herdroid.ui.theme.HerdroidTheme
+import dev.herdroid.ui.WoolooMobileRoot
+import dev.herdroid.ui.theme.WoolooMobileTheme
 import dev.herdroid.ui.theme.LocalStatusIndicators
 import dev.herdroid.ui.theme.StatusIndicators
 import androidx.compose.runtime.CompositionLocalProvider
@@ -39,8 +39,8 @@ class MainActivity : ComponentActivity() {
             CompositionLocalProvider(
                 LocalStatusIndicators provides if (symbols) StatusIndicators.SYMBOLS else StatusIndicators.DOTS
             ) {
-                HerdroidTheme {
-                    HerdroidRoot(openRequests = openRequests, hostLinks = hostLinks)
+                WoolooMobileTheme {
+                    WoolooMobileRoot(openRequests = openRequests, hostLinks = hostLinks)
                 }
             }
         }

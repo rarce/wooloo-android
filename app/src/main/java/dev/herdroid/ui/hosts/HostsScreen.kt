@@ -26,6 +26,7 @@ import androidx.compose.material.icons.outlined.Dns
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.Key
 import androidx.compose.material.icons.outlined.MoreVert
+import androidx.compose.material.icons.outlined.QrCodeScanner
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
@@ -34,7 +35,8 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
-import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.Button
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LargeTopAppBar
@@ -56,10 +58,12 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.herdroid.app
+import dev.herdroid.R
 import dev.herdroid.connection.ConnectionStatus
 import dev.herdroid.connection.HerdrConnection
 import dev.herdroid.data.HostProfile
@@ -76,6 +80,7 @@ import dev.herdroid.ui.theme.Mono
 fun HostsScreen(
     onOpenHost: (String) -> Unit,
     onAddHost: () -> Unit,
+    onScanQr: () -> Unit,
     onEditHost: (String) -> Unit,
     onKeys: () -> Unit,
     onSettings: () -> Unit,
@@ -92,6 +97,7 @@ fun HostsScreen(
             LargeTopAppBar(
                 title = { Text("Your herds") },
                 actions = {
+                    IconButton(onClick = onScanQr) { Icon(Icons.Outlined.QrCodeScanner, "Scan Wooloo QR") }
                     IconButton(onClick = onKeys) { Icon(Icons.Outlined.Key, "SSH keys") }
                     IconButton(onClick = onSettings) { Icon(Icons.Outlined.Settings, "Settings") }
                 },
@@ -114,12 +120,16 @@ fun HostsScreen(
             EmptyState(
                 icon = Icons.Outlined.Dns,
                 title = "Connect to your herd",
-                body = "Herdroid connects over SSH to a machine running herdr, so you can watch " +
+                body = "${stringResource(R.string.app_name)} connects over SSH to a machine running herdr, so you can watch " +
                     "your agents, answer them and jump into any pane from your phone.",
                 modifier = Modifier.padding(padding),
             ) {
                 Spacer(Modifier.height(8.dp))
-                FilledTonalButton(onClick = onAddHost) {
+                Button(onClick = onScanQr) {
+                    Icon(Icons.Outlined.QrCodeScanner, null)
+                    Text("  Scan Wooloo QR")
+                }
+                OutlinedButton(onClick = onAddHost) {
                     Icon(Icons.Outlined.Add, null)
                     Text("  Add a machine")
                 }
@@ -298,4 +308,3 @@ fun relativeTime(epochMs: Long): String {
         else -> "${delta / 86_400} d ago"
     }
 }
-

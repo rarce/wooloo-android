@@ -26,6 +26,7 @@ import dev.herdroid.app
 import dev.herdroid.ui.hosts.HostEditScreen
 import dev.herdroid.ui.hosts.HostsScreen
 import dev.herdroid.ui.hosts.KeysScreen
+import dev.herdroid.ui.hosts.ScanQrScreen
 import dev.herdroid.ui.session.SessionScreen
 import dev.herdroid.ui.session.SpaceScreen
 import dev.herdroid.ui.terminal.TerminalScreen
@@ -39,6 +40,7 @@ private object Routes {
     const val EDIT = "edit?hostId={hostId}&link={link}"
     const val KEYS = "keys?import={import}"
     const val SETTINGS = "settings"
+    const val SCAN = "scan"
     const val SESSION = "session/{hostId}"
     const val SPACE = "space/{hostId}/{workspaceId}"
     const val TERMINAL = "terminal/{hostId}/{paneId}"
@@ -57,11 +59,21 @@ private object Routes {
 }
 
 @Composable
-fun HerdroidRoot(openRequests: MutableStateFlow<OpenRequest?>, hostLinks: MutableStateFlow<HostLinkRequest?>) {
+fun WoolooMobileRoot(openRequests: MutableStateFlow<OpenRequest?>, hostLinks: MutableStateFlow<HostLinkRequest?>) {
     val nav = rememberNavController()
     val context = LocalContext.current
     val request by openRequests.collectAsState()
     val hostLink by hostLinks.collectAsState()
+
+    fun openHostLink(raw: String) {
+        val link = HostLink.parse(raw)
+        if (link == null) {
+            Toast.makeText(context, "That machine link isn't valid", Toast.LENGTH_LONG).show()
+            return
+        }
+        val existing = link.findExisting(context.app.hosts.hosts.value)
+        nav.navigate(Routes.edit(existing?.id, raw)) { popUpTo(Routes.HOSTS) }
+    }
 
     val notificationPermission = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -85,13 +97,7 @@ fun HerdroidRoot(openRequests: MutableStateFlow<OpenRequest?>, hostLinks: Mutabl
     LaunchedEffect(hostLink) {
         val r = hostLink ?: return@LaunchedEffect
         hostLinks.value = null
-        val link = HostLink.parse(r.link)
-        if (link == null) {
-            Toast.makeText(context, "That herdroid link isn't valid", Toast.LENGTH_LONG).show()
-            return@LaunchedEffect
-        }
-        val existing = link.findExisting(context.app.hosts.hosts.value)
-        nav.navigate(Routes.edit(existing?.id, r.link)) { popUpTo(Routes.HOSTS) }
+        openHostLink(r.link)
     }
 
     NavHost(
@@ -106,10 +112,14 @@ fun HerdroidRoot(openRequests: MutableStateFlow<OpenRequest?>, hostLinks: Mutabl
             HostsScreen(
                 onOpenHost = { nav.navigate(Routes.session(it)) },
                 onAddHost = { nav.navigate(Routes.edit(null)) },
+                onScanQr = { nav.navigate(Routes.SCAN) },
                 onEditHost = { nav.navigate(Routes.edit(it)) },
                 onKeys = { nav.navigate(Routes.keys()) },
                 onSettings = { nav.navigate(Routes.SETTINGS) },
             )
+        }
+        composable(Routes.SCAN) {
+            ScanQrScreen(onBack = { nav.popBackStack() }, onScanned = ::openHostLink)
         }
         composable(
             Routes.EDIT,

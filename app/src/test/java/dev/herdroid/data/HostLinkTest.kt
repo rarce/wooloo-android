@@ -32,6 +32,26 @@ class HostLinkTest {
     }
 
     @Test
+    fun macQrRefreshesTunnelWithoutLosingCredentialsOrEscapedSession() {
+        // URLComponents output from wooloo's RemoteAccessLink: slashes/colons stay literal,
+        // literal plus signs are escaped, and names may contain apostrophes and Unicode.
+        val raw = "herdroid://add-host?transport=cloudflare&host=new-name.trycloudflare.com" +
+            "&user=roberto&session=review%20%2B%20m%C3%B3vil&label=Roberto's%20Mac" +
+            "&herdr=/Users/roberto/Tools%20%2B%20Apps/herdr&fp=SHA256:${"A".repeat(42)}%2B&fp=$fp2"
+        val link = HostLink.parse(raw)!!
+        val saved = HostProfile(label = "Roberto's Mac", hostname = "old-name.trycloudflare.com",
+            username = "roberto", session = "review + móvil", transport = Transport.CLOUDFLARE,
+            auth = AuthMethod.KEY, keyId = "authorized-phone-key")
+        assertSame(saved, link.findExisting(listOf(saved)))
+        val refreshed = link.applyTo(saved)
+        assertEquals(saved.id, refreshed.id)
+        assertEquals("authorized-phone-key", refreshed.keyId)
+        assertEquals("review + móvil", refreshed.session)
+        assertEquals("/Users/roberto/Tools + Apps/herdr", refreshed.herdrPath)
+        assertEquals(listOf(fp1, fp2), refreshed.hostKeyFingerprints)
+    }
+
+    @Test
     fun defaultsToSshWithPort() {
         val link = HostLink.parse("herdroid://add-host?host=devbox.local&user=me&port=2222")!!
         assertEquals(Transport.SSH, link.transport)

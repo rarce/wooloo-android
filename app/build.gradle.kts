@@ -6,6 +6,7 @@ plugins {
 }
 
 android {
+    // Preserve the installed app's identity across the wooloo mobile rename.
     namespace = "dev.herdroid"
     compileSdk = 36
 
@@ -94,6 +95,11 @@ dependencies {
     implementation(libs.bouncycastle.prov)
     implementation(libs.bouncycastle.pkix)
     implementation(libs.okhttp)
+    implementation(libs.androidx.camera.camera2)
+    implementation(libs.androidx.camera.lifecycle)
+    implementation(libs.androidx.camera.view)
+    // Bundle the QR decoder so scanning works immediately, including offline.
+    implementation(libs.mlkit.barcode.scanning)
     debugImplementation(libs.androidx.compose.ui.tooling)
 
     testImplementation(libs.junit)

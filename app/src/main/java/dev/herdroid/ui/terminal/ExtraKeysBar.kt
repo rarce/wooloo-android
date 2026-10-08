@@ -20,6 +20,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -42,7 +43,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 
 /**
- * The keys a phone keyboard lacks. Ctrl/Alt are sticky (tap = next key, double-tap = lock),
+ * The keys a phone keyboard lacks. Ctrl/Alt/Shift are sticky (tap = next key, double-tap = lock),
  * arrows auto-repeat while held, and the composer button opens the prompt sheet.
  */
 @Composable
@@ -56,16 +57,23 @@ fun ExtraKeysBar(
     onComposer: () -> Unit,
     composerHighlighted: Boolean,
     modifier: Modifier = Modifier,
+    onModifier: () -> Unit = {},
 ) {
-    var ctrl by remember { mutableStateOf(modifiers.ctrl) }
-    var alt by remember { mutableStateOf(modifiers.alt) }
-    var ctrlLocked by remember { mutableStateOf(false) }
-    var altLocked by remember { mutableStateOf(false) }
-    LaunchedEffect(modifiers) {
-        modifiers.onChange = {
-            ctrl = modifiers.ctrl; alt = modifiers.alt
+    var ctrl by remember(modifiers) { mutableStateOf(modifiers.ctrl) }
+    var alt by remember(modifiers) { mutableStateOf(modifiers.alt) }
+    var shift by remember(modifiers) { mutableStateOf(modifiers.shift) }
+    var ctrlLocked by remember(modifiers) { mutableStateOf(modifiers.ctrlLocked) }
+    var altLocked by remember(modifiers) { mutableStateOf(modifiers.altLocked) }
+    var shiftLocked by remember(modifiers) { mutableStateOf(modifiers.shiftLocked) }
+    DisposableEffect(modifiers) {
+        val update = {
+            ctrl = modifiers.ctrl; alt = modifiers.alt; shift = modifiers.shift
             ctrlLocked = modifiers.ctrlLocked; altLocked = modifiers.altLocked
+            shiftLocked = modifiers.shiftLocked
         }
+        modifiers.onChange = update
+        update()
+        onDispose { if (modifiers.onChange === update) modifiers.onChange = null }
     }
     val haptic = LocalHapticFeedback.current
     fun buzz() { if (haptics) haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove) }
@@ -85,29 +93,29 @@ fun ExtraKeysBar(
             KeyButton("tab", onTap = { buzz(); onSpecial(SpecialKey.TAB) })
             ModifierKey("ctrl", ctrl, ctrlLocked,
                 onTap = {
-                    buzz()
+                    buzz(); onModifier()
                     modifiers.ctrl = !modifiers.ctrl
                     modifiers.ctrlLocked = false
                     modifiers.onChange?.invoke()
                 },
                 onDoubleTap = {
-                    buzz()
+                    buzz(); onModifier()
                     modifiers.ctrl = true
                     modifiers.ctrlLocked = true
                     modifiers.onChange?.invoke()
                 },
             )
-            ModifierKey("alt", alt, altLocked,
+            ModifierKey("shift", shift, shiftLocked,
                 onTap = {
-                    buzz()
-                    modifiers.alt = !modifiers.alt
-                    modifiers.altLocked = false
+                    buzz(); onModifier()
+                    modifiers.shift = !modifiers.shift
+                    modifiers.shiftLocked = false
                     modifiers.onChange?.invoke()
                 },
                 onDoubleTap = {
-                    buzz()
-                    modifiers.alt = true
-                    modifiers.altLocked = true
+                    buzz(); onModifier()
+                    modifiers.shift = true
+                    modifiers.shiftLocked = true
                     modifiers.onChange?.invoke()
                 },
             )
@@ -115,6 +123,20 @@ fun ExtraKeysBar(
             KeyButton("↓", repeat = true, onTap = { buzz(); onSpecial(SpecialKey.DOWN) })
             KeyButton("↑", repeat = true, onTap = { buzz(); onSpecial(SpecialKey.UP) })
             KeyButton("→", repeat = true, onTap = { buzz(); onSpecial(SpecialKey.RIGHT) })
+            ModifierKey("alt", alt, altLocked,
+                onTap = {
+                    buzz(); onModifier()
+                    modifiers.alt = !modifiers.alt
+                    modifiers.altLocked = false
+                    modifiers.onChange?.invoke()
+                },
+                onDoubleTap = {
+                    buzz(); onModifier()
+                    modifiers.alt = true
+                    modifiers.altLocked = true
+                    modifiers.onChange?.invoke()
+                },
+            )
             KeyButton("^C", onTap = { buzz(); onText("\u0003") })
             KeyButton("⏎", onTap = { buzz(); onSpecial(SpecialKey.ENTER) })
             listOf("/", "|", "-", "~", "_", ":").forEach { symbol ->
@@ -178,6 +200,8 @@ private fun KeyButton(label: String, repeat: Boolean = false, onTap: () -> Unit)
 @Composable
 private fun ModifierKey(label: String, active: Boolean, locked: Boolean, onTap: () -> Unit, onDoubleTap: () -> Unit) {
     val colors = MaterialTheme.colorScheme
+    val currentOnTap by rememberUpdatedState(onTap)
+    val currentOnDoubleTap by rememberUpdatedState(onDoubleTap)
     Box(
         Modifier
             .height(38.dp)
@@ -190,7 +214,9 @@ private fun ModifierKey(label: String, active: Boolean, locked: Boolean, onTap: 
                     else -> colors.surfaceContainerHighest
                 }
             )
-            .pointerInput(Unit) { detectTapGestures(onTap = { onTap() }, onDoubleTap = { onDoubleTap() }) }
+            .pointerInput(Unit) {
+                detectTapGestures(onPress = { currentOnTap() }, onDoubleTap = { currentOnDoubleTap() })
+            }
             .padding(horizontal = 10.dp),
         contentAlignment = Alignment.Center,
     ) {
@@ -210,6 +236,7 @@ private fun ModifierKey(label: String, active: Boolean, locked: Boolean, onTap: 
 
 @Composable
 private fun IconKey(icon: ImageVector, description: String, highlighted: Boolean = false, onTap: () -> Unit) {
+    val currentOnTap by rememberUpdatedState(onTap)
     Box(
         Modifier
             .padding(start = 4.dp)
@@ -220,7 +247,7 @@ private fun IconKey(icon: ImageVector, description: String, highlighted: Boolean
                 if (highlighted) MaterialTheme.colorScheme.tertiaryContainer
                 else MaterialTheme.colorScheme.surfaceContainerHighest
             )
-            .pointerInput(Unit) { detectTapGestures(onTap = { onTap() }) },
+            .pointerInput(Unit) { detectTapGestures(onTap = { currentOnTap() }) },
         contentAlignment = Alignment.Center,
     ) {
         Icon(

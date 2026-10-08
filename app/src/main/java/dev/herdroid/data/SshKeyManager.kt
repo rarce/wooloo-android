@@ -59,7 +59,7 @@ class SshKeyManager(private val file: File, private val secrets: SecretStore) {
         val pair = generator.generateKeyPair()
         val priv = pair.private as Ed25519PrivateKeyParameters
         val pub = pair.public as Ed25519PublicKeyParameters
-        val comment = name.ifBlank { "herdroid" }
+        val comment = name.ifBlank { "wooloo-mobile" }
         val pem = OpenSshEd25519.encodePrivateKey(priv.encoded, pub.encoded, comment)
         val publicLine = "ssh-ed25519 " +
             Base64.getEncoder().encodeToString(OpenSshEd25519.publicBlob(pub.encoded)) + " " + comment

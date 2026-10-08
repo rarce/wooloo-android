@@ -14,5 +14,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "Herdroid"
+rootProject.name = "wooloo-mobile"
 include(":app")

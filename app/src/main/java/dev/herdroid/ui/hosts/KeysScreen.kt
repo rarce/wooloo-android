@@ -65,7 +65,7 @@ fun KeysScreen(onBack: () -> Unit, startWithImport: Boolean = false) {
                 actions = {
                     IconButton(onClick = { importing = true }) { Icon(Icons.Outlined.FileDownload, "Import key") }
                     IconButton(onClick = {
-                        app.keys.generateEd25519("herdroid@${android.os.Build.MODEL.replace(' ', '-')}")
+                        app.keys.generateEd25519("wooloo-mobile@${android.os.Build.MODEL.replace(' ', '-')}")
                     }) { Icon(Icons.Outlined.AutoAwesome, "Generate key") }
                 },
             )
@@ -79,7 +79,7 @@ fun KeysScreen(onBack: () -> Unit, startWithImport: Boolean = false) {
                     "Private keys are encrypted with the Android Keystore and never leave the device.",
                 modifier = Modifier.padding(padding),
             ) {
-                Button(onClick = { app.keys.generateEd25519("herdroid@${android.os.Build.MODEL.replace(' ', '-')}") }) {
+                Button(onClick = { app.keys.generateEd25519("wooloo-mobile@${android.os.Build.MODEL.replace(' ', '-')}") }) {
                     Text("Generate key")
                 }
             }

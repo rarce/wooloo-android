@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-Herdroid is a single-module (`:app`) native Android client (Kotlin + Jetpack Compose) for
+wooloo mobile is a single-module (`:app`) native Android client (Kotlin + Jetpack Compose) for
 [herdr](https://github.com/herdrdev/herdr), a terminal multiplexer for coding agents. It talks to herdr
 entirely over one SSH connection (sshj) by running herdr's own CLI subcommands on exec channels. Nothing is
 installed server-side. Tested against herdr 0.9.3.
@@ -69,7 +69,7 @@ lint/format tooling configured beyond `kotlin.code.style=official`. Dependencies
   `AgentAlert`s (blocked/finished) and update which panes are subscribed. Mutations go through
   `connection.action { ... }`, which refreshes afterwards.
 - `ConnectionManager` holds a `StateFlow<Map<hostId, HerdrConnection>>` (multiple hosts can be live at once) and
-  syncs `service/ConnectionService` (foreground service keeping connections alive). `HerdroidApp` triggers
+  syncs `service/ConnectionService` (foreground service keeping connections alive). `WoolooMobileApp` triggers
   `onNetworkAvailable()` to skip pending backoff. `Notifier` posts agent alerts; `AppForeground` tracks visibility.
 
 ### Terminal rendering (`terminal/`, `ui/terminal/`)
@@ -82,16 +82,16 @@ lint/format tooling configured beyond `kotlin.code.style=official`. Dependencies
 
 ### App wiring, data, UI
 
-- No DI framework and no ViewModels: `HerdroidApp` constructs singletons (`HostRepository`, `SshKeyManager`,
+- No DI framework and no ViewModels: `WoolooMobileApp` constructs singletons (`HostRepository`, `SshKeyManager`,
   `SecretStore`, `KnownHostsStore`, `Notifier`, `UiPreferences`, `ConnectionManager`) and composables reach them
   via `LocalContext.current.app`.
-- `HerdroidApp` replaces Android's stripped "BC" provider with full BouncyCastle at startup — sshj needs it for
+- `WoolooMobileApp` replaces Android's stripped "BC" provider with full BouncyCastle at startup — sshj needs it for
   Ed25519/X25519. Tests that touch SSH crypto do the same in setup.
 - Persistence is JSON files under `filesDir/store` (written via `writeAtomically`). Private keys and saved
   passwords live only in `SecretStore` (Android Keystore–encrypted), keyed by `SecretStore.privateKey(id)` /
   `passwordKey(hostId)` — never in the JSON profiles.
-- Navigation is a single Compose `NavHost` in `ui/HerdroidRoot.kt` and mirrors herdr's hierarchy: hosts → session
-  (the host's spaces, i.e. herdr workspaces) → space (its agents, tabs, shells) → terminal, plus edit/keys/settings.
+- Navigation is a single Compose `NavHost` in `ui/WoolooMobileRoot.kt` and mirrors herdr's hierarchy: hosts → session
+  (the host's spaces, i.e. herdr workspaces) → space (its agents, tabs, shells) → terminal, plus scan/edit/keys/settings.
   Spaces are the top-level unit, as in herdr's sidebar: don't surface agents across spaces outside of alerts. The
   terminal's switcher and swipe stay within the current space; jumping to another space's agent goes through that
   space so back walks up the hierarchy. Notification taps arrive as `OpenRequest`s (host, space, pane) from
@@ -99,3 +99,6 @@ lint/format tooling configured beyond `kotlin.code.style=official`. Dependencies
 - `herdroid://add-host?…` links (wooloo's QR code) are parsed by `data/HostLink` and open the host editor
   prefilled (the raw link travels base64url-encoded in the `edit` route). A Cloudflare link matching a saved
   machine's label + user + session updates that machine. Links never connect by themselves.
+- `ScanQrScreen` reads QR codes with lifecycle-bound CameraX and the bundled ML Kit decoder; camera permission
+  is requested on entry. Photo picker and pasted links also use `HostLink` and the same editor route. Only a
+  valid machine link is accepted, once; **Connect** saves the imported details and starts the existing SSH flow.

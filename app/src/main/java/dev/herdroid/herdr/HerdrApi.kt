@@ -262,7 +262,7 @@ internal fun ExecChannel.failure(fallback: String): Exception {
         err.contains("unrecognized") || err.contains("unknown command") || err.contains("usage:") ->
             HerdrApiException(
                 "unsupported_version",
-                "The remote herdr is too old for Herdroid. Update it with `herdr update`.\n$err",
+                "The remote herdr is too old for wooloo mobile. Update it with `herdr update`.\n$err",
             )
         err.isNotEmpty() -> Exception(err.lines().takeLast(4).joinToString("\n"))
         else -> Exception(fallback)

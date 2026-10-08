@@ -17,7 +17,7 @@ import org.bouncycastle.jce.provider.BouncyCastleProvider
 import java.io.File
 import java.security.Security
 
-class HerdroidApp : Application() {
+class WoolooMobileApp : Application() {
     lateinit var hosts: HostRepository; private set
     lateinit var keys: SshKeyManager; private set
     lateinit var secrets: SecretStore; private set
@@ -62,4 +62,4 @@ class HerdroidApp : Application() {
     }
 }
 
-val Context.app: HerdroidApp get() = applicationContext as HerdroidApp
+val Context.app: WoolooMobileApp get() = applicationContext as WoolooMobileApp

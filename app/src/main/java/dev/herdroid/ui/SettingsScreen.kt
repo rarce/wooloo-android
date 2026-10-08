@@ -32,6 +32,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import dev.herdroid.BuildConfig
+import dev.herdroid.R
 import dev.herdroid.app
 import dev.herdroid.herdr.AgentStatus
 import dev.herdroid.terminal.TerminalView
@@ -120,7 +121,7 @@ fun SettingsScreen(onBack: () -> Unit) {
                 headlineContent = { Text("About") },
                 supportingContent = {
                     Text(
-                        "Herdroid ${BuildConfig.VERSION_NAME}\n" +
+                        "${context.getString(R.string.app_name)} ${BuildConfig.VERSION_NAME}\n" +
                             "Watch your agents, reply to them and open their terminals over SSH.",
                     )
                 },
