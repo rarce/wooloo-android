@@ -41,11 +41,17 @@ Requires a herdr server with `terminal session control` and `remote-api-bridge`.
 
 ## UX highlights
 
-- **Spaces first, like herdr's sidebar.** A machine opens on its spaces (herdr workspaces), with the ones whose
-  agents need you on top. Go into a space to see its agents: blocked (amber) and done (blue) ones first, with
-  *Reply* and *Open pane*, then its tabs and shells.
+- **Spaces first, like herdr's sidebar.** A machine opens on its spaces (herdr workspaces). Spaces and agents
+  keep the order supplied by herdr, without moving when their state changes. Space states come directly from
+  the server. Agents use compact rows: tap to open the pane, or use the message button to reply.
+- **Grouped lists.** Machines, spaces and agents share aligned rows and quiet dividers. Agent names,
+  states and tasks have distinct places; larger text moves the state below the name. A neutral rail marks
+  herdr's focus, independently of state. Spaces show their active tab's layout before opening them.
+- **Consistent states.** Every list uses herdr's marks and colors: working is yellow, blocked red, done teal,
+  idle green, and unknown gray. Machine connection status is separate from its agent counts, including idle
+  and unknown agents. Cached agent states are labeled while disconnected.
 - **Layout miniature.** Each tab is drawn with herdr's real pane geometry, colored by agent state. It identifies
-  every space and doubles as the pane switcher. Tap a pane to open it.
+  the panes inside a space and doubles as the terminal pane switcher. Tap a pane to open it.
 - **Composer for agents.** A real multi-line text field (autocorrect, swipe typing, voice) that sends with
   `agent.prompt`, plus one-tap quick replies (`Enter`, `1/2/3`, `y/n`, `Esc`, `⇧Tab`, `Ctrl-C`) for permission prompts.
 - **Terminal built for touch.** Server-rendered frames drawn on a Canvas. Swipe scrolls herdr's scrollback with
@@ -84,6 +90,11 @@ The app and Gradle project are named **wooloo mobile** (`wooloo-mobile` in Gradl
 application ID and Kotlin namespace (`dev.herdroid`), encrypted storage identifiers, `HERDROID_*` test
 variables and `herdroid://add-host` links stay compatible with earlier installs and wooloo's QR codes.
 Updating the app keeps saved machines, keys and preferences.
+
+## Project review
+
+See the [technical review from October 11, 2026](docs/review-2026-10-11.md) for build validation,
+prioritized reliability findings and improvements required before distribution.
 
 ## Build
 

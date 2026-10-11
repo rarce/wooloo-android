@@ -40,7 +40,7 @@ class ConnectionService : Service() {
         )
         val notification = NotificationCompat.Builder(this, Notifier.CHANNEL_CONNECTION)
             .setSmallIcon(R.drawable.ic_notification)
-            .setContentTitle(if (count == 1) "Connected to 1 herd" else "Connected to $count herds")
+            .setContentTitle(resources.getQuantityString(R.plurals.machine_connections, count, count))
             .setContentText("You'll be notified when an agent needs you")
             .setOngoing(true)
             .setGroup(Notifier.GROUP_CONNECTION)
