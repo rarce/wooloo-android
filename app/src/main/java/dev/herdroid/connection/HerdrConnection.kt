@@ -45,7 +45,7 @@ import kotlinx.serialization.json.put
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.TimeoutCancellationException
-import kotlinx.coroutines.runInterruptible
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
 import java.net.ConnectException
@@ -55,7 +55,8 @@ import java.net.UnknownHostException
 import kotlin.math.min
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
-import dev.herdroid.ssh.interruptibleIo
+import dev.herdroid.ssh.closeBounded
+import dev.herdroid.ssh.channelIo
 
 enum class FailureKind { AUTH, HOST_KEY, HERDR_MISSING, SERVER_DOWN, OUTDATED, NETWORK, OTHER }
 
@@ -313,15 +314,15 @@ class HerdrConnection(
         val session = ssh?.takeIf { it.isConnected }
             ?: return Result.failure(IllegalStateException("Not connected"))
         return try {
-            val channel = session.exec(RemoteCommand.listDirectories(expandPath(path)))
-            val output = try {
-                withTimeout(15_000) { runInterruptible(Dispatchers.IO) { channel.stdout.readBytes() } }
-            } finally {
-                channel.close()
+            val output = withTimeout(15_000) {
+                val channel = session.exec(RemoteCommand.listDirectories(expandPath(path)))
+                try { channel.channelIo { channel.stdout.readBytes() } }
+                finally { channel.closeBounded() }
             }
             DirListing.parse(output.toString(Charsets.UTF_8))?.let { Result.success(it) }
                 ?: Result.failure(IllegalStateException("Couldn't list $path"))
         } catch (e: TimeoutCancellationException) {
+            currentCoroutineContext().ensureActive()
             Result.failure(IllegalStateException("Listing $path timed out"))
         } catch (e: CancellationException) {
             throw e
@@ -340,12 +341,13 @@ class HerdrConnection(
             return Result.failure(IllegalStateException("Connection changed; retry the send"))
         return try {
             val output = withTimeoutOrNull(120_000) {
-                session.exec(RemoteCommand.uploadFile(name)).use { channel ->
-                    interruptibleIo {
+                val channel = session.exec(RemoteCommand.uploadFile(name))
+                try {
+                    channel.channelIo {
                         channel.stdin.use { it.write(bytes) }
                         channel.stdout.bufferedReader().readBoundedLine(16_384)
                     }
-                }
+                } finally { channel.closeBounded() }
             } ?: throw SocketTimeoutException("Uploading $name timed out or returned no path")
             output.trim().takeIf { it.startsWith("/") }?.let { Result.success(it) }
                 ?: Result.failure(IllegalStateException("Couldn't store $name on the host"))
@@ -358,9 +360,10 @@ class HerdrConnection(
 
     private suspend fun readRemoteHome(session: SshSession): String? =
         withTimeoutOrNull(15_000) {
-            session.exec("/bin/sh -c 'printf %s \"\$HOME\"'").use { channel ->
-                interruptibleIo { channel.stdout.readBytes().toString(Charsets.UTF_8).trim().takeIf { it.startsWith("/") } }
-            }
+            val channel = session.exec("/bin/sh -c 'printf %s \"\$HOME\"'")
+            try {
+                channel.channelIo { channel.stdout.readBytes().toString(Charsets.UTF_8).trim().takeIf { it.startsWith("/") } }
+            } finally { channel.closeBounded() }
         }
 
     private suspend fun runEventStreams(api: HerdrApi, session: SshSession) = coroutineScope {

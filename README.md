@@ -30,6 +30,12 @@ events only *invalidate* state, and the authoritative view always comes from `se
 Non-interactive SSH sessions often lack `~/.local/bin` on `PATH`, so the app looks for herdr in the usual install
 locations, or uses the path you set per host.
 
+API calls and subscription handshakes have a 20-second deadline, including exec-channel acquisition.
+Cancellation interrupts channel IO; if it remains blocked after 250 ms, the app closes the SSH transport
+so reconnect can recover it. Graceful channel cleanup runs on an IO thread with a separate 250 ms budget;
+it can add that cleanup time to a request deadline. A peer that never acknowledges channel closure also
+causes a transport reset. Cancelling an interruptible subscription normally preserves the shared transport.
+
 Requires a herdr server with `terminal session control` and `remote-api-bridge`. Tested end-to-end against
 **herdr 0.9.3**.
 

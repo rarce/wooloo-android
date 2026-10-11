@@ -2,7 +2,8 @@ package dev.herdroid.herdr
 
 import java.util.Base64
 import dev.herdroid.ssh.CommandChannel
-import dev.herdroid.ssh.interruptibleIo
+import dev.herdroid.ssh.closeBounded
+import dev.herdroid.ssh.channelIo
 import dev.herdroid.ssh.SshSession
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -76,7 +77,7 @@ class TerminalStream private constructor(
             try {
                 val reader = channel.stdoutReader()
                 while (true) {
-                    val line = interruptibleIo { reader.readBoundedLine(MAX_RECORD_CHARS) } ?: break
+                    val line = channel.channelIo { reader.readBoundedLine(MAX_RECORD_CHARS) } ?: break
                     if (line.isBlank()) continue
                     val event = parse(line) ?: continue
                     if (event is TerminalEvent.Closed) {
@@ -88,25 +89,25 @@ class TerminalStream private constructor(
                 if (closedReason == null) {
                     closedReason = runCatching {
                         withTimeoutOrNull(1000) {
-                            interruptibleIo { channel.stderr.readAtMostBytes(16 * 1024).toString(Charsets.UTF_8).trim() }
+                            channel.channelIo { channel.stderr.readAtMostBytes(16 * 1024).toString(Charsets.UTF_8).trim() }
                         }
                     }.getOrNull()?.takeIf { it.isNotEmpty() }
                 }
             } catch (t: Throwable) {
                 closedReason = closedReason ?: t.message
             } finally {
+                outbox.close()
+                channel.closeBounded()
                 isClosed = true
                 _events.close()
-                outbox.close()
-                channel.close()
             }
         }
         writerJob = scope.launch(Dispatchers.IO) {
             try {
-                for (line in outbox) interruptibleIo { channel.writeLine(line) }
+                for (line in outbox) channel.channelIo { channel.writeLine(line) }
             } catch (e: Throwable) {
                 closedReason = closedReason ?: "Terminal write failed"
-                channel.close()
+                channel.closeBounded()
             }
         }
     }
@@ -217,7 +218,7 @@ class TerminalStream private constructor(
         scope.launch(Dispatchers.IO, start = CoroutineStart.UNDISPATCHED) {
             try { withTimeoutOrNull(500) { writerJob?.join() } } finally {
                 withContext(NonCancellable + Dispatchers.IO) {
-                    channel.close()
+                    channel.closeBounded()
                     readerJob?.cancel()
                     writerJob?.cancel()
                 }
