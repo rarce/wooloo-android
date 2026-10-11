@@ -4,7 +4,6 @@ import java.util.Base64
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.update
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
 import net.schmizz.sshj.common.Buffer
@@ -53,6 +52,7 @@ class SshKeyManager(private val file: File, private val secrets: SecretStore) {
     fun get(id: String): SshKeyInfo? = _keys.value.firstOrNull { it.id == id }
 
     /** Generates a fresh Ed25519 identity, the modern default for OpenSSH. */
+    @Synchronized
     fun generateEd25519(name: String): SshKeyInfo {
         val generator = Ed25519KeyPairGenerator()
         generator.init(Ed25519KeyGenerationParameters(SecureRandom()))
@@ -79,6 +79,7 @@ class SshKeyManager(private val file: File, private val secrets: SecretStore) {
      * Imports a pasted private key (OpenSSH, PEM or PKCS#8). The key is validated by loading it,
      * which also yields the public half for display.
      */
+    @Synchronized
     fun import(name: String, privateKey: String, passphrase: String?): SshKeyInfo {
         val text = privateKey.trim() + "\n"
         val provider = loadProvider(text, passphrase)
@@ -101,11 +102,11 @@ class SshKeyManager(private val file: File, private val secrets: SecretStore) {
         return info
     }
 
+    @Synchronized
     fun delete(id: String) {
+        commit(_keys.value.filterNot { it.id == id })
         secrets.remove(SecretStore.privateKey(id))
         secrets.remove(passphraseKey(id))
-        _keys.update { list -> list.filterNot { it.id == id } }
-        persist()
     }
 
     fun keyProvider(id: String): KeyProvider {
@@ -140,19 +141,16 @@ class SshKeyManager(private val file: File, private val secrets: SecretStore) {
     }
 
     private fun add(info: SshKeyInfo) {
-        _keys.update { it + info }
-        persist()
+        commit(_keys.value + info)
     }
 
-    private fun load(): List<SshKeyInfo> = runCatching {
-        if (!file.exists()) emptyList()
-        else storeJson.decodeFromString(ListSerializer(SshKeyInfo.serializer()), file.readText())
-    }.getOrDefault(emptyList())
+    private fun load(): List<SshKeyInfo> = file.readStore(emptyList()) {
+        storeJson.decodeFromString(ListSerializer(SshKeyInfo.serializer()), it)
+    }
 
-    private fun persist() {
-        file.writeAtomically(
-            storeJson.encodeToString(ListSerializer(SshKeyInfo.serializer()), _keys.value)
-        )
+    private fun commit(next: List<SshKeyInfo>) {
+        file.writeAtomically(storeJson.encodeToString(ListSerializer(SshKeyInfo.serializer()), next))
+        _keys.value = next
     }
 
     private fun passphraseKey(id: String) = "passphrase:$id"

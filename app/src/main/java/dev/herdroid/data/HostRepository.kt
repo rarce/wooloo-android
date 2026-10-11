@@ -3,7 +3,6 @@ package dev.herdroid.data
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.update
 import kotlinx.serialization.builtins.ListSerializer
 import java.io.File
 
@@ -13,32 +12,33 @@ class HostRepository(private val file: File) {
 
     fun get(id: String): HostProfile? = _hosts.value.firstOrNull { it.id == id }
 
+    @Synchronized
     fun upsert(profile: HostProfile) {
-        _hosts.update { list ->
-            val index = list.indexOfFirst { it.id == profile.id }
-            if (index >= 0) list.toMutableList().also { it[index] = profile } else list + profile
-        }
-        persist()
+        val list = _hosts.value
+        val index = list.indexOfFirst { it.id == profile.id }
+        val updated = if (index >= 0) profile.copy(
+            lastConnectedAt = listOfNotNull(list[index].lastConnectedAt, profile.lastConnectedAt).maxOrNull(),
+        ) else profile
+        commit(if (index >= 0) list.toMutableList().also { it[index] = updated } else list + updated)
     }
 
+    @Synchronized
     fun delete(id: String) {
-        _hosts.update { list -> list.filterNot { it.id == id } }
-        persist()
+        commit(_hosts.value.filterNot { it.id == id })
     }
 
+    @Synchronized
     fun markConnected(id: String) {
         val profile = get(id) ?: return
         upsert(profile.copy(lastConnectedAt = System.currentTimeMillis()))
     }
 
-    private fun load(): List<HostProfile> = runCatching {
-        if (!file.exists()) emptyList()
-        else storeJson.decodeFromString(ListSerializer(HostProfile.serializer()), file.readText())
-    }.getOrDefault(emptyList())
+    private fun load(): List<HostProfile> = file.readStore(emptyList()) {
+        storeJson.decodeFromString(ListSerializer(HostProfile.serializer()), it)
+    }
 
-    private fun persist() {
-        file.writeAtomically(
-            storeJson.encodeToString(ListSerializer(HostProfile.serializer()), _hosts.value)
-        )
+    private fun commit(next: List<HostProfile>) {
+        file.writeAtomically(storeJson.encodeToString(ListSerializer(HostProfile.serializer()), next))
+        _hosts.value = next
     }
 }

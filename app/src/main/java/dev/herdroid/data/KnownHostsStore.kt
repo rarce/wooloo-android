@@ -22,20 +22,21 @@ class KnownHostsStore(private val file: File) {
 
     @Synchronized
     fun trust(entry: KnownHost) {
-        entries = entries.filterNot {
+        val next = entries.filterNot {
             it.host.equals(entry.host, ignoreCase = true) && it.port == entry.port
         } + entry
-        file.writeAtomically(storeJson.encodeToString(ListSerializer(KnownHost.serializer()), entries))
+        file.writeAtomically(storeJson.encodeToString(ListSerializer(KnownHost.serializer()), next))
+        entries = next
     }
 
     @Synchronized
     fun forget(host: String, port: Int) {
-        entries = entries.filterNot { it.host.equals(host, ignoreCase = true) && it.port == port }
-        file.writeAtomically(storeJson.encodeToString(ListSerializer(KnownHost.serializer()), entries))
+        val next = entries.filterNot { it.host.equals(host, ignoreCase = true) && it.port == port }
+        file.writeAtomically(storeJson.encodeToString(ListSerializer(KnownHost.serializer()), next))
+        entries = next
     }
 
-    private fun load(): List<KnownHost> = runCatching {
-        if (!file.exists()) emptyList()
-        else storeJson.decodeFromString(ListSerializer(KnownHost.serializer()), file.readText())
-    }.getOrDefault(emptyList())
+    private fun load(): List<KnownHost> = file.readStore(emptyList()) {
+        storeJson.decodeFromString(ListSerializer(KnownHost.serializer()), it)
+    }
 }
