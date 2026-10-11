@@ -9,7 +9,11 @@ import android.net.Uri
 import dev.herdroid.connection.HerdrConnection
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import java.io.ByteArrayOutputStream
+import java.io.InputStream
+import java.io.OutputStream
+import java.io.IOException
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import java.io.File
 import java.util.UUID
 import kotlin.math.max
@@ -22,6 +26,8 @@ import kotlin.math.max
  */
 object ImageAttachments {
     private const val MAX_SIDE = 2048
+    internal const val MAX_SOURCE_BYTES = 16 * 1024 * 1024
+    private val preparation = Semaphore(1)
     private const val PASS_THROUGH_BYTES = 1_500_000
     private const val MAX_AGE_MS = 24 * 60 * 60 * 1000L
     private val passThrough = mapOf(
@@ -31,14 +37,41 @@ object ImageAttachments {
     private fun dir(context: Context) = File(context.cacheDir, "attachments").apply { mkdirs() }
 
     /** Copies [uri] into the cache, re-encoding big or unusual images as a bounded JPEG. */
-    suspend fun prepare(context: Context, uri: Uri): File = withContext(Dispatchers.IO) {
-        val resolver = context.contentResolver
-        val bytes = resolver.openInputStream(uri)?.use { it.readBytes() }
-            ?: error("Couldn't read the image")
-        val mime = resolver.getType(uri)
-        val keepExt = passThrough[mime]?.takeIf { bytes.size <= PASS_THROUGH_BYTES && fitsAsIs(bytes) }
-        val (data, ext) = if (keepExt != null) bytes to keepExt else shrink(bytes) to "jpg"
-        File(dir(context), "image-${UUID.randomUUID().toString().take(8)}.$ext").apply { writeBytes(data) }
+    suspend fun prepare(context: Context, uri: Uri): File = preparation.withPermit {
+        withContext(Dispatchers.IO) {
+            val resolver = context.contentResolver
+            val source = File.createTempFile("source-", ".tmp", dir(context))
+            var result: File? = null
+            try {
+                resolver.openInputStream(uri)?.use { input ->
+                    source.outputStream().use { copyBounded(input, it, MAX_SOURCE_BYTES) }
+                } ?: error("Couldn't read the image")
+                val keepExt = passThrough[resolver.getType(uri)]?.takeIf {
+                    source.length() <= PASS_THROUGH_BYTES && fitsAsIs(source)
+                }
+                val target = File(dir(context), "image-${UUID.randomUUID()}.${keepExt ?: "jpg"}")
+                result = target
+                if (keepExt != null) {
+                    if (!source.renameTo(target)) error("Couldn't store the image")
+                } else shrink(source, target)
+                target
+            } catch (e: Throwable) {
+                result?.delete()
+                throw e
+            } finally { source.delete() }
+        }
+    }
+
+    internal fun copyBounded(input: InputStream, output: OutputStream, limit: Int) {
+        val buffer = ByteArray(8192)
+        var total = 0L
+        while (true) {
+            val count = input.read(buffer)
+            if (count < 0) return
+            total += count
+            if (total > limit) throw IOException("Image exceeds the ${limit / (1024 * 1024)} MiB limit")
+            output.write(buffer, 0, count)
+        }
     }
 
     /** Drops attachments left behind by prompts that were never sent. */
@@ -47,10 +80,20 @@ object ImageAttachments {
         dir(context).listFiles()?.filter { it.lastModified() < cutoff }?.forEach { it.delete() }
     }
 
-    /** Uploads [files] to the host and returns their remote paths; local copies are removed. */
-    suspend fun upload(connection: HerdrConnection, files: List<File>): List<String> = files.map { file ->
-        val bytes = withContext(Dispatchers.IO) { file.readBytes() }
-        connection.uploadFile(file.name, bytes).getOrThrow().also { file.delete() }
+    /** Reuses uploads only while the same API/SSH connection remains active. */
+    suspend fun upload(connection: HerdrConnection, files: List<File>, uploads: AttachmentUploads): List<String> {
+        val source = connection.api ?: error("Not connected")
+        val paths = uploads.upload(source, files) { file ->
+            check(connection.api === source) { "Connection changed; retry the send" }
+            val bytes = withContext(Dispatchers.IO) {
+                file.inputStream().use { input ->
+                    java.io.ByteArrayOutputStream().also { copyBounded(input, it, MAX_SOURCE_BYTES) }.toByteArray()
+                }
+            }
+            connection.uploadFile(file.name, bytes, expectedApi = source).getOrThrow()
+        }
+        check(connection.api === source) { "Connection changed; retry the send" }
+        return paths
     }
 
     /** The prompt text with the uploaded images' paths after it. */
@@ -69,33 +112,42 @@ object ImageAttachments {
         return BitmapFactory.decodeFile(file.path, opts)
     }
 
-    private fun fitsAsIs(bytes: ByteArray): Boolean {
+    private fun fitsAsIs(file: File): Boolean {
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
-        return bounds.outWidth in 1..MAX_SIDE && bounds.outHeight in 1..MAX_SIDE && orientation(bytes) == 0
+        BitmapFactory.decodeFile(file.path, bounds)
+        return bounds.outWidth in 1..MAX_SIDE && bounds.outHeight in 1..MAX_SIDE && orientation(file) == 0
     }
 
-    private fun shrink(bytes: ByteArray): ByteArray {
+    private fun shrink(file: File, target: File) {
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+        BitmapFactory.decodeFile(file.path, bounds)
         val longest = max(bounds.outWidth, bounds.outHeight)
         if (longest <= 0) error("Not an image")
-        val decoded = BitmapFactory.decodeByteArray(
-            bytes, 0, bytes.size,
+        val decoded = BitmapFactory.decodeFile(
+            file.path,
             BitmapFactory.Options().apply { inSampleSize = sampleSize(longest, MAX_SIDE) },
         ) ?: error("Couldn't decode the image")
         val scale = MAX_SIDE.toFloat() / max(decoded.width, decoded.height)
         val matrix = Matrix().apply {
             if (scale < 1f) postScale(scale, scale)
-            postRotate(orientation(bytes).toFloat())
+            postRotate(orientation(file).toFloat())
         }
-        val bitmap = Bitmap.createBitmap(decoded, 0, 0, decoded.width, decoded.height, matrix, true)
-        return ByteArrayOutputStream().also { bitmap.compress(Bitmap.CompressFormat.JPEG, 85, it) }.toByteArray()
+        var transformed: Bitmap? = null
+        try {
+            val bitmap = Bitmap.createBitmap(decoded, 0, 0, decoded.width, decoded.height, matrix, true)
+            transformed = bitmap
+            target.outputStream().use { output ->
+                if (!bitmap.compress(Bitmap.CompressFormat.JPEG, 85, output)) error("Couldn't encode the image")
+            }
+        } finally {
+            transformed?.takeIf { it !== decoded }?.recycle()
+            decoded.recycle()
+        }
     }
 
     /** Degrees the image must be rotated to display upright, from its EXIF data. */
-    private fun orientation(bytes: ByteArray): Int = runCatching {
-        when (ExifInterface(bytes.inputStream()).getAttributeInt(ExifInterface.TAG_ORIENTATION, 0)) {
+    private fun orientation(file: File): Int = runCatching {
+        when (ExifInterface(file.path).getAttributeInt(ExifInterface.TAG_ORIENTATION, 0)) {
             ExifInterface.ORIENTATION_ROTATE_90 -> 90
             ExifInterface.ORIENTATION_ROTATE_180 -> 180
             ExifInterface.ORIENTATION_ROTATE_270 -> 270

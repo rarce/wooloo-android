@@ -375,15 +375,18 @@ private fun TerminalScreenContent(
             isAgent = isAgent,
             onDismiss = { composer = false },
             onQuickReply = { reply -> controller.input(reply.input) },
-            onSend = { text, images ->
+            onSend = { text, images, uploads ->
                 when {
-                    isAgent -> act("Prompt") {
-                        promptAgent(paneId, ImageAttachments.withPaths(text, ImageAttachments.upload(connection, images)))
+                    isAgent -> connection.action {
+                        promptAgent(paneId, ImageAttachments.withPaths(text, ImageAttachments.upload(connection, images, uploads)))
+                        Unit
                     }
-                    images.isEmpty() -> controller.input(text.replace("\n", "\r") + "\r")
-                    else -> act("Send") {
-                        val paths = ImageAttachments.upload(connection, images).joinToString(" ") { RemoteCommand.shellQuote(it) }
-                        controller.input(listOf(text.trim(), paths).filter { it.isNotEmpty() }.joinToString(" ").replace("\n", "\r") + "\r")
+                    else -> connection.action {
+                        check(controller.state == PaneState.Live && !controller.readOnly) { "Terminal is not accepting input" }
+                        val paths = ImageAttachments.upload(connection, images, uploads).joinToString(" ") { RemoteCommand.shellQuote(it) }
+                        val input = if (images.isEmpty()) text.replace("\n", "\r") + "\r"
+                        else listOf(text.trim(), paths).filter { it.isNotEmpty() }.joinToString(" ").replace("\n", "\r") + "\r"
+                        check(controller.tryInput(input)) { "Terminal is not accepting input" }
                     }
                 }
             },

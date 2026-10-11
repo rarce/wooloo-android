@@ -100,9 +100,10 @@ internal fun SessionOverlays(ui: SessionUi, connection: HerdrConnection, onOpenP
             isAgent = true,
             onDismiss = { ui.composeFor = null },
             onQuickReply = { reply -> act("Send") { sendText(agent.paneId, reply.input) } },
-            onSend = { text, images ->
-                act("Prompt") {
-                    promptAgent(agent.paneId, ImageAttachments.withPaths(text, ImageAttachments.upload(connection, images)))
+            onSend = { text, images, uploads ->
+                connection.action {
+                    promptAgent(agent.paneId, ImageAttachments.withPaths(text, ImageAttachments.upload(connection, images, uploads)))
+                    Unit
                 }
             },
         )
