@@ -119,8 +119,7 @@ class TerminalController(
                 opened.events.collect { event ->
                     when (event) {
                         is TerminalEvent.Frame -> {
-                            if (generation != openingGeneration) return@collect
-                            model.applyFrame(event.width, event.height, event.full, event.bytes)
+                            if (!applyFrame(openingGeneration, event)) return@collect
                             if (state != PaneState.Live) scope.launch {
                                 if (generation == openingGeneration) state = PaneState.Live
                             }
@@ -163,7 +162,7 @@ class TerminalController(
     }
 
     private fun closeStream() {
-        generation++
+        synchronized(model.lock) { generation++ }
         streamJob?.cancel()
         stream?.close()
         stream = null
@@ -172,5 +171,12 @@ class TerminalController(
     fun dispose() {
         closeStream()
         scope.cancel()
+    }
+
+    /** Validate ownership at the same moment the frame mutates the model. */
+    internal fun applyFrame(expectedGeneration: Long, frame: TerminalEvent.Frame): Boolean = synchronized(model.lock) {
+        if (generation != expectedGeneration) return@synchronized false
+        model.applyFrame(frame.width, frame.height, frame.full, frame.bytes)
+        true
     }
 }
