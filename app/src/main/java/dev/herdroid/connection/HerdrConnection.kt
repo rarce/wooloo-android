@@ -121,7 +121,12 @@ class HerdrConnection(
     private var transport: ActiveTransport? = null
     private data class ActiveTransport(val ssh: SshSession, val profile: HostProfile)
     private val ssh: SshSession? get() = transport?.ssh
+    /** Captured configuration owned by the current transport; check status before using it. */
+    val activeProfile: HostProfile? get() = transport?.profile
     private var remoteContext: RemoteContextKey? = null
+    // The API generation and its cached state must change as one transaction.
+    // Readers perform network work outside this lock, then validate at commit time.
+    private val remoteStateLock = Any()
 
     @Volatile
     var api: HerdrApi? = null
@@ -219,11 +224,13 @@ class HerdrConnection(
             try {
                 val cycleProfile = profile
                 val context = cycleProfile.remoteContextKey()
-                if (context != remoteContext) {
-                    _snapshot.value = null
-                    subscribedPanes.value = emptySet()
-                    remoteHome = null
-                    remoteContext = context
+                synchronized(remoteStateLock) {
+                    if (context != remoteContext) {
+                        _snapshot.value = null
+                        subscribedPanes.value = emptySet()
+                        remoteHome = null
+                        remoteContext = context
+                    }
                 }
                 _status.value = ConnectionStatus.Connecting(
                     when {
@@ -234,12 +241,12 @@ class HerdrConnection(
                 )
                 val session = openSsh(cycleProfile)
                 val api = HerdrApi(session, cycleProfile.session, cycleProfile.herdrPath)
-                this.api = api
+                synchronized(remoteStateLock) { this.api = api }
                 remoteHome = try { readRemoteHome(session) }
                 catch (e: CancellationException) { throw e }
                 catch (_: Exception) { null }
                 _status.value = ConnectionStatus.Connecting("Loading herdr session…")
-                applySnapshot(api.snapshot())
+                applySnapshot(api, api.snapshot())
                 _status.value = ConnectionStatus.Connected
                 deps.hosts.markConnected(profile.id)
                 attempt = 0
@@ -415,15 +422,20 @@ class HerdrConnection(
             runCatching {
                 val next = api.snapshot()
                 // A refresh may finish after its transport has been replaced.
-                if (this.api === api) applySnapshot(next)
+                applySnapshot(api, next)
             }
         }
     }
 
-    private fun applySnapshot(next: SessionSnapshot) {
-        val previous = _snapshot.value
-        _snapshot.value = next
-        subscribedPanes.value = next.agents.map { it.paneId }.toSet()
+    internal fun applySnapshot(sourceApi: HerdrApi, next: SessionSnapshot) {
+        val previous = synchronized(remoteStateLock) {
+            if (api !== sourceApi) return
+            val previous = _snapshot.value
+            _snapshot.value = next
+            subscribedPanes.value = next.agents.map { it.paneId }.toSet()
+            previous
+        }
+        // Notification delivery may call platform services; keep it outside the lock.
         if (previous != null) detectAlerts(previous, next)
     }
 
@@ -533,9 +545,12 @@ class HerdrConnection(
     }
 
     private fun closeTransport() {
-        api = null
-        val old = transport
-        transport = null
+        val old = synchronized(remoteStateLock) {
+            api = null
+            val old = transport
+            transport = null
+            old
+        }
         old?.ssh?.close()
     }
 
