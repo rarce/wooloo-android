@@ -1,5 +1,6 @@
 package dev.herdroid.ui.hosts
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -41,6 +42,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -76,9 +78,18 @@ fun HostsScreen(
     val app = LocalContext.current.app
     val hosts by app.hosts.hosts.collectAsState()
     val connections by app.connections.connections.collectAsState()
+    val scope = rememberCoroutineScope()
+    val edits = remember { BackgroundEdit() }
+    BackHandler(enabled = edits.busy) { }
     var pendingDelete by remember { mutableStateOf<HostProfile?>(null) }
 
     Scaffold(
+        snackbarHost = {
+            Column(Modifier.padding(16.dp)) {
+                if (edits.busy) Text("Working…")
+                edits.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+            }
+        },
         topBar = {
             TopAppBar(
                 expandedHeight = maxOf(64.dp, 48.dp * LocalDensity.current.fontScale),
@@ -136,8 +147,11 @@ fun HostsScreen(
                         connection = connections[host.id],
                         onOpen = { onOpenHost(host.id) },
                         onEdit = { onEditHost(host.id) },
-                        onDisconnect = { app.connections.disconnect(host.id) },
-                        onDelete = { pendingDelete = host },
+                        onDisconnect = {
+                            edits.submit(scope, "Could not disconnect this machine. Try again.",
+                                work = { app.connections.disconnect(host.id) })
+                        },
+                        onDelete = { if (!edits.busy) pendingDelete = host },
                     )
                 }
             }
@@ -146,19 +160,27 @@ fun HostsScreen(
 
     pendingDelete?.let { host ->
         AlertDialog(
-            onDismissRequest = { pendingDelete = null },
+            onDismissRequest = { if (!edits.busy) pendingDelete = null },
             title = { Text("Remove ${host.displayName}?") },
-            text = { Text("This forgets the machine on this phone. Your herdr session and agents keep running.") },
+            text = {
+                Column {
+                    Text("This forgets the machine on this phone. Your herdr session and agents keep running.")
+                    if (edits.busy) Text("Working…")
+                    edits.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                }
+            },
             confirmButton = {
-                TextButton(onClick = {
-                    app.connections.disconnect(host.id)
-                    app.hosts.delete(host.id)
-                    app.secrets.remove(dev.herdroid.data.SecretStore.passwordKey(host.id))
-                    app.secrets.remove(dev.herdroid.data.SecretStore.accessSecretKey(host.id))
-                    pendingDelete = null
+                TextButton(enabled = !edits.busy, onClick = {
+                    if (edits.busy) return@TextButton
+                    edits.submit(scope, "Could not remove this machine. Try again.", work = {
+                        app.connections.disconnect(host.id)
+                        app.hosts.delete(host.id)
+                        app.secrets.remove(dev.herdroid.data.SecretStore.passwordKey(host.id))
+                        app.secrets.remove(dev.herdroid.data.SecretStore.accessSecretKey(host.id))
+                    }, success = { pendingDelete = null })
                 }) { Text("Remove", color = MaterialTheme.colorScheme.error) }
             },
-            dismissButton = { TextButton(onClick = { pendingDelete = null }) { Text("Cancel") } },
+            dismissButton = { TextButton(enabled = !edits.busy, onClick = { if (!edits.busy) pendingDelete = null }) { Text("Cancel") } },
         )
     }
 }
