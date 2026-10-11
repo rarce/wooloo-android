@@ -4,6 +4,7 @@ import dev.herdroid.data.AuthMethod
 import dev.herdroid.data.HostProfile
 import dev.herdroid.data.KnownHost
 import dev.herdroid.data.SecretStore
+import dev.herdroid.data.SecretReadException
 import dev.herdroid.data.Transport
 import dev.herdroid.data.RemoteContextKey
 import dev.herdroid.data.remoteContextKey
@@ -64,7 +65,7 @@ import kotlinx.coroutines.currentCoroutineContext
 import dev.herdroid.ssh.closeBounded
 import dev.herdroid.ssh.channelIo
 
-enum class FailureKind { AUTH, HOST_KEY, HERDR_MISSING, SERVER_DOWN, OUTDATED, NETWORK, OTHER }
+enum class FailureKind { SECURE_STORAGE, AUTH, HOST_KEY, HERDR_MISSING, SERVER_DOWN, OUTDATED, NETWORK, OTHER }
 
 sealed interface ConnectionStatus {
     data object Idle : ConnectionStatus
@@ -277,7 +278,7 @@ class HerdrConnection(
                 closeTransport()
                 val kind = classify(e)
                 if (kind in setOf(
-                        FailureKind.AUTH, FailureKind.HOST_KEY, FailureKind.HERDR_MISSING,
+                        FailureKind.SECURE_STORAGE, FailureKind.AUTH, FailureKind.HOST_KEY, FailureKind.HERDR_MISSING,
                         FailureKind.OUTDATED,
                     )
                 ) {
@@ -650,6 +651,7 @@ class HerdrConnection(
     private fun classify(e: Throwable): FailureKind {
         val chain = generateSequence(e) { it.cause }.toList()
         return when {
+            chain.any { it is SecretReadException } -> FailureKind.SECURE_STORAGE
             chain.any { it is SshAuthException } -> FailureKind.AUTH
             chain.any { it is CloudflareTunnelException && it.isAccessDenied } -> FailureKind.AUTH
             chain.any { it is HostKeyRejectedException } -> FailureKind.HOST_KEY
@@ -666,6 +668,7 @@ class HerdrConnection(
 
     private fun friendlyMessage(e: Throwable): String {
         val chain = generateSequence(e) { it.cause }.toList()
+        if (chain.any { it is SecretReadException }) return SecretReadException().message.orEmpty()
         chain.firstOrNull { it is CloudflareTunnelException }?.let { return it.message.orEmpty() }
         if (profile.transport == Transport.CLOUDFLARE) tunnelMessage(chain)?.let { return it }
         chain.firstOrNull { it is UnknownHostException }?.let {

@@ -99,7 +99,7 @@ fun ConnectionBanner(
                     }
                     Column(horizontalAlignment = Alignment.End) {
                         TextButton(onClick = onRetry) { Text("Retry", color = foreground) }
-                        if (status.kind in setOf(FailureKind.AUTH, FailureKind.HERDR_MISSING)) {
+                        if (status.kind in setOf(FailureKind.SECURE_STORAGE, FailureKind.AUTH, FailureKind.HERDR_MISSING)) {
                             TextButton(onClick = onEditHost) { Text("Edit host", color = foreground) }
                         }
                     }
@@ -111,6 +111,7 @@ fun ConnectionBanner(
 }
 
 fun failureTitle(kind: FailureKind) = when (kind) {
+    FailureKind.SECURE_STORAGE -> "Saved credentials unavailable"
     FailureKind.AUTH -> "Authentication failed"
     FailureKind.HOST_KEY -> "Host key not trusted"
     FailureKind.HERDR_MISSING -> "herdr not found"
