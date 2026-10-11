@@ -13,6 +13,7 @@ import dev.herdroid.data.KnownHostsStore
 import dev.herdroid.data.SecretStore
 import dev.herdroid.data.SshKeyManager
 import dev.herdroid.data.UiPreferences
+import dev.herdroid.data.quotaConsentKey
 import org.bouncycastle.jce.provider.BouncyCastleProvider
 import java.io.File
 import java.security.Security
@@ -38,7 +39,8 @@ class WoolooMobileApp : Application() {
         preferences = UiPreferences(getSharedPreferences("ui", Context.MODE_PRIVATE))
         connections = ConnectionManager(
             this,
-            ConnectionDeps(hosts, keys, secrets, knownHosts, notifier),
+            ConnectionDeps(hosts, keys, secrets, knownHosts, notifier,
+                canReadQuotas = { quotaConsentKey(it) in preferences.agentQuotaContexts.value }),
         )
         AppForeground.install()
         watchNetwork()

@@ -57,8 +57,9 @@ internal fun AgentQuotaCard(connection: HerdrConnection, modifier: Modifier = Mo
     var collapsed by rememberSaveable { mutableStateOf(true) }
 
     val monitor = connection.quotas
-    DisposableEffect(monitor, active) {
+    DisposableEffect(monitor, active, enabled, quotaConsentKey(quotaProfile)) {
         if (active) monitor.acquire()
+        if (!enabled) monitor.clear()
         onDispose { if (active) monitor.release() }
     }
     val states by monitor.states.collectAsState()
@@ -110,7 +111,7 @@ internal fun AgentQuotaCard(connection: HerdrConnection, modifier: Modifier = Mo
             }
         }
         if (enabled && !collapsed) {
-            TextButton(onClick = { prefs.setAgentQuotas(quotaProfile, false) }) { Text("Turn off") }
+            TextButton(onClick = { prefs.setAgentQuotas(quotaProfile, false); monitor.clear() }) { Text("Turn off") }
         }
     }
 }

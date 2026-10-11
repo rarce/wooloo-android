@@ -2,6 +2,7 @@ package dev.herdroid.connection
 
 import android.content.Context
 import dev.herdroid.data.HostRepository
+import dev.herdroid.data.HostProfile
 import dev.herdroid.data.KnownHostsStore
 import dev.herdroid.data.SecretStore
 import dev.herdroid.data.SshKeyManager
@@ -17,6 +18,7 @@ class ConnectionDeps(
     val secrets: SecretStore,
     val knownHosts: KnownHostsStore,
     val notifier: Notifier,
+    val canReadQuotas: (HostProfile) -> Boolean = { false },
 )
 
 /** Owns every live [HerdrConnection]; several machines can be connected at once. */

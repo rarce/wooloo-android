@@ -252,6 +252,7 @@ class HerdrConnection(
                 catch (_: Exception) { null }
                 _status.value = ConnectionStatus.Connecting("Loading herdr session…")
                 applySnapshot(api, api.snapshot())
+                quotas.resume()
                 _status.value = ConnectionStatus.Connected
                 deps.hosts.markConnected(profile.id)
                 attempt = 0
@@ -362,17 +363,20 @@ class HerdrConnection(
      * screens showing them acquire it; it only polls while one does.
      */
     val quotas = AgentQuotaMonitor(scope, AgentQuotaReader(readFiles = { keychain ->
-        val session = ssh?.takeIf { it.isConnected } ?: throw IllegalStateException("Not connected")
-        val output = withTimeoutOrNull(30_000) {
-            val channel = session.exec(AgentQuotaProbe.command(keychain))
-            try {
-                channel.channelIo { channel.stdout.readBoundedBytes(2 * 1024 * 1024) }
-            } finally {
-                channel.closeBounded()
+        val active = transport?.takeIf { it.ssh.isConnected } ?: throw IllegalStateException("Not connected")
+        readConsentedQuotaFiles(active.profile, deps.canReadQuotas) {
+            val output = withTimeoutOrNull(30_000) {
+                val channel = active.ssh.exec(AgentQuotaProbe.command(keychain))
+                try {
+                    channel.channelIo { channel.stdout.readBoundedBytes(2 * 1024 * 1024) }
+                } finally {
+                    channel.closeBounded()
+                }
             }
+            check(transport === active) { "Connection changed" }
+            // The output holds the sign-ins: it is only parsed, never put in an error message.
+            AgentQuotaProbe.parse(output?.toString(Charsets.UTF_8) ?: throw QuotaException("Reading the agents' sign-ins timed out"))
         }
-        // The output holds the sign-ins: it is only parsed, never put in an error message.
-        AgentQuotaProbe.parse(output?.toString(Charsets.UTF_8) ?: throw QuotaException("Reading the agents' sign-ins timed out"))
     }))
 
     /** Uploads [bytes] as [name] into a private temp directory on the host; returns its path. */
@@ -592,6 +596,7 @@ class HerdrConnection(
     }
 
     private fun closeTransport() {
+        quotas.invalidate()
         val old = synchronized(remoteStateLock) {
             api = null
             val old = transport
