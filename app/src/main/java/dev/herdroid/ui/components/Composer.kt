@@ -44,6 +44,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.input.VisualTransformation
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -121,43 +122,47 @@ fun ComposerSheet(
     isAgent: Boolean,
     onDismiss: () -> Unit,
     onQuickReply: (QuickReply) -> Unit,
-    onSend: (text: String, images: List<File>) -> Unit,
+    onSend: suspend (text: String, images: List<File>, uploads: AttachmentUploads) -> Result<Unit>,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    var sending by remember { mutableStateOf(false) }
+    var sendError by remember { mutableStateOf<String?>(null) }
+    val uploads = remember { AttachmentUploads() }
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true, confirmValueChange = { !sending })
     val text = rememberTextFieldState()
     val images = remember { mutableStateListOf<File>() }
     var preparing by remember { mutableIntStateOf(0) }
     val focus = remember { FocusRequester() }
     LaunchedEffect(Unit) {
-        focus.requestFocus()
         withContext(Dispatchers.IO) { ImageAttachments.pruneStale(context) }
     }
 
-    fun attach(uri: Uri) {
+    fun attach(uri: Uri): Boolean {
+        if (sending || images.size + preparing >= MAX_IMAGES) return false
         preparing++
         scope.launch {
-            runCatching { ImageAttachments.prepare(context, uri) }
-                .onSuccess { images += it }
-                .onFailure { Toast.makeText(context, "Couldn't attach image: ${it.message}", Toast.LENGTH_LONG).show() }
-            preparing--
+            try { images += ImageAttachments.prepare(context, uri) }
+            catch (e: CancellationException) { throw e }
+            catch (e: Exception) { Toast.makeText(context, "Couldn't attach image: ${e.message}", Toast.LENGTH_LONG).show() }
+            finally { preparing-- }
         }
+        return true
     }
 
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(MAX_IMAGES)) { uris ->
-        uris.take(MAX_IMAGES - images.size).forEach(::attach)
+        uris.take(MAX_IMAGES - images.size).forEach { attach(it) }
     }
     // Images committed by the keyboard (Gboard clipboard, screenshots, stickers) or pasted.
     val receiver = remember {
         ReceiveContentListener { content ->
             if (!content.hasMediaType(MediaType.Image)) return@ReceiveContentListener content
-            content.consume { item -> item.uri?.let { attach(it); true } ?: false }
+            content.consume { item -> item.uri?.let { attach(it) } ?: false }
         }
     }
-    val canSend = (text.text.isNotBlank() || images.isNotEmpty()) && preparing == 0
+    val canSend = (text.text.isNotBlank() || images.isNotEmpty()) && preparing == 0 && !sending
 
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
+    ModalBottomSheet(onDismissRequest = { if (!sending) onDismiss() }, sheetState = sheetState) {
         Column(
             Modifier
                 .fillMaxWidth()
@@ -173,7 +178,7 @@ fun ComposerSheet(
             }
             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(if (isAgent) AgentQuickReplies else ShellQuickReplies) { reply ->
-                    AssistChip(onClick = { onQuickReply(reply) }, label = { Text(reply.label) })
+                    AssistChip(enabled = !sending, onClick = { onQuickReply(reply) }, label = { Text(reply.label) })
                 }
             }
             Text(
@@ -184,7 +189,7 @@ fun ComposerSheet(
             if (images.isNotEmpty() || preparing > 0) {
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     items(images, key = { it.path }) { file ->
-                        AttachmentThumbnail(file, onRemove = { images -= file; file.delete() })
+                        AttachmentThumbnail(file, enabled = !sending, onRemove = { images -= file; file.delete() })
                     }
                     if (preparing > 0) item {
                         Box(Modifier.size(THUMB_SIZE), contentAlignment = Alignment.Center) {
@@ -196,11 +201,13 @@ fun ComposerSheet(
             Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 ComposerField(
                     state = text,
+                    focus = focus,
                     placeholder = if (isAgent) "Ask or instruct the agent…" else "Command to run…",
                     onAttach = {
                         picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
                     },
-                    attachEnabled = images.size + preparing < MAX_IMAGES,
+                    attachEnabled = !sending && images.size + preparing < MAX_IMAGES,
+                    enabled = !sending,
                     modifier = Modifier
                         .weight(1f)
                         .heightIn(min = 56.dp, max = 220.dp)
@@ -209,14 +216,31 @@ fun ComposerSheet(
                 )
                 FilledIconButton(
                     enabled = canSend,
-                    onClick = {
-                        onSend(text.text.toString(), images.toList())
-                        text.clearText()
-                        images.clear()
-                        onDismiss()
+                    onClick = send@ {
+                        if (sending) return@send
+                        sending = true
+                        sendError = null
+                        val message = text.text.toString()
+                        val attachments = images.toList()
+                        scope.launch {
+                            try {
+                                onSend(message, attachments, uploads).getOrThrow()
+                                withContext(Dispatchers.IO) { attachments.forEach { it.delete() } }
+                                text.clearText()
+                                images.clear()
+                                sending = false
+                                onDismiss()
+                            } catch (e: CancellationException) { throw e }
+                            catch (e: Exception) { sendError = e.message ?: "Couldn't send the message" }
+                            finally { sending = false }
+                        }
                     },
-                ) { Icon(Icons.AutoMirrored.Outlined.Send, "Send") }
+                ) {
+                    if (sending) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                    else Icon(Icons.AutoMirrored.Outlined.Send, "Send")
+                }
             }
+            sendError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             Text(
                 when {
                     images.isNotEmpty() -> "Images are sent to this machine with your message."
@@ -236,16 +260,19 @@ fun ComposerSheet(
 @Composable
 private fun ComposerField(
     state: TextFieldState,
+    focus: FocusRequester,
     placeholder: String,
     onAttach: () -> Unit,
     attachEnabled: Boolean,
     modifier: Modifier,
+    enabled: Boolean = true,
 ) {
     val interaction = remember { MutableInteractionSource() }
     val colors = OutlinedTextFieldDefaults.colors()
     val shape = RoundedCornerShape(20.dp)
     BasicTextField(
         state = state,
+        enabled = enabled,
         modifier = modifier,
         keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
         textStyle = LocalTextStyle.current.copy(color = MaterialTheme.colorScheme.onSurface),
@@ -255,7 +282,7 @@ private fun ComposerField(
             OutlinedTextFieldDefaults.DecorationBox(
                 value = state.text.toString(),
                 innerTextField = inner,
-                enabled = true,
+                enabled = enabled,
                 singleLine = false,
                 visualTransformation = VisualTransformation.None,
                 interactionSource = interaction,
@@ -267,15 +294,18 @@ private fun ComposerField(
                 },
                 colors = colors,
                 container = {
-                    OutlinedTextFieldDefaults.ContainerBox(true, false, interaction, colors, shape)
+                    OutlinedTextFieldDefaults.ContainerBox(enabled, false, interaction, colors, shape)
                 },
             )
         },
     )
+    // The bottom sheet composes its content separately. Request focus only
+    // after this field's own composition has attached its focus target.
+    LaunchedEffect(enabled) { if (enabled) focus.requestFocus() }
 }
 
 @Composable
-private fun AttachmentThumbnail(file: File, onRemove: () -> Unit) {
+private fun AttachmentThumbnail(file: File, enabled: Boolean, onRemove: () -> Unit) {
     val px = with(LocalDensity.current) { THUMB_SIZE.roundToPx() }
     val bitmap by produceState<ImageBitmap?>(null, file) {
         value = withContext(Dispatchers.IO) { ImageAttachments.thumbnail(file, px)?.asImageBitmap() }
@@ -298,7 +328,7 @@ private fun AttachmentThumbnail(file: File, onRemove: () -> Unit) {
                 .size(22.dp)
                 .clip(CircleShape)
                 .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.6f))
-                .clickable(onClick = onRemove),
+                .clickable(enabled = enabled, onClick = onRemove),
             contentAlignment = Alignment.Center,
         ) { Icon(Icons.Outlined.Close, "Remove image", tint = Color.White, modifier = Modifier.size(14.dp)) }
     }

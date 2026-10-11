@@ -12,6 +12,7 @@ import dev.herdroid.herdr.HerdrApi
 import dev.herdroid.herdr.HerdrApiException
 import dev.herdroid.herdr.HerdrNotFoundException
 import dev.herdroid.herdr.RemoteCommand
+import dev.herdroid.herdr.readBoundedLine
 import dev.herdroid.herdr.SessionSnapshot
 import dev.herdroid.herdr.TerminalStream
 import dev.herdroid.ssh.CloudflareTunnel
@@ -311,25 +312,24 @@ class HerdrConnection(
     }
 
     /** Uploads [bytes] as [name] into a private temp directory on the host; returns its path. */
-    suspend fun uploadFile(name: String, bytes: ByteArray): Result<String> {
+    suspend fun uploadFile(name: String, bytes: ByteArray, expectedApi: HerdrApi? = null): Result<String> {
+        if (expectedApi != null && api !== expectedApi)
+            return Result.failure(IllegalStateException("Connection changed; retry the send"))
         val session = ssh?.takeIf { it.isConnected }
             ?: return Result.failure(IllegalStateException("Not connected"))
+        if (expectedApi != null && api !== expectedApi)
+            return Result.failure(IllegalStateException("Connection changed; retry the send"))
         return try {
-            val channel = session.exec(RemoteCommand.uploadFile(name))
-            val output = try {
-                withTimeout(120_000) {
-                    runInterruptible(Dispatchers.IO) {
+            val output = withTimeoutOrNull(120_000) {
+                session.exec(RemoteCommand.uploadFile(name)).use { channel ->
+                    interruptibleIo {
                         channel.stdin.use { it.write(bytes) }
-                        channel.stdout.readBytes()
+                        channel.stdout.bufferedReader().readBoundedLine(16_384)
                     }
                 }
-            } finally {
-                channel.close()
-            }
-            output.toString(Charsets.UTF_8).trim().takeIf { it.startsWith("/") }?.let { Result.success(it) }
+            } ?: throw SocketTimeoutException("Uploading $name timed out or returned no path")
+            output.trim().takeIf { it.startsWith("/") }?.let { Result.success(it) }
                 ?: Result.failure(IllegalStateException("Couldn't store $name on the host"))
-        } catch (e: TimeoutCancellationException) {
-            Result.failure(IllegalStateException("Uploading $name timed out"))
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
