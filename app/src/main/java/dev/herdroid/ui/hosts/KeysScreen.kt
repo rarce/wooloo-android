@@ -1,5 +1,6 @@
 package dev.herdroid.ui.hosts
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -35,6 +36,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -53,20 +55,32 @@ import dev.herdroid.ui.theme.Mono
 fun KeysScreen(onBack: () -> Unit, startWithImport: Boolean = false) {
     val app = LocalContext.current.app
     val keys by app.keys.keys.collectAsState()
+    val scope = rememberCoroutineScope()
+    val edits = remember { BackgroundEdit() }
+    BackHandler(enabled = edits.busy) { }
+    fun generate() {
+        edits.submit(scope, "Could not generate a key. Try again.", work = {
+            app.keys.generateEd25519("wooloo-mobile@${android.os.Build.MODEL.replace(' ', '-')}")
+        })
+    }
     var importing by remember { mutableStateOf(false) }
     var deleting by remember { mutableStateOf<SshKeyInfo?>(null) }
     LaunchedEffect(startWithImport) { if (startWithImport) importing = true }
 
     Scaffold(
+        snackbarHost = {
+            Column(Modifier.padding(16.dp)) {
+                if (edits.busy) Text("Working…")
+                edits.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+            }
+        },
         topBar = {
             TopAppBar(
                 title = { Text("SSH keys") },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, "Back") } },
+                navigationIcon = { IconButton(enabled = !edits.busy, onClick = { if (!edits.busy) onBack() }) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, "Back") } },
                 actions = {
-                    IconButton(onClick = { importing = true }) { Icon(Icons.Outlined.FileDownload, "Import key") }
-                    IconButton(onClick = {
-                        app.keys.generateEd25519("wooloo-mobile@${android.os.Build.MODEL.replace(' ', '-')}")
-                    }) { Icon(Icons.Outlined.AutoAwesome, "Generate key") }
+                    IconButton(enabled = !edits.busy, onClick = { if (!edits.busy) importing = true }) { Icon(Icons.Outlined.FileDownload, "Import key") }
+                    IconButton(enabled = !edits.busy, onClick = ::generate) { Icon(Icons.Outlined.AutoAwesome, "Generate key") }
                 },
             )
         },
@@ -79,7 +93,7 @@ fun KeysScreen(onBack: () -> Unit, startWithImport: Boolean = false) {
                     "Private keys are encrypted with the Android Keystore and never leave the device.",
                 modifier = Modifier.padding(padding),
             ) {
-                Button(onClick = { app.keys.generateEd25519("wooloo-mobile@${android.os.Build.MODEL.replace(' ', '-')}") }) {
+                Button(enabled = !edits.busy, onClick = ::generate) {
                     Text("Generate key")
                 }
             }
@@ -99,7 +113,7 @@ fun KeysScreen(onBack: () -> Unit, startWithImport: Boolean = false) {
                                     Text(key.name, style = MaterialTheme.typography.titleMedium)
                                     Text(key.fingerprint, fontFamily = Mono, style = MaterialTheme.typography.bodySmall)
                                 }
-                                IconButton(onClick = { deleting = key }) { Icon(Icons.Outlined.Delete, "Delete key") }
+                                IconButton(enabled = !edits.busy, onClick = { if (!edits.busy) deleting = key }) { Icon(Icons.Outlined.Delete, "Delete key") }
                             }
                             PublicKeyCard(key)
                         }
@@ -113,15 +127,24 @@ fun KeysScreen(onBack: () -> Unit, startWithImport: Boolean = false) {
 
     deleting?.let { key ->
         AlertDialog(
-            onDismissRequest = { deleting = null },
+            onDismissRequest = { if (!edits.busy) deleting = null },
             title = { Text("Delete ${key.name}?") },
-            text = { Text("Machines using this key won't be able to connect until you pick another one.") },
+            text = {
+                Column {
+                    Text("Machines using this key won't be able to connect until you pick another one.")
+                    if (edits.busy) Text("Working…")
+                    edits.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                }
+            },
             confirmButton = {
-                TextButton(onClick = { app.keys.delete(key.id); deleting = null }) {
+                TextButton(enabled = !edits.busy, onClick = {
+                    edits.submit(scope, "Could not delete this key. Try again.", work = { app.keys.delete(key.id) },
+                        success = { deleting = null })
+                }) {
                     Text("Delete", color = MaterialTheme.colorScheme.error)
                 }
             },
-            dismissButton = { TextButton(onClick = { deleting = null }) { Text("Cancel") } },
+            dismissButton = { TextButton(enabled = !edits.busy, onClick = { if (!edits.busy) deleting = null }) { Text("Cancel") } },
         )
     }
 }
@@ -129,18 +152,27 @@ fun KeysScreen(onBack: () -> Unit, startWithImport: Boolean = false) {
 @Composable
 fun ImportKeyDialog(onDismiss: () -> Unit) {
     val app = LocalContext.current.app
+    ImportKeyForm(onDismiss) { name, pem, passphrase -> app.keys.import(name, pem, passphrase) }
+}
+
+@Composable
+internal fun ImportKeyForm(onDismiss: () -> Unit, importKey: (String, String, String?) -> Unit) {
     var name by remember { mutableStateOf("") }
     var pem by remember { mutableStateOf("") }
     var passphrase by remember { mutableStateOf("") }
-    var error by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
+    val edits = remember { BackgroundEdit() }
+    BackHandler(enabled = edits.busy) { }
+    fun dismiss() { if (!edits.busy) onDismiss() }
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = ::dismiss,
         title = { Text("Import private key") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(name, { name = it }, label = { Text("Name") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(name, { name = it }, enabled = !edits.busy, label = { Text("Name") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(
-                    pem, { pem = it; error = null },
+                    pem, { pem = it },
+                    enabled = !edits.busy,
                     label = { Text("Private key") },
                     placeholder = { Text("-----BEGIN OPENSSH PRIVATE KEY-----") },
                     textStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = Mono),
@@ -148,22 +180,27 @@ fun ImportKeyDialog(onDismiss: () -> Unit) {
                 )
                 OutlinedTextField(
                     passphrase, { passphrase = it },
+                    enabled = !edits.busy,
                     label = { Text("Passphrase (if any)") },
                     singleLine = true,
                     visualTransformation = PasswordVisualTransformation(),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
                     modifier = Modifier.fillMaxWidth(),
                 )
-                error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+                if (edits.busy) Text("Importing…")
+                edits.error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
             }
         },
         confirmButton = {
-            Button(enabled = pem.isNotBlank(), onClick = {
-                runCatching { app.keys.import(name, pem, passphrase.ifEmpty { null }) }
-                    .onSuccess { onDismiss() }
-                    .onFailure { error = it.message ?: "Could not read that key" }
+            Button(enabled = pem.isNotBlank() && !edits.busy, onClick = {
+                val importName = name
+                val importPem = pem
+                val importPassphrase = passphrase.ifEmpty { null }
+                edits.submit(scope, "Could not import that key. Check the key and passphrase, then try again.", work = {
+                    importKey(importName, importPem, importPassphrase)
+                }, success = { onDismiss() })
             }) { Text("Import") }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        dismissButton = { TextButton(enabled = !edits.busy, onClick = ::dismiss) { Text("Cancel") } },
     )
 }

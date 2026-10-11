@@ -2,6 +2,7 @@ package dev.herdroid.ui.hosts
 
 import android.content.Intent
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -54,6 +55,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -86,7 +88,10 @@ import dev.herdroid.data.SecretStore
 import dev.herdroid.data.SshKeyInfo
 import dev.herdroid.data.Transport
 import dev.herdroid.ui.theme.Mono
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -106,6 +111,10 @@ fun HostEditScreen(
         val base = existing ?: HostProfile()
         imported?.applyTo(base) ?: base
     }
+
+    val savedId = rememberSaveable(hostId, link) { initial.id }
+    val edits = remember(hostId, link) { BackgroundEdit() }
+    BackHandler(enabled = edits.busy) { }
 
     var label by rememberSaveable { mutableStateOf(initial.label) }
     var transport by rememberSaveable { mutableStateOf(initial.transport) }
@@ -135,11 +144,24 @@ fun HostEditScreen(
     val portIntoView = remember { BringIntoViewRequester() }
     val keyIntoView = remember { BringIntoViewRequester() }
 
-    val hasSavedPassword = remember(hostId) {
-        hostId != null && app.secrets.get(SecretStore.passwordKey(hostId)) != null
-    }
-    val hasSavedAccessSecret = remember(hostId) {
-        hostId != null && app.secrets.get(SecretStore.accessSecretKey(hostId)) != null
+    var hasSavedPassword by remember(hostId) { mutableStateOf(false) }
+    var hasSavedAccessSecret by remember(hostId) { mutableStateOf(false) }
+    var secretReadError by remember(hostId) { mutableStateOf(false) }
+    LaunchedEffect(hostId) {
+        if (hostId != null) {
+            try {
+                val presence = withContext(Dispatchers.IO) {
+                    app.secrets.contains(SecretStore.passwordKey(hostId)) to
+                        app.secrets.contains(SecretStore.accessSecretKey(hostId))
+                }
+                hasSavedPassword = presence.first
+                hasSavedAccessSecret = presence.second
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                secretReadError = true
+            }
+        }
     }
     val tunnel = transport == Transport.CLOUDFLARE
 
@@ -168,6 +190,7 @@ fun HostEditScreen(
     val keyError = auth == AuthMethod.KEY && keys.none { it.id == keyId }
 
     fun save(connect: Boolean) {
+        if (edits.busy) return
         splitTarget()
         // Validate the normalized values now, rather than values from the previous composition.
         val normalizedPort = port.toIntOrNull()
@@ -187,7 +210,8 @@ fun HostEditScreen(
             }
             return
         }
-        val profile = (existing ?: HostProfile()).copy(
+        val profile = initial.copy(
+            id = savedId,
             label = label.trim(),
             hostname = hostname.trim(),
             port = if (tunnel) initial.port else normalizedPort ?: 22,
@@ -202,31 +226,45 @@ fun HostEditScreen(
             notifyWhenBlocked = notifyBlocked,
             notifyWhenDone = notifyDone,
         )
-        app.hosts.upsert(profile)
-        if (auth == AuthMethod.PASSWORD && password.isNotEmpty()) {
-            app.secrets.put(SecretStore.passwordKey(profile.id), password)
+        val savedPassword = password
+        val savedAccessSecret = accessSecret
+        val replacements = buildMap {
+            if (profile.auth == AuthMethod.PASSWORD && savedPassword.isNotEmpty()) {
+                put(SecretStore.passwordKey(profile.id), savedPassword)
+            }
+            if (profile.accessClientId != null && savedAccessSecret.isNotEmpty()) {
+                put(SecretStore.accessSecretKey(profile.id), savedAccessSecret)
+            }
         }
-        if (auth == AuthMethod.KEY) app.secrets.remove(SecretStore.passwordKey(profile.id))
-        if (profile.accessClientId == null) {
-            app.secrets.remove(SecretStore.accessSecretKey(profile.id))
-        } else if (accessSecret.isNotEmpty()) {
-            app.secrets.put(SecretStore.accessSecretKey(profile.id), accessSecret)
+        val removals = buildSet {
+            if (profile.auth == AuthMethod.KEY) add(SecretStore.passwordKey(profile.id))
+            if (profile.accessClientId == null) add(SecretStore.accessSecretKey(profile.id))
         }
-        app.connections.profileChanged(profile.id)
-        onDone(profile.id, connect)
+        edits.submit(scope, "Could not save this machine. Your changes are still here.", work = {
+            app.secrets.transaction(replacements, removals) { app.hosts.upsert(profile) }
+        }, success = {
+            app.connections.profileChanged(profile.id)
+            onDone(profile.id, connect)
+        })
     }
 
     Scaffold(
+        snackbarHost = {
+            Column(Modifier.padding(16.dp)) {
+                if (edits.busy) Text("Working…")
+                edits.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+            }
+        },
         topBar = {
             TopAppBar(
                 title = { Text(if (existing == null) "Add machine" else "Edit machine") },
                 navigationIcon = {
-                    IconButton(onClick = { onDone(null, false) }) {
+                    IconButton(enabled = !edits.busy, onClick = { if (!edits.busy) onDone(null, false) }) {
                         Icon(Icons.AutoMirrored.Outlined.ArrowBack, "Back")
                     }
                 },
                 actions = {
-                    TextButton(onClick = { save(connect = imported != null) }) {
+                    TextButton(enabled = !edits.busy, onClick = { save(connect = imported != null) }) {
                         Text(if (imported != null) "Connect" else "Save")
                     }
                 },
@@ -241,12 +279,15 @@ fun HostEditScreen(
                 .padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
+            if (secretReadError) Text("Saved credentials could not be read. Enter them again to replace them.",
+                color = MaterialTheme.colorScheme.error)
             imported?.let { ImportNotice(updating = existing?.displayName) }
 
             SectionTitle("Machine")
             SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
                 Transport.entries.forEachIndexed { index, option ->
                     SegmentedButton(
+                        enabled = !edits.busy,
                         selected = transport == option,
                         onClick = { transport = option },
                         shape = SegmentedButtonDefaults.itemShape(index, Transport.entries.size),
@@ -255,6 +296,7 @@ fun HostEditScreen(
                 }
             }
             OutlinedTextField(
+                enabled = !edits.busy,
                 value = hostname,
                 onValueChange = { hostname = it },
                 label = { Text(if (tunnel) "Tunnel hostname" else "Host") },
@@ -275,6 +317,7 @@ fun HostEditScreen(
             )
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 OutlinedTextField(
+                    enabled = !edits.busy,
                     value = username,
                     onValueChange = { username = it },
                     label = { Text("User") },
@@ -286,6 +329,7 @@ fun HostEditScreen(
                 )
                 if (!tunnel) {
                     OutlinedTextField(
+                        enabled = !edits.busy,
                         value = port,
                         onValueChange = { port = it.filter(Char::isDigit).take(5) },
                         label = { Text("Port") },
@@ -299,6 +343,7 @@ fun HostEditScreen(
                 }
             }
             OutlinedTextField(
+                enabled = !edits.busy,
                 value = label,
                 onValueChange = { label = it },
                 label = { Text("Name (optional)") },
@@ -310,6 +355,7 @@ fun HostEditScreen(
             if (tunnel) {
                 SectionTitle("Cloudflare Access (optional)")
                 OutlinedTextField(
+                    enabled = !edits.busy,
                     value = accessClientId,
                     onValueChange = { accessClientId = it.trim() },
                     label = { Text("Service token client ID") },
@@ -320,6 +366,7 @@ fun HostEditScreen(
                 )
                 if (accessClientId.isNotBlank()) {
                     OutlinedTextField(
+                        enabled = !edits.busy,
                         value = accessSecret,
                         onValueChange = { accessSecret = it.trim() },
                         label = {
@@ -338,6 +385,7 @@ fun HostEditScreen(
             SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
                 AuthMethod.entries.forEachIndexed { index, method ->
                     SegmentedButton(
+                        enabled = !edits.busy,
                         selected = auth == method,
                         onClick = { auth = method },
                         shape = SegmentedButtonDefaults.itemShape(index, AuthMethod.entries.size),
@@ -348,21 +396,24 @@ fun HostEditScreen(
 
             if (auth == AuthMethod.KEY) {
                 KeyPicker(
+                    enabled = !edits.busy,
                     keys = keys,
                     selectedId = keyId,
                     isError = showErrors && keyError,
-                    onSelect = { keyId = it },
+                    onSelect = { if (!edits.busy) keyId = it },
                     onGenerate = {
-                        val info = app.keys.generateEd25519("wooloo-mobile@${android.os.Build.MODEL.replace(' ', '-')}")
-                        keyId = info.id
+                        edits.submit(scope, "Could not generate a key. Try again.", work = {
+                            app.keys.generateEd25519("wooloo-mobile@${android.os.Build.MODEL.replace(' ', '-')}")
+                        }, success = { keyId = it.id })
                     },
-                    onImport = onImportKey,
+                    onImport = { if (!edits.busy) onImportKey() },
                     focus = keyFocus,
                     intoView = keyIntoView,
                 )
                 keys.firstOrNull { it.id == keyId }?.let { PublicKeyCard(it) }
             } else {
                 OutlinedTextField(
+                    enabled = !edits.busy,
                     value = password,
                     onValueChange = { password = it },
                     label = { Text(if (hasSavedPassword) "Password (saved — leave empty to keep)" else "Password") },
@@ -376,6 +427,7 @@ fun HostEditScreen(
 
             SectionTitle("herdr")
             OutlinedTextField(
+                enabled = !edits.busy,
                 value = session,
                 onValueChange = { session = it.trim() },
                 label = { Text("Session") },
@@ -384,13 +436,14 @@ fun HostEditScreen(
                 modifier = Modifier.fillMaxWidth(),
             )
 
-            TextButton(onClick = { advanced = !advanced }) {
+            TextButton(enabled = !edits.busy, onClick = { advanced = !advanced }) {
                 Icon(if (advanced) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore, null)
                 Text(" Advanced")
             }
             AnimatedVisibility(advanced) {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedTextField(
+                        enabled = !edits.busy,
                         value = herdrPath,
                         onValueChange = { herdrPath = it },
                         label = { Text("herdr executable") },
@@ -406,16 +459,17 @@ fun HostEditScreen(
                                     Text(it, fontFamily = Mono, style = MaterialTheme.typography.bodySmall)
                                 }
                             }
-                            TextButton(onClick = { pinnedKeys = "" }) { Text("Forget") }
+                            TextButton(enabled = !edits.busy, onClick = { pinnedKeys = "" }) { Text("Forget") }
                         }
                     }
-                    ToggleRow("Notify when an agent needs input", notifyBlocked) { notifyBlocked = it }
-                    ToggleRow("Notify when an agent finishes", notifyDone) { notifyDone = it }
+                    ToggleRow("Notify when an agent needs input", notifyBlocked, enabled = !edits.busy) { notifyBlocked = it }
+                    ToggleRow("Notify when an agent finishes", notifyDone, enabled = !edits.busy) { notifyDone = it }
                 }
             }
 
             Spacer(Modifier.height(4.dp))
             Button(
+                enabled = !edits.busy,
                 onClick = { save(connect = true) },
                 modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp),
                 shape = RoundedCornerShape(16.dp),
@@ -456,16 +510,17 @@ private fun SectionTitle(text: String) {
 }
 
 @Composable
-private fun ToggleRow(text: String, checked: Boolean, onChange: (Boolean) -> Unit) {
+private fun ToggleRow(text: String, checked: Boolean, enabled: Boolean, onChange: (Boolean) -> Unit) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Text(text, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
-        Switch(checked = checked, onCheckedChange = onChange)
+        Switch(enabled = enabled, checked = checked, onCheckedChange = onChange)
     }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun KeyPicker(
+    enabled: Boolean,
     keys: List<SshKeyInfo>,
     selectedId: String?,
     isError: Boolean,
@@ -479,11 +534,12 @@ private fun KeyPicker(
     val selected = keys.firstOrNull { it.id == selectedId }
     Column(Modifier.fillMaxWidth().bringIntoViewRequester(intoView), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         if (keys.isNotEmpty()) {
-            ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = it }) {
+            ExposedDropdownMenuBox(expanded = expanded && enabled, onExpandedChange = { if (enabled) expanded = it }) {
                 OutlinedTextField(
                     value = selected?.let { "${it.name} · ${it.type}" } ?: "Choose a key",
                     onValueChange = {},
                     readOnly = true,
+                    enabled = enabled,
                     isError = isError,
                     label = { Text("Key") },
                     supportingText = if (isError) ({ Text("Choose an SSH key.") }) else null,
@@ -491,7 +547,7 @@ private fun KeyPicker(
                     modifier = Modifier.fillMaxWidth().focusRequester(focus)
                         .menuAnchor(MenuAnchorType.PrimaryNotEditable),
                 )
-                ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                ExposedDropdownMenu(expanded = expanded && enabled, onDismissRequest = { expanded = false }) {
                     keys.forEach { key ->
                         DropdownMenuItem(
                             text = {
@@ -508,14 +564,14 @@ private fun KeyPicker(
         }
         // Short single-line labels: at large font sizes "Generate new" wrapped inside half the width.
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedButton(onClick = onGenerate, modifier = Modifier.weight(1f).then(
+            OutlinedButton(enabled = enabled, onClick = onGenerate, modifier = Modifier.weight(1f).then(
                 if (keys.isEmpty()) Modifier.focusRequester(focus) else Modifier
             )) {
                 Icon(Icons.Outlined.AutoAwesome, null, Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
                 Text("New key", maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
-            OutlinedButton(onClick = onImport, modifier = Modifier.weight(1f)) {
+            OutlinedButton(enabled = enabled, onClick = onImport, modifier = Modifier.weight(1f)) {
                 Icon(Icons.Outlined.FileDownload, null, Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
                 Text("Import", maxLines = 1, overflow = TextOverflow.Ellipsis)
