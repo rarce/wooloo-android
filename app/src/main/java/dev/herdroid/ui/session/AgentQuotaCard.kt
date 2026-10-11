@@ -49,8 +49,9 @@ import kotlinx.coroutines.delay
 internal fun AgentQuotaCard(connection: HerdrConnection, modifier: Modifier = Modifier) {
     val prefs = LocalContext.current.app.preferences
     val approvedContexts by prefs.agentQuotaContexts.collectAsState()
-    val enabled = quotaConsentKey(connection.profile) in approvedContexts
     val status by connection.status.collectAsState()
+    val quotaProfile = connection.activeProfile ?: connection.profile
+    val enabled = quotaConsentKey(quotaProfile) in approvedContexts
     val lifecycle by LocalLifecycleOwner.current.lifecycle.currentStateFlow.collectAsState()
     val active = enabled && status == ConnectionStatus.Connected && lifecycle.isAtLeast(Lifecycle.State.RESUMED)
     var collapsed by rememberSaveable { mutableStateOf(true) }
@@ -89,7 +90,7 @@ internal fun AgentQuotaCard(connection: HerdrConnection, modifier: Modifier = Mo
         },
     ) {
         when {
-            !enabled -> OptIn(onEnable = { prefs.setAgentQuotas(connection.profile, true) })
+            !enabled -> OptIn(onEnable = { prefs.setAgentQuotas(quotaProfile, true) })
             states.isEmpty() -> Hint(
                 if (loaded) "No Claude Code or Codex sign-in on ${connection.profile.displayName}" else "Reading…",
             )
@@ -109,7 +110,7 @@ internal fun AgentQuotaCard(connection: HerdrConnection, modifier: Modifier = Mo
             }
         }
         if (enabled && !collapsed) {
-            TextButton(onClick = { prefs.setAgentQuotas(connection.profile, false) }) { Text("Turn off") }
+            TextButton(onClick = { prefs.setAgentQuotas(quotaProfile, false) }) { Text("Turn off") }
         }
     }
 }
