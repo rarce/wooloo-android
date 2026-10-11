@@ -343,9 +343,9 @@ class HerdrConnection(
             val output = withTimeoutOrNull(15_000) {
                 val channel = session.exec(HostProbe.command())
                 try {
-                    interruptibleIo { channel.stdout.readBoundedBytes(64 * 1024) }
+                    channel.channelIo { channel.stdout.readBoundedBytes(64 * 1024) }
                 } finally {
-                    channel.close()
+                    channel.closeBounded()
                 }
             } ?: return Result.failure(IllegalStateException("Reading host stats timed out"))
             HostProbe.parse(output.toString(Charsets.UTF_8))?.let { Result.success(it) }
@@ -366,9 +366,9 @@ class HerdrConnection(
         val output = withTimeoutOrNull(30_000) {
             val channel = session.exec(AgentQuotaProbe.command(keychain))
             try {
-                interruptibleIo { channel.stdout.readBoundedBytes(2 * 1024 * 1024) }
+                channel.channelIo { channel.stdout.readBoundedBytes(2 * 1024 * 1024) }
             } finally {
-                channel.close()
+                channel.closeBounded()
             }
         }
         // The output holds the sign-ins: it is only parsed, never put in an error message.
