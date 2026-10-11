@@ -16,7 +16,17 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runInterruptible
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
+import okhttp3.Call
+import okhttp3.Callback
+import okhttp3.Response
+import java.io.IOException
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.util.concurrent.TimeUnit
@@ -34,8 +44,35 @@ fun interface QuotaHttp {
             val request = Request.Builder().url(url).header("Accept", "application/json").apply {
                 headers.forEach { (name, value) -> header(name, value) }
             }.build()
-            runInterruptible(Dispatchers.IO) {
-                client.newCall(request).execute().use { it.code to it.body?.string().orEmpty() }
+            suspendCancellableCoroutine { continuation ->
+                val call = client.newCall(request)
+                continuation.invokeOnCancellation { call.cancel() }
+                call.enqueue(object : Callback {
+                    override fun onFailure(call: Call, e: IOException) {
+                        if (continuation.isActive) continuation.resumeWithException(e)
+                    }
+                    override fun onResponse(call: Call, response: Response) {
+                        try {
+                            val result = response.use {
+                                val body = it.body?.byteStream()?.use { input ->
+                                    val output = java.io.ByteArrayOutputStream()
+                                    val buffer = ByteArray(8192)
+                                    while (true) {
+                                        val count = input.read(buffer)
+                                        if (count < 0) break
+                                        if (output.size() + count > 512 * 1024) throw IOException("Usage response is too large")
+                                        output.write(buffer, 0, count)
+                                    }
+                                    output.toString(Charsets.UTF_8.name())
+                                }.orEmpty()
+                                it.code to body
+                            }
+                            if (continuation.isActive) continuation.resume(result)
+                        } catch (e: Exception) {
+                            if (continuation.isActive) continuation.resumeWithException(e)
+                        }
+                    }
+                })
             }
         }
     }
@@ -52,32 +89,37 @@ class AgentQuotaReader(
     private val readFiles: suspend (keychain: Boolean) -> AgentQuotaFiles,
     private val http: QuotaHttp = QuotaHttp.Default,
 ) {
-    private var claudeCredential: AgentQuotaParser.ClaudeCredential? = null
-    /** A token the usage endpoint rejected; it is not sent again. */
-    private var rejectedClaudeToken: String? = null
-    /** Keychain reads are spaced out, since each one can make macOS ask for permission. */
-    private var nextKeychainRead = 0L
-    /** The last Keychain read failed; later reads skip the Keychain for a while, so this explains why there's no sign-in. */
-    private var keychainFailed = false
+    private class Cache {
+        var claudeCredential: AgentQuotaParser.ClaudeCredential? = null
+        var rejectedClaudeToken: String? = null
+        var nextKeychainRead = 0L
+        var keychainFailed = false
+    }
+    @Volatile private var cache = Cache()
+    private val reads = Mutex()
+
+    /** Detached cache objects prevent an older cancelled read from restoring cleared credentials. */
+    fun reset() { cache = Cache() }
 
     /** A null quota means the agent is not set up on the machine. */
-    suspend fun read(now: Long): Map<AgentProvider, Result<AgentQuota?>> {
-        val needsCredential = claudeCredential?.let { it.isExpired(now) || it.token == rejectedClaudeToken } ?: true
-        val keychain = needsCredential && now >= nextKeychainRead
-        if (keychain) nextKeychainRead = now + 5 * 60_000
+    suspend fun read(now: Long): Map<AgentProvider, Result<AgentQuota?>> = reads.withLock {
+        val cache = cache
+        val needsCredential = cache.claudeCredential?.let { it.isExpired(now) || it.token == cache.rejectedClaudeToken } ?: true
+        val keychain = needsCredential && now >= cache.nextKeychainRead
+        if (keychain) cache.nextKeychainRead = now + 5 * 60_000
         val files = try {
             readFiles(keychain)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             val failure = Result.failure<AgentQuota?>(e)
-            return mapOf(AgentProvider.CLAUDE to failure, AgentProvider.CODEX to failure)
+            return@withLock mapOf(AgentProvider.CLAUDE to failure, AgentProvider.CODEX to failure)
         }
-        if (files.claudeKeychainFailed) nextKeychainRead = now + 15 * 60_000
-        if (files.claudeKeychainFailed) keychainFailed = true
-        if (files.claudeCredentials != null) keychainFailed = false
-        return coroutineScope {
-            val claude = async { outcome { claude(files, now) } }
+        if (files.claudeKeychainFailed) cache.nextKeychainRead = now + 15 * 60_000
+        if (files.claudeKeychainFailed) cache.keychainFailed = true
+        if (files.claudeCredentials != null) cache.keychainFailed = false
+        coroutineScope {
+            val claude = async { outcome { claude(files, now, cache) } }
             val codex = async { outcome { codex(files, now) } }
             mapOf(AgentProvider.CLAUDE to claude.await(), AgentProvider.CODEX to codex.await())
         }
@@ -92,14 +134,14 @@ class AgentQuotaReader(
             Result.failure(e)
         }
 
-    private suspend fun claude(files: AgentQuotaFiles, now: Long): AgentQuota? {
+    private suspend fun claude(files: AgentQuotaFiles, now: Long, cache: Cache): AgentQuota? {
         if (!files.claudeInstalled) return null
-        files.claudeCredentials?.let(AgentQuotaParser::claudeCredential)?.let { claudeCredential = it }
-        val credential = claudeCredential ?: throw QuotaException(
-            if (keychainFailed) "Claude Code's Keychain item is not readable over SSH"
+        files.claudeCredentials?.let(AgentQuotaParser::claudeCredential)?.let { cache.claudeCredential = it }
+        val credential = cache.claudeCredential ?: throw QuotaException(
+            if (cache.keychainFailed) "Claude Code's Keychain item is not readable over SSH"
             else "Not signed in to Claude Code"
         )
-        if (credential.isExpired(now) || credential.token == rejectedClaudeToken) {
+        if (credential.isExpired(now) || credential.token == cache.rejectedClaudeToken) {
             throw QuotaException("Claude Code's sign-in has expired; it renews when Claude Code runs")
         }
         val body = try {
@@ -108,7 +150,7 @@ class AgentQuotaReader(
                 "anthropic-beta" to "oauth-2025-04-20",
             ))
         } catch (e: Unauthorized) {
-            rejectedClaudeToken = credential.token
+            cache.rejectedClaudeToken = credential.token
             throw QuotaException("Claude Code's sign-in was rejected; it renews when Claude Code runs")
         }
         val windows = AgentQuotaParser.claudeUsage(body)
@@ -150,6 +192,7 @@ class AgentQuotaReader(
     private class Unauthorized : Exception()
 
     private suspend fun get(url: String, headers: Map<String, String>): String {
+        currentCoroutineContext().ensureActive()
         val (status, body) = try {
             http.get(url, headers)
         } catch (e: CancellationException) {
@@ -188,16 +231,28 @@ class AgentQuotaMonitor(
     private var users = 0
     private var job: Job? = null
     private var lastFetch: Long? = null
+    private var generation = 0L
+    private var paused = false
 
     @Synchronized
     fun acquire() {
         users += 1
-        if (job != null) return
+        startPolling()
+    }
+
+    private fun startPolling() {
+        if (job != null || paused || users == 0) return
+        val version = generation
         job = scope.launch {
             while (isActive) {
-                lastFetch?.let { delay(intervalMs - (clock() - it)) }
-                lastFetch = clock()
-                refresh()
+                lastFetch?.let { delay((intervalMs - (clock() - it)).coerceAtLeast(0)) }
+                val results = reader.read(clock())
+                synchronized(this@AgentQuotaMonitor) {
+                    if (version != generation || paused || users == 0) return@launch
+                    lastFetch = clock()
+                    AgentProvider.entries.forEach { apply(it, results[it] ?: Result.success(null)) }
+                    _loaded.value = true
+                }
             }
         }
     }
@@ -205,23 +260,43 @@ class AgentQuotaMonitor(
     @Synchronized
     fun release() {
         users = maxOf(0, users - 1)
-        if (users == 0) {
-            job?.cancel()
-            job = null
-        }
+        if (users == 0) stopPolling()
     }
 
-    private suspend fun refresh() {
-        val results = reader.read(clock())
-        AgentProvider.entries.forEach { apply(it, results[it] ?: Result.success(null)) }
-        _loaded.value = true
+    private fun stopPolling() {
+        generation++
+        job?.cancel()
+        job = null
+        reader.reset()
     }
 
+    /** Called synchronously before closing/replacing the SSH transport or disabling quotas. */
+    @Synchronized
+    fun invalidate() {
+        paused = true
+        clear()
+    }
+
+    /** Forget consent-scoped cached readings without reviving an invalid transport. */
+    @Synchronized
+    fun clear() {
+        stopPolling()
+        lastFetch = null
+        _states.value = emptyMap()
+        _loaded.value = false
+    }
+
+    @Synchronized
+    fun resume() {
+        paused = false
+        startPolling()
+    }
+
+    @Synchronized
     fun apply(provider: AgentProvider, result: Result<AgentQuota?>) {
         val current = _states.value
         val next = result.fold(
             onSuccess = { quota -> quota?.let { State(it) } },
-            // Keeps the last reading visible, marked as old, while the source fails.
             onFailure = { State(current[provider]?.quota, it.message ?: "Couldn't read the quota") },
         )
         _states.value = if (next == null) current - provider else current + (provider to next)

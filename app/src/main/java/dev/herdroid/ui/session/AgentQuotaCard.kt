@@ -59,6 +59,7 @@ internal fun AgentQuotaCard(connection: HerdrConnection, modifier: Modifier = Mo
     val monitor = connection.quotas
     DisposableEffect(monitor, active) {
         if (active) monitor.acquire()
+        if (!enabled) monitor.clear()
         onDispose { if (active) monitor.release() }
     }
     val states by monitor.states.collectAsState()

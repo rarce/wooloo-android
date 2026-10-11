@@ -252,6 +252,7 @@ class HerdrConnection(
                 catch (_: Exception) { null }
                 _status.value = ConnectionStatus.Connecting("Loading herdr session…")
                 applySnapshot(api, api.snapshot())
+                quotas.resume()
                 _status.value = ConnectionStatus.Connected
                 deps.hosts.markConnected(profile.id)
                 attempt = 0
@@ -592,6 +593,7 @@ class HerdrConnection(
     }
 
     private fun closeTransport() {
+        quotas.invalidate()
         val old = synchronized(remoteStateLock) {
             api = null
             val old = transport
