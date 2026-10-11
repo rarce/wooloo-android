@@ -20,6 +20,13 @@ class UiPreferences(private val prefs: SharedPreferences) {
     private val _statusSymbols = MutableStateFlow(prefs.getBoolean(KEY_STATUS_SYMBOLS, false))
     val statusSymbols: StateFlow<Boolean> = _statusSymbols.asStateFlow()
 
+    /**
+     * Claude Code and Codex quotas on the spaces screen. Off until the user turns it on, since it
+     * reads the agents' sign-ins on the host and sends their tokens to Anthropic and OpenAI.
+     */
+    private val _agentQuotas = MutableStateFlow(prefs.getBoolean(KEY_AGENT_QUOTAS, false))
+    val agentQuotas: StateFlow<Boolean> = _agentQuotas.asStateFlow()
+
     fun setFontSize(sp: Float) {
         _fontSize.value = sp
         prefs.edit().putFloat(KEY_FONT, sp).apply()
@@ -40,10 +47,16 @@ class UiPreferences(private val prefs: SharedPreferences) {
         prefs.edit().putBoolean(KEY_STATUS_SYMBOLS, on).apply()
     }
 
+    fun setAgentQuotas(on: Boolean) {
+        _agentQuotas.value = on
+        prefs.edit().putBoolean(KEY_AGENT_QUOTAS, on).apply()
+    }
+
     private companion object {
         const val KEY_FONT = "font_size"
         const val KEY_SCREEN_ON = "keep_screen_on"
         const val KEY_HAPTICS = "haptics"
         const val KEY_STATUS_SYMBOLS = "status_symbols"
+        const val KEY_AGENT_QUOTAS = "agent_quotas"
     }
 }

@@ -129,13 +129,8 @@ data class AgentInfo(
         get() = title?.takeIf { it.isNotBlank() } ?: terminalTitleStripped?.takeIf { it.isNotBlank() }
 
     fun statusLabel(): String =
-        stateLabels[agentStatus.name.lowercase()] ?: when (agentStatus) {
-            AgentStatus.BLOCKED -> "needs input"
-            AgentStatus.DONE -> "done"
-            AgentStatus.WORKING -> "working"
-            AgentStatus.IDLE -> "idle"
-            AgentStatus.UNKNOWN -> "unknown"
-        }
+        stateLabels[agentStatus.name.lowercase()]?.takeIf { it.isNotBlank() } ?: agentStatus.name.lowercase()
+
 }
 
 @Serializable
@@ -189,28 +184,10 @@ data class SessionSnapshot(
     fun activeTabId(workspace: WorkspaceInfo): String? =
         workspace.activeTabId.ifBlank { null } ?: tabsOf(workspace.workspaceId).firstOrNull()?.tabId
 
-    /** Agents sorted the way a phone user wants them: whoever needs you first. */
-    val agentsByAttention: List<AgentInfo>
-        get() = agents.sortedWith(
-            compareByDescending<AgentInfo> { it.agentStatus.attention }
-                .thenByDescending { it.stateChangeSeq }
-        )
-
-    /** A space's agents, whoever needs you first. */
-    fun agentsIn(workspaceId: String) = agentsByAttention.filter { it.workspaceId == workspaceId }
+    /** Keep herdr's authoritative agent order when filtering to a space. */
+    fun agentsIn(workspaceId: String) = agents.filter { it.workspaceId == workspaceId }
 
     /** All of a space's panes, agents and shells, tab by tab in layout order. */
     fun panesInLayoutOrder(workspaceId: String): List<PaneInfo> =
         tabsOf(workspaceId).flatMap { panesOf(it.tabId) }
-
-    /** The space's state rolled up from its agents, as herdr's sidebar shows it. */
-    fun spaceStatus(workspace: WorkspaceInfo): AgentStatus =
-        (agentsIn(workspace.workspaceId).map { it.agentStatus } + workspace.agentStatus)
-            .maxBy { it.attention }
-
-    /** Spaces with whoever needs you first, then in herdr's own order. */
-    val spacesByAttention: List<WorkspaceInfo>
-        get() = workspaces.sortedWith(
-            compareByDescending<WorkspaceInfo> { spaceStatus(it).attention }.thenBy { it.number }
-        )
 }

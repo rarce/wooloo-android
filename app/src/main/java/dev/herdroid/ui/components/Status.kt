@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -28,6 +29,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import dev.herdroid.herdr.AgentStatus
+import dev.herdroid.herdr.AgentInfo
 import dev.herdroid.ui.theme.LocalStatusColors
 import dev.herdroid.ui.theme.LocalStatusIndicators
 import dev.herdroid.ui.theme.StatusIndicators
@@ -45,7 +47,7 @@ fun StatusDot(status: AgentStatus, modifier: Modifier = Modifier, size: Dp = 10.
     Canvas(
         modifier
             .size(size * 2)
-            .semantics { contentDescription = "Agent ${status.name.lowercase()}" },
+            .semantics { contentDescription = "Status ${status.name.lowercase()}" },
     ) { drawStatusMark(status, style, color, size.toPx()) }
 }
 
@@ -117,5 +119,30 @@ fun StatusPill(status: AgentStatus, label: String, modifier: Modifier = Modifier
             },
             maxLines = 1,
         )
+    }
+}
+
+/** The same mark and label for spaces, tabs and agents, without an attention-only fill. */
+@Composable
+fun StatusLabel(status: AgentStatus, label: String = status.name.lowercase(), modifier: Modifier = Modifier) {
+    Row(modifier, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        StatusDot(status, size = 6.dp)
+        Text(label, style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+/** Agent facts, distinct from a machine's SSH connection state. Includes idle/unknown agents. */
+@Composable
+fun AgentStatusSummary(agents: List<AgentInfo>, modifier: Modifier = Modifier) {
+    FlowRow(modifier, horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        if (agents.isEmpty()) {
+            Text("No agents", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        } else {
+            listOf(AgentStatus.WORKING, AgentStatus.BLOCKED, AgentStatus.DONE, AgentStatus.IDLE, AgentStatus.UNKNOWN).forEach { state ->
+                val count = agents.count { it.agentStatus == state }
+                if (count > 0) StatusLabel(state, "$count ${state.name.lowercase()}")
+            }
+        }
     }
 }
