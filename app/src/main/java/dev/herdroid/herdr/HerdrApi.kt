@@ -75,7 +75,7 @@ class HerdrApi internal constructor(
                         interruptibleIo {
                             val id = "herdroid_${ids.incrementAndGet()}"
                             channel.writeLine(requestLine(id, method, params))
-                            val line = channel.stdoutReader().readLine()
+                            val line = channel.stdoutReader().readBoundedLine(4 * 1024 * 1024)
                                 ?: throw channel.failure("herdr closed the API connection")
                             parseResponse(line)
                         }
@@ -117,11 +117,11 @@ class HerdrApi internal constructor(
                                 },
                             )
                         )
-                        parseResponse(input.readLine() ?: throw channel.failure("event subscription closed"))
+                        parseResponse(input.readBoundedLine(1024 * 1024) ?: throw channel.failure("event subscription closed"))
                     }
                 }
                 while (isActive) {
-                    val line = interruptibleIo { input.readLine() } ?: break
+                    val line = interruptibleIo { input.readBoundedLine(1024 * 1024) } ?: break
                     if (line.isBlank()) continue
                     val obj = herdrJson.parseToJsonElement(line).jsonObject
                     if (obj.containsKey("error")) parseResponse(line)
@@ -266,7 +266,7 @@ internal fun CommandChannel.stdoutReader(): BufferedReader =
 
 /** Turns a dead channel into the most useful exception we can, using stderr. */
 internal fun CommandChannel.failure(fallback: String): Exception {
-    val err = runCatching { stderr.readBytes().toString(Charsets.UTF_8).trim() }.getOrDefault("")
+    val err = runCatching { stderr.readAtMostBytes(16 * 1024).toString(Charsets.UTF_8).trim() }.getOrDefault("")
     return when {
         err.contains(RemoteCommand.NOT_FOUND_MESSAGE) -> HerdrNotFoundException(
             "herdr was not found on the remote machine. Install it, or set its path in the host settings."
