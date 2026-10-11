@@ -81,16 +81,22 @@ class SecretStore internal constructor(
         }
     }
 
+    /** Absence returns null; corruption or unavailable Keystore fails without altering saved data. */
     fun get(name: String): String? = synchronized(vaultLock) {
-        val stored = prefs.getString(name, null) ?: return@synchronized null
-        runCatching {
+        try {
+            val stored = prefs.getString(name, null) ?: return@synchronized null
             val payload = Base64.decode(stored, Base64.NO_WRAP)
+            require(payload.size >= IV_LENGTH + TAG_BYTES)
             val iv = payload.copyOfRange(0, IV_LENGTH)
             val data = payload.copyOfRange(IV_LENGTH, payload.size)
             val cipher = Cipher.getInstance(TRANSFORMATION)
+            // A read must never create a replacement key for an existing ciphertext.
             cipher.init(Cipher.DECRYPT_MODE, keySource(false), GCMParameterSpec(128, iv))
             String(cipher.doFinal(data), Charsets.UTF_8)
-        }.getOrNull()
+        } catch (_: Exception) {
+            // Provider errors can contain sensitive material. Expose only our safe recovery message.
+            throw SecretReadException()
+        }
     }
 
     fun remove(name: String) = transaction(emptyMap(), setOf(name)) { Unit }
@@ -99,31 +105,36 @@ class SecretStore internal constructor(
         // Shared across vault instances using the app's same SharedPreferences file.
         private val vaultLock = Any()
 
-        private fun androidKey(createIfMissing: Boolean): SecretKey {
+        private const val ANDROID_KEYSTORE = "AndroidKeyStore"
+        private const val ALIAS = "herdroid.secrets.v1"
+        private const val TRANSFORMATION = "AES/GCM/NoPadding"
+        private const val IV_LENGTH = 12
+        private const val TAG_BYTES = 16
+        private val keyLock = Any()
+
+        private fun androidKey(createIfMissing: Boolean): SecretKey = synchronized(keyLock) {
             val keyStore = KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
-            (keyStore.getEntry(ALIAS, null) as? KeyStore.SecretKeyEntry)?.let { return it.secretKey }
-            check(createIfMissing) { "Secure storage key is missing" }
+            val entry = keyStore.getEntry(ALIAS, null)
+            if (entry is KeyStore.SecretKeyEntry) return@synchronized entry.secretKey
+            check(entry == null && createIfMissing) { "Saved credential key is unavailable" }
             val generator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, ANDROID_KEYSTORE)
             generator.init(
-                KeyGenParameterSpec.Builder(
-                    ALIAS,
-                    KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT,
-                )
+                KeyGenParameterSpec.Builder(ALIAS, KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT)
                     .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
                     .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
                     .setKeySize(256)
                     .build()
             )
-            return generator.generateKey()
+            generator.generateKey()
         }
-
-        private const val ANDROID_KEYSTORE = "AndroidKeyStore"
-        private const val ALIAS = "herdroid.secrets.v1"
-        private const val TRANSFORMATION = "AES/GCM/NoPadding"
-        private const val IV_LENGTH = 12
 
         fun passwordKey(hostId: String) = "password:$hostId"
         fun accessSecretKey(hostId: String) = "cf-access-secret:$hostId"
         fun privateKey(keyId: String) = "key:$keyId"
     }
 }
+
+/** Deliberately has no provider cause, credential name or raw payload in its message. */
+class SecretReadException : Exception(
+    "Saved credentials couldn't be read. Re-enter the password or Access token, or re-import the SSH key."
+)
