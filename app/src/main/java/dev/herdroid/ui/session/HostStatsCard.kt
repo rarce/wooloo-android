@@ -44,6 +44,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import dev.herdroid.connection.ConnectionStatus
 import dev.herdroid.connection.HerdrConnection
+import dev.herdroid.data.quotaConsentKey
 import dev.herdroid.herdr.HostStats
 import dev.herdroid.ui.theme.LocalStatusColors
 import dev.herdroid.ui.theme.MonoSmall
@@ -64,21 +65,28 @@ private class HostStatsState {
  */
 @Composable
 internal fun HostStatsCard(connection: HerdrConnection, modifier: Modifier = Modifier) {
-    val state = remember(connection) { HostStatsState() }
     val status by connection.status.collectAsState()
+    val contextKey = connection.activeProfile?.let(::quotaConsentKey)
+    val state = remember(connection, contextKey) { HostStatsState() }
     val lifecycle by LocalLifecycleOwner.current.lifecycle.currentStateFlow.collectAsState()
     val active = status == ConnectionStatus.Connected && lifecycle.isAtLeast(Lifecycle.State.RESUMED)
     var collapsed by rememberSaveable { mutableStateOf(false) }
 
-    LaunchedEffect(connection, active) {
+    LaunchedEffect(connection, active, contextKey) {
         if (!active) return@LaunchedEffect
         while (true) {
             connection.sampleHost()
                 .onSuccess { sample ->
-                    state.stats = HostStats.from(sample, state.stats)
-                    state.failure = null
+                    if (connection.activeProfile?.let(::quotaConsentKey) == contextKey) {
+                        state.stats = HostStats.from(sample, state.stats)
+                        state.failure = null
+                    }
                 }
-                .onFailure { state.failure = it.message ?: "Couldn't read host stats" }
+                .onFailure {
+                    if (connection.activeProfile?.let(::quotaConsentKey) == contextKey) {
+                        state.failure = it.message ?: "Couldn't read host stats"
+                    }
+                }
             delay(SAMPLE_INTERVAL_MS)
         }
     }
