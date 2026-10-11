@@ -7,6 +7,8 @@ import net.schmizz.sshj.SSHClient
 import net.schmizz.sshj.common.KeyType
 import net.schmizz.sshj.common.SecurityUtils
 import net.schmizz.sshj.connection.channel.direct.Session
+import net.schmizz.sshj.connection.channel.direct.SessionChannel
+import net.schmizz.sshj.common.SSHException
 import net.schmizz.sshj.transport.verification.HostKeyVerifier
 import net.schmizz.sshj.userauth.UserAuthException
 import net.schmizz.sshj.userauth.keyprovider.KeyProvider
@@ -147,23 +149,13 @@ class SshSession(
     }
 
     /** Opens a new exec channel. The caller owns the returned session and must close it. */
-    suspend fun exec(command: String): ExecChannel {
-        var opened: ExecChannel? = null
-        try {
-            return interruptibleIo {
-                val session = client.startSession()
-                try {
-                    ExecChannel(session, session.exec(command)).also { opened = it }
-                } catch (e: Throwable) {
-                    runCatching { session.close() }
-                    throw e
-                }
-            }
-        } catch (e: Throwable) {
-            // Cancellation can win while the result is dispatched back to the caller.
-            opened?.close()
-            throw e
-        }
+    suspend fun exec(command: String): ExecChannel = openExecChannel(command, {
+        check(isConnected) { "SSH transport is not authenticated" }
+        SessionChannel(client.connection, client.remoteCharset)
+    }, ::abortTransport)
+
+    private fun abortTransport() {
+        runCatching { client.socket?.close() }
     }
 
     fun close() {
@@ -193,21 +185,63 @@ class SshSession(
     }
 }
 
+internal suspend fun openExecChannel(
+    command: String,
+    createSession: () -> SessionChannel,
+    abortTransport: () -> Unit,
+): ExecChannel {
+    var opened: ExecChannel? = null
+    var session: SessionChannel? = null
+    try {
+        return abortOnCancellation(abortTransport) { interruptibleIo {
+            // startSession hides its channel until CHANNEL_OPEN is confirmed.
+            // Own it before opening so cancellation cannot strand that channel.
+            val owned = createSession().also { session = it }
+            owned.open()
+            ExecChannel(owned, owned.exec(command), abortTransport).also { opened = it }
+        } }
+    } catch (e: Throwable) {
+        // Cancellation can win while the result is dispatched back to the caller.
+        if (opened != null) opened!!.closeBounded() else {
+            // An interrupted open may still get a late server confirmation.
+            // Drop the transport rather than leave an ownerless remote channel.
+            abortTransport()
+            withContext(NonCancellable + Dispatchers.IO) {
+                session?.notifyError(SSHException("Exec channel acquisition failed", e))
+            }
+        }
+        throw e
+    }
+}
+
 interface CommandChannel : AutoCloseable {
     val stdin: OutputStream
     val stdout: InputStream
     val stderr: InputStream
     val isOpen: Boolean
+    /** Breaks non-interruptible IO after the graceful-close budget expires. */
+    fun abort() {}
 }
 
-class ExecChannel(private val session: Session, val command: Session.Command) : CommandChannel {
+class ExecChannel(
+    private val session: Session,
+    val command: Session.Command,
+    private val abortTransport: () -> Unit,
+) : CommandChannel {
     override val stdin get() = command.outputStream
     override val stdout get() = command.inputStream
     override val stderr get() = command.errorStream
     override val isOpen: Boolean get() = command.isOpen
 
     override fun close() {
+        // sshj SessionChannel implements both objects. Closing it twice repeats
+        // its acknowledgement wait when the first close was interrupted.
         runCatching { command.close() }
-        runCatching { session.close() }
+        if (command !== session) runCatching { session.close() }
+    }
+
+    override fun abort() {
+        abortTransport()
+        session.notifyError(SSHException("Exec channel cleanup exceeded its deadline"))
     }
 }

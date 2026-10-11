@@ -3,16 +3,15 @@ package dev.herdroid.herdr
 import dev.herdroid.ssh.CommandChannel
 import dev.herdroid.ssh.SshSession
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.isActive
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withTimeout
-import dev.herdroid.ssh.interruptibleIo
+import dev.herdroid.ssh.closeBounded
+import dev.herdroid.ssh.channelIo
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.TimeoutCancellationException
 import java.net.SocketTimeoutException
@@ -72,7 +71,7 @@ class HerdrApi internal constructor(
                 concurrency.withPermit {
                     val channel = openChannel(RemoteCommand.apiBridge(session, herdrPath))
                     try {
-                        interruptibleIo {
+                        channel.channelIo {
                             val id = "herdroid_${ids.incrementAndGet()}"
                             channel.writeLine(requestLine(id, method, params))
                             val line = channel.stdoutReader().readBoundedLine(4 * 1024 * 1024)
@@ -80,7 +79,7 @@ class HerdrApi internal constructor(
                             parseResponse(line)
                         }
                     } finally {
-                        channel.close()
+                        channel.closeBounded()
                     }
                 }
             }
@@ -101,40 +100,36 @@ class HerdrApi internal constructor(
         subscribeRaw(types.map { type -> buildJsonObject { put("type", type) } })
 
     /** Like [subscribe] but with full subscription objects, e.g. ones scoped to a `pane_id`. */
-    fun subscribeRaw(subscriptions: List<JsonObject>): Flow<JsonObject> = callbackFlow {
-        val channel = openChannel(RemoteCommand.apiBridge(session, herdrPath))
-        val reader = launch(Dispatchers.IO) {
-            try {
-                val input = channel.stdoutReader()
-                withTimeout(REQUEST_TIMEOUT_MS) {
-                    interruptibleIo {
-                        channel.writeLine(
-                            requestLine(
-                                "herdroid_sub_${ids.incrementAndGet()}",
-                                "events.subscribe",
-                                buildJsonObject {
-                                    putJsonArray("subscriptions") { subscriptions.forEach { add(it) } }
-                                },
-                            )
+    fun subscribeRaw(subscriptions: List<JsonObject>): Flow<JsonObject> = flow {
+        var channel: CommandChannel? = null
+        lateinit var input: BufferedReader
+        try {
+            val opened = withTimeout(REQUEST_TIMEOUT_MS) {
+                val acquired = openChannel(RemoteCommand.apiBridge(session, herdrPath)).also { channel = it }
+                input = acquired.stdoutReader()
+                acquired.channelIo {
+                    acquired.writeLine(
+                        requestLine(
+                            "herdroid_sub_${ids.incrementAndGet()}",
+                            "events.subscribe",
+                            buildJsonObject {
+                                putJsonArray("subscriptions") { subscriptions.forEach { add(it) } }
+                            },
                         )
-                        parseResponse(input.readBoundedLine(1024 * 1024) ?: throw channel.failure("event subscription closed"))
-                    }
+                    )
+                    parseResponse(input.readBoundedLine(1024 * 1024) ?: throw acquired.failure("event subscription closed"))
                 }
-                while (isActive) {
-                    val line = interruptibleIo { input.readBoundedLine(1024 * 1024) } ?: break
-                    if (line.isBlank()) continue
-                    val obj = herdrJson.parseToJsonElement(line).jsonObject
-                    if (obj.containsKey("error")) parseResponse(line)
-                    send(obj)
-                }
-                close()
-            } catch (t: Throwable) {
-                close(t)
+                acquired
             }
-        }
-        awaitClose {
-            reader.cancel()
-            channel.close()
+            while (currentCoroutineContext().isActive) {
+                val line = opened.channelIo { input.readBoundedLine(1024 * 1024) } ?: break
+                if (line.isBlank()) continue
+                val obj = herdrJson.parseToJsonElement(line).jsonObject
+                if (obj.containsKey("error")) parseResponse(line)
+                emit(obj)
+            }
+        } finally {
+            channel?.closeBounded()
         }
     }.flowOn(Dispatchers.IO)
 

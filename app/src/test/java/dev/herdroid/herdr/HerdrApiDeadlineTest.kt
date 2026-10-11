@@ -3,6 +3,7 @@ package dev.herdroid.herdr
 import dev.herdroid.ssh.CommandChannel
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.first
 import org.junit.Assert.*
 import org.junit.Test
 import java.io.*
@@ -113,5 +114,45 @@ class HerdrApiDeadlineTest {
             jobs.forEach { it.cancelAndJoin() }
         }
         assertTrue(channels.all { it.closed })
+    }
+
+    @Test(timeout = 5000)
+    fun aBlockedCloseDoesNotBlockTheCallingThreadOrExceedCleanupBudget(): Unit = runBlocking {
+        val caller = Thread.currentThread()
+        var closeThread: Thread? = null
+        var aborted = false
+        val channel = object : CommandChannel {
+            override val stdout = "{\"result\":{}}\n".byteInputStream()
+            override val stderr = byteArrayOf().inputStream()
+            override val stdin = ByteArrayOutputStream()
+            override val isOpen get() = !aborted
+            override fun close() { closeThread = Thread.currentThread(); Stalled().read() }
+            override fun abort() { aborted = true }
+        }
+        val api = HerdrApi({ channel }, "default", null)
+        val start = System.nanoTime()
+        api.request("ping", timeoutMs = 2000)
+        assertTrue((System.nanoTime() - start) / 1_000_000 < 1500)
+        assertNotSame(caller, closeThread)
+        assertTrue(aborted)
+    }
+
+    @Test(timeout = 5000)
+    fun subscriptionRetainsAnEventAlreadyBufferedAlongWithTheAcknowledgement(): Unit = runBlocking {
+        val channel = FakeChannel(("{\"result\":{}}\n" + "{\"event\":\"workspace.created\"}\n").byteInputStream())
+        val api = HerdrApi({ channel }, "default", null)
+        assertEquals("\"workspace.created\"", api.subscribe(listOf("workspace.created")).first()["event"].toString())
+        assertTrue(channel.closed)
+    }
+
+    @Test(timeout = 25_000)
+    fun subscriptionDeadlineIncludesWaitingForChannelAcquisition(): Unit = runBlocking {
+        val api = HerdrApi({ awaitCancellation() }, "default", null)
+        val start = System.nanoTime()
+        try {
+            api.subscribe(emptyList()).collect()
+            fail("Expected acquisition deadline")
+        } catch (_: TimeoutCancellationException) { }
+        assertTrue((System.nanoTime() - start) / 1_000_000 < 23_000)
     }
 }
