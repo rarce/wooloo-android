@@ -428,18 +428,18 @@ class HerdrConnection(
     }
 
     internal fun applySnapshot(sourceApi: HerdrApi, next: SessionSnapshot) {
-        val previous = synchronized(remoteStateLock) {
+        val (previous, alertProfile) = synchronized(remoteStateLock) {
             if (api !== sourceApi) return
             val previous = _snapshot.value
             _snapshot.value = next
             subscribedPanes.value = next.agents.map { it.paneId }.toSet()
-            previous
+            previous to (transport?.profile ?: profile)
         }
         // Notification delivery may call platform services; keep it outside the lock.
-        if (previous != null) detectAlerts(previous, next)
+        if (previous != null) detectAlerts(previous, next, alertProfile)
     }
 
-    private fun detectAlerts(previous: SessionSnapshot, next: SessionSnapshot) {
+    private fun detectAlerts(previous: SessionSnapshot, next: SessionSnapshot, profile: HostProfile) {
         val before = previous.agents.associateBy { it.paneId }
         for (agent in next.agents) {
             val old = before[agent.paneId]?.agentStatus ?: continue
