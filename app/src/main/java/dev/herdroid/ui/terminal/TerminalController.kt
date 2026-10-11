@@ -16,6 +16,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CancellationException
 
 sealed interface PaneState {
     data object WaitingForLayout : PaneState
@@ -48,6 +49,7 @@ class TerminalController(
 
     private var stream: TerminalStream? = null
     private var streamJob: Job? = null
+    @Volatile private var generation = 0L
     private var resizeJob: Job? = null
     private var cols = 0
     private var rows = 0
@@ -98,11 +100,18 @@ class TerminalController(
             return
         }
         state = PaneState.Opening
+        val openingGeneration = generation
         streamJob = scope.launch {
             val opened = runCatching {
                 connection.openTerminal(paneId, cols, rows, takeover, observeOnly, scope)
             }.getOrElse { error ->
+                if (error is CancellationException) throw error
+                if (generation != openingGeneration) return@launch
                 state = if (connection.isLive) PaneState.Closed(error.message) else PaneState.Offline
+                return@launch
+            }
+            if (generation != openingGeneration) {
+                opened.close()
                 return@launch
             }
             stream = opened
@@ -110,10 +119,15 @@ class TerminalController(
                 opened.events.collect { event ->
                     when (event) {
                         is TerminalEvent.Frame -> {
+                            if (generation != openingGeneration) return@collect
                             model.applyFrame(event.width, event.height, event.full, event.bytes)
-                            if (state != PaneState.Live) scope.launch { state = PaneState.Live }
+                            if (state != PaneState.Live) scope.launch {
+                                if (generation == openingGeneration) state = PaneState.Live
+                            }
                         }
-                        is TerminalEvent.Closed -> scope.launch { onClosed(event) }
+                        is TerminalEvent.Closed -> scope.launch {
+                            if (generation == openingGeneration) onClosed(event)
+                        }
                     }
                 }
             }
@@ -134,6 +148,8 @@ class TerminalController(
         stream?.input(data)
     }
 
+    fun tryInput(data: String): Boolean = stream?.tryInput(data) ?: false
+
     fun scroll(up: Boolean, lines: Int, column: Int, row: Int) {
         stream?.scroll(up, lines, column, row)
     }
@@ -147,6 +163,7 @@ class TerminalController(
     }
 
     private fun closeStream() {
+        generation++
         streamJob?.cancel()
         stream?.close()
         stream = null

@@ -10,6 +10,7 @@ import okhttp3.mockwebserver.MockWebServer
 import okio.Buffer
 import okio.ByteString
 import okio.ByteString.Companion.encodeUtf8
+import okio.ByteString.Companion.toByteString
 import org.bouncycastle.jce.provider.BouncyCastleProvider
 import org.junit.After
 import org.junit.Assert.assertArrayEquals
@@ -87,6 +88,34 @@ class CloudflareTunnelSocketTest {
         }
         assertEquals("SSH-2.0-sshj\r\n", received.poll(5, TimeUnit.SECONDS)?.utf8())
         socket.close()
+    }
+
+    @Test(timeout = 8000)
+    fun oversizedIncomingMessageDisconnectsInsteadOfBuffering() {
+        upgrade { it.send(ByteArray(1024 * 1024 + 1).toByteString()) }
+        val socket = open()
+        try {
+            try { socket.getInputStream().read(); fail("Expected receive limit failure") }
+            catch (e: CloudflareTunnelException) { assertTrue(e.message!!.contains("receive buffer")) }
+        } finally { socket.close() }
+    }
+
+    @Test(timeout = 8000)
+    fun stalledConsumerCannotAccumulateUnboundedIncomingBytes() {
+        upgrade { ws -> repeat(6) { ws.send(ByteArray(1024 * 1024).toByteString()) } }
+        val socket = open()
+        try {
+            // Leave SSH unread until the receive budget is exhausted.
+            val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5)
+            while (!socket.isClosed && System.nanoTime() < deadline) Thread.sleep(5)
+            assertTrue("Receive budget should close the tunnel", socket.isClosed)
+            try {
+                while (socket.getInputStream().read(ByteArray(8192)) >= 0) { }
+                fail("Expected receive limit failure")
+            } catch (e: CloudflareTunnelException) {
+                assertTrue(e.message!!.contains("receive buffer"))
+            }
+        } finally { socket.close() }
     }
 
     @Test

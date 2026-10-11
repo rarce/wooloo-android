@@ -88,7 +88,9 @@ class CloudflareTunnelSocket internal constructor(
     private val client: OkHttpClient,
     private val url: String,
 ) : Socket() {
-    private val incoming = LinkedBlockingQueue<ByteString>()
+    private val incoming = LinkedBlockingQueue<ByteString>(129)
+    private var incomingBytes = 0
+    @Volatile private var peerEnded = false
     private val opened = CountDownLatch(1)
 
     @Volatile private var webSocket: WebSocket? = null
@@ -172,9 +174,31 @@ class CloudflareTunnelSocket internal constructor(
 
     override fun toString() = "CloudflareTunnelSocket[${tunnel.hostname}]"
 
+    @Synchronized
+    private fun enqueue(bytes: ByteString) {
+        if (closed || failure != null || peerEnded) return
+        if (bytes.size > MAX_INCOMING_MESSAGE_BYTES || incomingBytes.toLong() + bytes.size > MAX_INCOMING_BYTES ||
+            incoming.size >= 128 || !incoming.offer(bytes)
+        ) {
+            fail(CloudflareTunnelException("Cloudflare tunnel receive buffer exceeded its limit; reconnect"))
+            webSocket?.cancel()
+            return
+        }
+        incomingBytes += bytes.size
+    }
+
+    @Synchronized
     private fun fail(e: IOException) {
         if (failure == null) failure = e
+        closed = true
+        incoming.clear()
+        incomingBytes = 0
         incoming.offer(END)
+    }
+
+    @Synchronized
+    private fun dequeued(bytes: ByteString) {
+        incomingBytes = maxOf(0, incomingBytes - bytes.size)
     }
 
     private inner class Listener : WebSocketListener() {
@@ -183,20 +207,22 @@ class CloudflareTunnelSocket internal constructor(
         }
 
         override fun onMessage(webSocket: WebSocket, bytes: ByteString) {
-            if (bytes.size > 0) incoming.offer(bytes)
+            if (bytes.size > 0) enqueue(bytes)
         }
 
         override fun onMessage(webSocket: WebSocket, text: String) {
             // cloudflared only sends binary; take text as UTF-8 bytes rather than dropping it.
-            if (text.isNotEmpty()) incoming.offer(text.toByteArray().toByteString())
+            if (text.isNotEmpty()) enqueue(text.toByteArray().toByteString())
         }
 
         override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
+            peerEnded = true
             webSocket.close(NORMAL_CLOSURE, null)
             incoming.offer(END)
         }
 
         override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+            peerEnded = true
             incoming.offer(END)
         }
 
@@ -283,6 +309,7 @@ class CloudflareTunnelSocket internal constructor(
                 ended = true
                 return endOfStream()
             }
+            dequeued(next)
             current = next
             offset = 0
             return next
@@ -338,7 +365,7 @@ class CloudflareTunnelSocket internal constructor(
 
         private fun ensureOpen() {
             failure?.let { throw it }
-            if (closed) throw SocketException("Socket is closed")
+            if (closed || peerEnded) throw SocketException("Socket is closed")
         }
 
         override fun close() = this@CloudflareTunnelSocket.close()
@@ -346,6 +373,8 @@ class CloudflareTunnelSocket internal constructor(
 
     private companion object {
         val END: ByteString = ByteArray(0).toByteString()
+        const val MAX_INCOMING_MESSAGE_BYTES = 1024 * 1024
+        const val MAX_INCOMING_BYTES = 4 * 1024 * 1024
         const val NORMAL_CLOSURE = 1000
         const val DEFAULT_CONNECT_TIMEOUT_MS = 15_000L
         const val MAX_MESSAGE_BYTES = 32 * 1024

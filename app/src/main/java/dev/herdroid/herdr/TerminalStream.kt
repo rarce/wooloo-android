@@ -1,15 +1,21 @@
 package dev.herdroid.herdr
 
 import java.util.Base64
-import dev.herdroid.ssh.ExecChannel
+import dev.herdroid.ssh.CommandChannel
+import dev.herdroid.ssh.interruptibleIo
 import dev.herdroid.ssh.SshSession
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.NonCancellable
+import java.io.IOException
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.boolean
 import kotlinx.serialization.json.buildJsonObject
@@ -45,15 +51,19 @@ enum class MouseAction { DOWN, UP, DRAG, MOVE }
  * we send NDJSON commands (input, resize, scroll, mouse, release) on stdin.
  */
 class TerminalStream private constructor(
-    private val channel: ExecChannel,
+    private val channel: CommandChannel,
     private val scope: CoroutineScope,
     val readOnly: Boolean,
 ) {
     // Single consumer; buffered so the first full frame is never lost before collection starts.
-    private val _events = Channel<TerminalEvent>(capacity = Channel.UNLIMITED)
-    val events: Flow<TerminalEvent> = _events.receiveAsFlow()
+    private val _events = Channel<TerminalEvent>(capacity = 8)
+    @Volatile private var closedReason: String? = null
+    val events: Flow<TerminalEvent> = flow {
+        for (event in _events) emit(event)
+        emit(TerminalEvent.Closed(closedReason))
+    }
 
-    private val outbox = Channel<String>(capacity = Channel.UNLIMITED)
+    private val outbox = Channel<String>(capacity = 64)
     private var readerJob: Job? = null
     private var writerJob: Job? = null
 
@@ -63,11 +73,10 @@ class TerminalStream private constructor(
 
     private fun start() {
         readerJob = scope.launch(Dispatchers.IO) {
-            var closedReason: String? = null
             try {
                 val reader = channel.stdoutReader()
                 while (true) {
-                    val line = reader.readLine() ?: break
+                    val line = interruptibleIo { reader.readBoundedLine(MAX_RECORD_CHARS) } ?: break
                     if (line.isBlank()) continue
                     val event = parse(line) ?: continue
                     if (event is TerminalEvent.Closed) {
@@ -78,14 +87,15 @@ class TerminalStream private constructor(
                 }
                 if (closedReason == null) {
                     closedReason = runCatching {
-                        channel.stderr.readBytes().toString(Charsets.UTF_8).trim()
+                        withTimeoutOrNull(1000) {
+                            interruptibleIo { channel.stderr.readAtMostBytes(16 * 1024).toString(Charsets.UTF_8).trim() }
+                        }
                     }.getOrNull()?.takeIf { it.isNotEmpty() }
                 }
             } catch (t: Throwable) {
                 closedReason = closedReason ?: t.message
             } finally {
                 isClosed = true
-                _events.trySend(TerminalEvent.Closed(closedReason))
                 _events.close()
                 outbox.close()
                 channel.close()
@@ -93,9 +103,10 @@ class TerminalStream private constructor(
         }
         writerJob = scope.launch(Dispatchers.IO) {
             try {
-                for (line in outbox) channel.writeLine(line)
-            } catch (_: Throwable) {
-                // The reader notices the dead channel and reports it.
+                for (line in outbox) interruptibleIo { channel.writeLine(line) }
+            } catch (e: Throwable) {
+                closedReason = closedReason ?: "Terminal write failed"
+                channel.close()
             }
         }
     }
@@ -104,26 +115,53 @@ class TerminalStream private constructor(
         val obj = runCatching { herdrJson.parseToJsonElement(line).jsonObject }.getOrNull()
             ?: return null
         return when (obj.string("type")) {
-            "terminal.frame" -> TerminalEvent.Frame(
+            "terminal.frame" -> {
+                val width = obj["width"]?.jsonPrimitive?.int ?: 0
+                val height = obj["height"]?.jsonPrimitive?.int ?: 0
+                if (width !in 1..512 || height !in 1..512 || width.toLong() * height > 65_536) {
+                    throw IOException("Invalid terminal frame dimensions")
+                }
+                val encoded = obj.string("bytes").orEmpty()
+                if (encoded.length > 1_398_104) throw IOException("Terminal frame is too large")
+                val bytes = Base64.getDecoder().decode(encoded)
+                if (bytes.size > MAX_FRAME_BYTES) throw IOException("Terminal frame is too large")
+                TerminalEvent.Frame(
                 seq = obj["seq"]?.jsonPrimitive?.long ?: 0,
-                width = obj["width"]?.jsonPrimitive?.int ?: 0,
-                height = obj["height"]?.jsonPrimitive?.int ?: 0,
+                width = width,
+                height = height,
                 full = obj["full"]?.jsonPrimitive?.boolean ?: false,
-                bytes = Base64.getDecoder().decode(obj.string("bytes").orEmpty()),
+                bytes = bytes,
             )
+            }
             "terminal.closed" -> TerminalEvent.Closed(obj["reason"]?.jsonPrimitive?.contentOrNull)
             else -> null
         }
     }
 
-    private fun send(command: JsonObject) {
-        if (!readOnly && !isClosed) outbox.trySend(command.toString())
+    private fun send(command: JsonObject): Boolean {
+        if (!readOnly && !isClosed) {
+            val record = command.toString()
+            if (record.length > 65_536 || outbox.trySend(record).isFailure) {
+                closedReason = "Terminal input buffer is full; reconnect before sending more input"
+                isClosed = true
+                readerJob?.cancel()
+                writerJob?.cancel()
+                _events.close()
+                outbox.close()
+                close()
+                return false
+            }
+            return true
+        }
+        return false
     }
 
     fun input(text: String) {
-        if (text.isEmpty()) return
-        send(buildJsonObject { put("type", "terminal.input"); put("text", text) })
+        tryInput(text)
     }
+
+    fun tryInput(text: String): Boolean = text.isEmpty() ||
+        send(buildJsonObject { put("type", "terminal.input"); put("text", text) })
 
     fun inputBytes(bytes: ByteArray) {
         if (bytes.isEmpty()) return
@@ -176,14 +214,23 @@ class TerminalStream private constructor(
             outbox.trySend(buildJsonObject { put("type", "terminal.release") }.toString())
         }
         outbox.close()
-        scope.launch(Dispatchers.IO) {
-            writerJob?.join()
-            channel.close()
-            readerJob?.cancel()
+        scope.launch(Dispatchers.IO, start = CoroutineStart.UNDISPATCHED) {
+            try { withTimeoutOrNull(500) { writerJob?.join() } } finally {
+                withContext(NonCancellable + Dispatchers.IO) {
+                    channel.close()
+                    readerJob?.cancel()
+                    writerJob?.cancel()
+                }
+            }
         }
     }
 
     companion object {
+        private const val MAX_FRAME_BYTES = 1_048_576
+        private const val MAX_RECORD_CHARS = 1_500_000
+
+        internal fun fromChannel(channel: CommandChannel, scope: CoroutineScope, readOnly: Boolean = false) =
+            TerminalStream(channel, scope, readOnly).also { it.start() }
         suspend fun open(
             ssh: SshSession,
             scope: CoroutineScope,
