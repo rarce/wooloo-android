@@ -1,8 +1,6 @@
 package dev.herdroid.ssh
 
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.withContext
+import kotlinx.coroutines.*
 import net.schmizz.keepalive.KeepAliveProvider
 import net.schmizz.sshj.AndroidConfig
 import net.schmizz.sshj.SSHClient
@@ -69,7 +67,32 @@ class SshSession(
     val isConnected: Boolean
         get() = client.isConnected && client.isAuthenticated
 
-    suspend fun connect(credential: SshCredential) = withContext(Dispatchers.IO) {
+    suspend fun connect(credential: SshCredential) {
+        try {
+            coroutineScope {
+                val owner = currentCoroutineContext()
+                var completed = false
+                // Socket banner reads do not react to thread interruption. Closing
+                // the raw socket on cancellation unblocks those reads as well.
+                val cancellationCloser = launch(Dispatchers.IO, start = CoroutineStart.UNDISPATCHED) {
+                    try { awaitCancellation() } finally {
+                        if (!completed || !owner.isActive) close()
+                    }
+                }
+                try {
+                    interruptibleIo { connectBlocking(credential) }
+                    completed = true
+                } finally {
+                    cancellationCloser.cancelAndJoin()
+                }
+            }
+        } catch (e: Throwable) {
+            close()
+            throw e
+        }
+    }
+
+    private fun connectBlocking(credential: SshCredential) {
         client.connectTimeout = CONNECT_TIMEOUT_MS
         tunnel?.let { client.socketFactory = CloudflareTunnelSocketFactory(it) }
         client.addHostKeyVerifier(object : HostKeyVerifier {
@@ -144,6 +167,8 @@ class SshSession(
     }
 
     fun close() {
+        // SSHClient.disconnect can throw before SocketClient.disconnect runs.
+        runCatching { client.socket?.close() }
         runCatching { client.disconnect() }
     }
 

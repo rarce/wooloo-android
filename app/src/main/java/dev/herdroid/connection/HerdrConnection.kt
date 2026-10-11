@@ -50,6 +50,9 @@ import java.net.NoRouteToHostException
 import java.net.SocketTimeoutException
 import java.net.UnknownHostException
 import kotlin.math.min
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
+import dev.herdroid.ssh.interruptibleIo
 
 enum class FailureKind { AUTH, HOST_KEY, HERDR_MISSING, SERVER_DOWN, OUTDATED, NETWORK, OTHER }
 
@@ -123,24 +126,30 @@ class HerdrConnection(
     var remoteHome: String? = null
         private set
 
-    private var loopJob: Job? = null
+    private var refreshJob: Job? = null
+    private val lifecycle = RestartableJob(scope, interrupt = {
+        _prompt.value?.let { cancelPrompt(it) }
+        closeTransport()
+    }) {
+        try { connectionLoop() } finally {
+            _prompt.value?.let { cancelPrompt(it) }
+            closeTransport()
+        }
+    }
     private val refreshRequests = Channel<Unit>(Channel.CONFLATED)
     private val subscribedPanes = MutableStateFlow<Set<String>>(emptySet())
 
     val isLive: Boolean get() = _status.value == ConnectionStatus.Connected
 
+    @Synchronized
     fun start() {
-        if (loopJob?.isActive == true) return
-        loopJob = scope.launch { connectionLoop() }
-        scope.launch { refreshWorker() }
+        if (refreshJob != null) return
+        refreshJob = scope.launch { refreshWorker() }
+        lifecycle.restart()
     }
 
-    /** Retry immediately (e.g. user tapped "Retry" or network came back). */
-    fun retryNow() {
-        loopJob?.cancel()
-        closeTransport()
-        loopJob = scope.launch { connectionLoop() }
-    }
+    /** Retry immediately, after the previous connection loop has released its resources. */
+    fun retryNow() { lifecycle.restart() }
 
     fun updateProfile(updated: HostProfile) {
         profile = updated
@@ -200,7 +209,7 @@ class HerdrConnection(
 
     private suspend fun connectionLoop() {
         var attempt = 0
-        while (scope.isActive) {
+        while (currentCoroutineContext().isActive) {
             try {
                 _status.value = ConnectionStatus.Connecting(
                     when {
@@ -213,7 +222,9 @@ class HerdrConnection(
                 ssh = session
                 val api = HerdrApi(session, profile.session, profile.herdrPath)
                 this.api = api
-                if (remoteHome == null) remoteHome = runCatching { readRemoteHome(session) }.getOrNull()
+                if (remoteHome == null) remoteHome = try { readRemoteHome(session) }
+                catch (e: CancellationException) { throw e }
+                catch (_: Exception) { null }
                 _status.value = ConnectionStatus.Connecting("Loading herdr session…")
                 applySnapshot(api.snapshot())
                 _status.value = ConnectionStatus.Connected
@@ -327,20 +338,20 @@ class HerdrConnection(
     }
 
     private suspend fun readRemoteHome(session: SshSession): String? =
-        kotlinx.coroutines.withContext(Dispatchers.IO) {
+        withTimeoutOrNull(15_000) {
             session.exec("/bin/sh -c 'printf %s \"\$HOME\"'").use { channel ->
-                channel.stdout.readBytes().toString(Charsets.UTF_8).trim().takeIf { it.startsWith("/") }
+                interruptibleIo { channel.stdout.readBytes().toString(Charsets.UTF_8).trim().takeIf { it.startsWith("/") } }
             }
         }
 
-    private suspend fun runEventStreams(api: HerdrApi, session: SshSession) {
-        val poller = scope.launch {
+    private suspend fun runEventStreams(api: HerdrApi, session: SshSession) = coroutineScope {
+        val poller = launch {
             while (isActive) {
                 delay(SAFETY_POLL_MS)
                 requestRefresh()
             }
         }
-        val lifecycle = scope.launch {
+        val lifecycle = launch {
             while (isActive && session.isConnected) {
                 runCatching {
                     api.subscribe(HerdrApi.LIFECYCLE_EVENTS).collect { requestRefresh() }
@@ -349,7 +360,7 @@ class HerdrConnection(
                 delay(1_000)
             }
         }
-        val agentStatus = scope.launch {
+        val agentStatus = launch {
             while (isActive && session.isConnected) {
                 val panes = subscribedPanes.value
                 if (panes.isEmpty()) {
@@ -377,7 +388,7 @@ class HerdrConnection(
             }
         }
         try {
-            while (session.isConnected && scope.isActive) delay(2_000)
+            while (session.isConnected && isActive) delay(2_000)
         } finally {
             poller.cancel()
             lifecycle.cancel()
@@ -389,7 +400,11 @@ class HerdrConnection(
         for (unused in refreshRequests) {
             delay(REFRESH_DEBOUNCE_MS)
             val api = api ?: continue
-            runCatching { applySnapshot(api.snapshot()) }
+            runCatching {
+                val next = api.snapshot()
+                // A refresh may finish after its transport has been replaced.
+                if (this.api === api) applySnapshot(next)
+            }
         }
     }
 
@@ -439,8 +454,15 @@ class HerdrConnection(
             tunnel = tunnel,
             verifyHostKey = { challenge -> askHostKey(challenge) },
         )
-        session.connect(credential())
-        return session
+        // Own the transport before authentication or any UI prompt can suspend.
+        ssh = session
+        try {
+            session.connect(credential())
+            return session
+        } catch (e: Throwable) {
+            session.close()
+            throw e
+        }
     }
 
     private suspend fun credential(): SshCredential = when (profile.auth) {
@@ -478,14 +500,17 @@ class HerdrConnection(
         val prompt = make()
         _prompt.value = prompt
         deps.notifier.promptPending(profile)
-        val result = withTimeoutOrNull(PROMPT_TIMEOUT_MS) {
-            when (prompt) {
-                is UserPrompt.HostKey -> prompt.answer.await()
-                is UserPrompt.Password -> prompt.answer.await()
-            }
+        return try {
+            withTimeoutOrNull(PROMPT_TIMEOUT_MS) {
+                when (prompt) {
+                    is UserPrompt.HostKey -> prompt.answer.await()
+                    is UserPrompt.Password -> prompt.answer.await()
+                }
+            } as T?
+        } finally {
+            cancelPrompt(prompt)
+            _prompt.compareAndSet(prompt, null)
         }
-        _prompt.compareAndSet(prompt, null)
-        return result as T?
     }
 
     private fun cancelPrompt(prompt: UserPrompt) {
