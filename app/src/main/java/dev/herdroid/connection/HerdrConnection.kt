@@ -13,8 +13,12 @@ import dev.herdroid.herdr.DirListing
 import dev.herdroid.herdr.HerdrApi
 import dev.herdroid.herdr.HerdrApiException
 import dev.herdroid.herdr.HerdrNotFoundException
+import dev.herdroid.herdr.AgentQuotaProbe
+import dev.herdroid.herdr.HostProbe
+import dev.herdroid.herdr.HostSample
 import dev.herdroid.herdr.RemoteCommand
 import dev.herdroid.herdr.readBoundedLine
+import dev.herdroid.herdr.readBoundedBytes
 import dev.herdroid.herdr.SessionSnapshot
 import dev.herdroid.herdr.TerminalStream
 import dev.herdroid.ssh.CloudflareTunnel
@@ -330,6 +334,46 @@ class HerdrConnection(
             Result.failure(e)
         }
     }
+
+    /** One reading of the host's CPU, memory, disk and uptime ([HostProbe]). */
+    suspend fun sampleHost(): Result<HostSample> {
+        val session = ssh?.takeIf { it.isConnected }
+            ?: return Result.failure(IllegalStateException("Not connected"))
+        return try {
+            val output = withTimeoutOrNull(15_000) {
+                val channel = session.exec(HostProbe.command())
+                try {
+                    channel.channelIo { channel.stdout.readBoundedBytes(64 * 1024) }
+                } finally {
+                    channel.closeBounded()
+                }
+            } ?: return Result.failure(IllegalStateException("Reading host stats timed out"))
+            HostProbe.parse(output.toString(Charsets.UTF_8))?.let { Result.success(it) }
+                ?: Result.failure(IllegalStateException("Unreadable host stats"))
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * Claude Code and Codex subscription quotas, read from the agents' sign-ins on this host. The
+     * screens showing them acquire it; it only polls while one does.
+     */
+    val quotas = AgentQuotaMonitor(scope, AgentQuotaReader(readFiles = { keychain ->
+        val session = ssh?.takeIf { it.isConnected } ?: throw IllegalStateException("Not connected")
+        val output = withTimeoutOrNull(30_000) {
+            val channel = session.exec(AgentQuotaProbe.command(keychain))
+            try {
+                channel.channelIo { channel.stdout.readBoundedBytes(2 * 1024 * 1024) }
+            } finally {
+                channel.closeBounded()
+            }
+        }
+        // The output holds the sign-ins: it is only parsed, never put in an error message.
+        AgentQuotaProbe.parse(output?.toString(Charsets.UTF_8) ?: throw QuotaException("Reading the agents' sign-ins timed out"))
+    }))
 
     /** Uploads [bytes] as [name] into a private temp directory on the host; returns its path. */
     suspend fun uploadFile(name: String, bytes: ByteArray, expectedApi: HerdrApi? = null): Result<String> {

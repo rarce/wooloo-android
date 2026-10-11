@@ -1,4 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">wooloo mobile</string>
+    <plurals name="machine_connections">
+        <item quantity="one">%d machine connection</item>
+        <item quantity="other">%d machine connections</item>
+    </plurals>
 </resources>

@@ -6,7 +6,10 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -26,8 +29,9 @@ fun EmptyState(
     modifier: Modifier = Modifier,
     actions: @Composable () -> Unit = {},
 ) {
-    Box(modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
+    Box(modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
         Column(
+            modifier = Modifier.widthIn(max = 420.dp).verticalScroll(rememberScrollState()),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
@@ -35,7 +39,7 @@ fun EmptyState(
                 Icon(
                     icon, null,
                     tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                    modifier = Modifier.padding(20.dp).size(36.dp),
+                    modifier = Modifier.padding(14.dp).size(28.dp),
                 )
             }
             Text(title, style = MaterialTheme.typography.titleLarge, textAlign = TextAlign.Center)

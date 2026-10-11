@@ -1,7 +1,5 @@
 package dev.herdroid.ui.session
 
-import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -11,23 +9,18 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.Logout
 import androidx.compose.material.icons.outlined.Add
-import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.DashboardCustomize
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.Workspaces
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -50,8 +43,10 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.foundation.layout.size
 import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
@@ -60,19 +55,19 @@ import androidx.compose.ui.unit.dp
 import dev.herdroid.app
 import dev.herdroid.connection.ConnectionStatus
 import dev.herdroid.connection.HerdrConnection
-import dev.herdroid.herdr.AgentStatus
 import dev.herdroid.herdr.SessionSnapshot
 import dev.herdroid.herdr.TabInfo
 import dev.herdroid.herdr.WorkspaceInfo
 import dev.herdroid.ui.components.ConnectionBanner
 import dev.herdroid.ui.components.ConnectionPrompts
 import dev.herdroid.ui.components.EmptyState
-import dev.herdroid.ui.components.StatusDot
-import dev.herdroid.ui.theme.LocalStatusColors
+import dev.herdroid.ui.components.StatusLabel
+import dev.herdroid.ui.components.SessionListRow
+import dev.herdroid.ui.components.ListRowPosition
 import kotlinx.coroutines.launch
 
 /**
- * A machine's herdr session: its spaces (herdr workspaces), whoever needs you first. Spaces are
+ * A machine's herdr session: its spaces (herdr workspaces), in the order reported by herdr. Spaces are
  * the top of the hierarchy, as in herdr's sidebar; agents live inside them ([SpaceScreen]).
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -159,6 +154,12 @@ fun SessionScreen(
                         stale = status !is ConnectionStatus.Connected,
                         onOpenSpace = onOpenSpace,
                         onSpaceAction = { ui.dialog = it },
+                        header = {
+                            Column {
+                                HostStatsCard(connection)
+                                AgentQuotaCard(connection)
+                            }
+                        },
                     )
                 }
             }
@@ -222,91 +223,68 @@ internal fun SpacesContent(
     stale: Boolean,
     onOpenSpace: (String) -> Unit,
     onSpaceAction: (SessionDialog) -> Unit,
+    header: (@Composable () -> Unit)? = null,
 ) {
     LazyColumn(
         modifier = Modifier.fillMaxSize().alpha(if (stale) 0.6f else 1f),
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
+        verticalArrangement = Arrangement.spacedBy(0.dp),
     ) {
+        header?.let { item(key = "host") { it() } }
         item(key = "title") { SectionLabel("Spaces", snapshot.workspaces.size) }
-        items(snapshot.spacesByAttention, key = { "ws-" + it.workspaceId }) { workspace ->
-            SpaceCard(workspace, snapshot, onOpen = { onOpenSpace(workspace.workspaceId) }, onAction = onSpaceAction)
+        itemsIndexed(snapshot.workspaces, key = { _, it -> "ws-" + it.workspaceId }) { index, workspace ->
+            SpaceCard(workspace, snapshot, ListRowPosition.at(index, snapshot.workspaces.size), onOpen = { onOpenSpace(workspace.workspaceId) }, onAction = onSpaceAction)
         }
         item { Spacer(Modifier.height(48.dp)) }
     }
 }
 
-/** One space: its active tab's miniature, its name, and who in it needs you. Tap to go in. */
-@OptIn(ExperimentalFoundationApi::class)
+/** The workspace's server state and order are authoritative, including unknown/idle. */
 @Composable
 private fun SpaceCard(
     workspace: WorkspaceInfo,
     snapshot: SessionSnapshot,
+    position: ListRowPosition,
     onOpen: () -> Unit,
     onAction: (SessionDialog) -> Unit,
 ) {
     var menu by remember { mutableStateOf(false) }
-    val status = LocalStatusColors.current
-    val agents = snapshot.agentsIn(workspace.workspaceId)
-    val needing = agents.filter { status.isSolid(it.agentStatus) }
-    val working = agents.count { it.agentStatus == AgentStatus.WORKING }
-    val (line, lineColor) = when {
-        needing.isNotEmpty() -> {
-            val first = needing.first()
-            val verb = if (first.agentStatus == AgentStatus.BLOCKED) "needs you" else "is done"
-            val more = if (needing.size > 1) ", ${needing.size - 1} more" else ""
-            "${first.displayName} $verb$more" to status.of(first.agentStatus)
-        }
-        working > 0 -> "${count(working, "agent")} working" to MaterialTheme.colorScheme.onSurfaceVariant
-        agents.isNotEmpty() -> "${count(agents.size, "agent")}, all quiet" to MaterialTheme.colorScheme.onSurfaceVariant
-        else -> "${count(workspace.tabCount, "tab")}, ${count(workspace.paneCount, "pane")}" to
-            MaterialTheme.colorScheme.onSurfaceVariant
-    }
-    Card(
-        shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(20.dp))
-            .combinedClickable(
-                onClickLabel = "Open space",
-                onLongClickLabel = "Space actions",
-                onLongClick = { menu = true },
-                onClick = onOpen,
-            ),
-    ) {
-        Box {
-            Row(
-                Modifier.padding(start = 16.dp, end = 8.dp, top = 14.dp, bottom = 14.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(14.dp),
-            ) {
-                snapshot.activeTabId(workspace)?.let { TabMiniature(snapshot, it, MiniatureRow) }
-                Column(Modifier.weight(1f)) {
-                    // herdr's space row: its state mark, then the name.
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        StatusDot(snapshot.spaceStatus(workspace), Modifier.offset(x = (-4).dp), size = 8.dp)
-                        Text(
-                            workspace.label.ifBlank { "Space ${workspace.number}" },
-                            style = MaterialTheme.typography.titleMedium,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                    Text(
-                        line,
-                        style = MaterialTheme.typography.bodySmall,
-                        fontWeight = if (needing.isNotEmpty()) FontWeight.Medium else null,
-                        color = lineColor,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
+    SessionListRow(
+        onOpen = onOpen,
+        onLongClick = { menu = true },
+        actionLabel = "Space actions",
+        position = position,
+        leading = {
+            Box(Modifier.size(44.dp, 30.dp), contentAlignment = Alignment.Center) {
+                val tabId = snapshot.activeTabId(workspace)
+                if (tabId != null) {
+                    TabMiniature(snapshot, tabId, Modifier.fillMaxSize()
+                        .semantics { contentDescription = "Active tab layout of ${workspace.label}" })
+                } else {
+                    Icon(Icons.Outlined.Workspaces, "Tab layout unavailable", tint = MaterialTheme.colorScheme.outline)
                 }
-                Icon(Icons.Outlined.ChevronRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                SpaceMenuItems(workspace, onAction) { menu = false }
+        },
+        focused = workspace.focused,
+        trailing = {
+            Box {
+                IconButton(onClick = { menu = true }) {
+                    Icon(Icons.Outlined.MoreVert, "Actions for ${workspace.label.ifBlank { "Space ${workspace.number}" }}")
+                }
+                DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                    SpaceMenuItems(workspace, onAction) { menu = false }
+                }
             }
+        },
+    ) {
+        Text(workspace.label.ifBlank { "Space ${workspace.number}" },
+            style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        androidx.compose.foundation.layout.FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            StatusLabel(workspace.agentStatus)
+            Text("${count(workspace.tabCount, "tab")}, ${count(workspace.paneCount, "pane")}",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
@@ -347,7 +325,7 @@ internal fun breadcrumb(workspace: WorkspaceInfo?, tab: TabInfo?, extra: String?
 @Composable
 internal fun SectionLabel(text: String, count: Int) {
     Row(
-        Modifier.padding(top = 4.dp, start = 4.dp),
+        Modifier.padding(top = 4.dp, bottom = 10.dp, start = 2.dp),
         horizontalArrangement = Arrangement.spacedBy(6.dp),
         verticalAlignment = Alignment.Bottom,
     ) {

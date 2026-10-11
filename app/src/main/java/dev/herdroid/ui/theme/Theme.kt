@@ -19,10 +19,7 @@ import androidx.compose.ui.unit.sp
 import dev.herdroid.R
 import dev.herdroid.herdr.AgentStatus
 
-/*
- * "Vigía" (night watch): the screen stays quiet while the herd works. Only the two states that
- * ask something of the user carry color: amber for blocked, blue for done. Working is neutral.
- */
+/* Quiet chrome around herdr's five state colors; focus uses a neutral mark. */
 
 // Dark
 private val PastureNight = Color(0xFF141D21) // ground
@@ -50,7 +47,7 @@ private val DarkColors = darkColorScheme(
     onPrimaryContainer = Wool,
     secondary = Sky,
     onSecondary = PastureNight,
-    // Material's selected state (segmented buttons, chips): neutral, so blue only ever means "done".
+    // Material's selected state (segmented buttons, chips): neutral, so selection does not compete with agent state.
     secondaryContainer = Fence,
     onSecondaryContainer = Wool,
     tertiary = Lantern,
@@ -185,7 +182,7 @@ private val AppTypography = Typography().let { base ->
         headlineMedium = base.headlineMedium.copy(fontFamily = Sans, fontWeight = FontWeight.Bold, fontSize = 28.sp, lineHeight = 34.sp),
         headlineSmall = base.headlineSmall.sans(FontWeight.Bold),
         titleLarge = base.titleLarge.copy(fontFamily = Sans, fontWeight = FontWeight.Bold, fontSize = 20.sp, lineHeight = 26.sp),
-        titleMedium = base.titleMedium.copy(fontFamily = Sans, fontWeight = FontWeight.Bold, fontSize = 17.sp, letterSpacing = 0.sp),
+        titleMedium = base.titleMedium.copy(fontFamily = Sans, fontWeight = FontWeight.Medium, fontSize = 17.sp, letterSpacing = 0.sp),
         titleSmall = base.titleSmall.copy(fontFamily = Sans, fontWeight = FontWeight.Bold, fontSize = 15.sp, letterSpacing = 0.sp),
         bodyLarge = base.bodyLarge.copy(fontFamily = Sans, lineHeight = 23.sp, letterSpacing = 0.sp),
         bodyMedium = base.bodyMedium.copy(fontFamily = Sans, fontSize = 15.sp, lineHeight = 21.sp, letterSpacing = 0.sp),

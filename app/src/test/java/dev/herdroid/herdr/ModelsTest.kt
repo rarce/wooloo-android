@@ -36,7 +36,7 @@ class ModelsTest {
         assertEquals("api", snapshot.pane("w1:p2")!!.displayTitle)
         // Unknown enum values are coerced instead of failing the whole snapshot.
         assertEquals(AgentStatus.UNKNOWN, snapshot.agents[1].agentStatus)
-        assertEquals("w1:p1", snapshot.agentsByAttention.first().paneId)
+        assertEquals("w1:p1", snapshot.agentsIn("w1").first().paneId)
     }
 
     @Test
@@ -48,4 +48,26 @@ class ModelsTest {
         val named = TabInfo(tabId = "w1:t1", workspaceId = "w1", number = 1, label = "logs")
         assertEquals("logs", named.displayLabel)
     }
+    @Test
+    fun filteringAgentsPreservesHerdrOrderAcrossStatusChanges() {
+        val agents = listOf(
+            AgentInfo(paneId = "w1:p8", workspaceId = "w1", tabId = "w1:t2", agentStatus = AgentStatus.IDLE),
+            AgentInfo(paneId = "w2:p1", workspaceId = "w2", tabId = "w2:t1", agentStatus = AgentStatus.BLOCKED),
+            AgentInfo(paneId = "w1:p2", workspaceId = "w1", tabId = "w1:t1", agentStatus = AgentStatus.WORKING),
+            AgentInfo(paneId = "w1:p5", workspaceId = "w1", tabId = "w1:t1", agentStatus = AgentStatus.BLOCKED),
+        )
+        val snapshot = SessionSnapshot(agents = agents)
+        assertEquals(listOf("w1:p8", "w1:p2", "w1:p5"), snapshot.agentsIn("w1").map { it.paneId })
+        val next = snapshot.copy(agents = agents.map { it.copy(agentStatus = AgentStatus.DONE, stateChangeSeq = 99) })
+        assertEquals(snapshot.agentsIn("w1").map { it.paneId }, next.agentsIn("w1").map { it.paneId })
+    }
+
+    @Test
+    fun labelsUseServerOverridesAndOtherwiseMatchCanonicalState() {
+        val agent = AgentInfo(paneId = "w1:p1", workspaceId = "w1", tabId = "w1:t1", agentStatus = AgentStatus.BLOCKED)
+        assertEquals("blocked", agent.statusLabel())
+        assertEquals("approval required", agent.copy(stateLabels = mapOf("blocked" to "approval required")).statusLabel())
+        assertEquals("blocked", agent.copy(stateLabels = mapOf("blocked" to "")).statusLabel())
+    }
+
 }

@@ -108,6 +108,12 @@ fun SettingsScreen(onBack: () -> Unit) {
                 trailingContent = { Switch(haptics, onCheckedChange = prefs::setHaptics) },
             )
             ListItem(
+                headlineContent = { Text("Agent quotas") },
+                supportingContent = {
+                    Text("Enable quotas on each machine's spaces screen. Permission applies separately to each remote sign-in.")
+                },
+            )
+            ListItem(
                 modifier = Modifier.clickable {
                     context.startActivity(
                         Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)

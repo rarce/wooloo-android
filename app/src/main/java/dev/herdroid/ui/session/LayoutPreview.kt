@@ -51,7 +51,7 @@ private fun tiles(snapshot: SessionSnapshot, tabId: String): List<Tile> {
 
 /**
  * A miniature of a tab exactly as herdr lays it out, colored by agent state: the app's signature.
- * Blocked and done panes are solid, working ones a neutral tint, the rest an outline. The size
+ * Blocked and done panes are solid; working has a yellow tint, idle a green outline. The size
  * comes from [modifier]; [highlightPaneId] gets a strong outline.
  */
 @Composable
@@ -76,7 +76,7 @@ fun TabMiniature(
         tiles.forEach { tile ->
             val pane = snapshot.pane(tile.paneId)
             val agent = snapshot.agentFor(tile.paneId)
-            val state = agent?.agentStatus
+            val state = agent?.agentStatus ?: pane?.agentStatus
             val solid = state != null && status.isSolid(state)
             val name = agent?.displayName ?: pane?.displayTitle ?: tile.paneId
             Box(
@@ -91,7 +91,8 @@ fun TabMiniature(
                             state == AgentStatus.WORKING -> Modifier
                                 .background(status.working.copy(alpha = 0.12f))
                                 .border(1.dp, status.working.copy(alpha = 0.7f), shape)
-                            else -> Modifier.border(1.dp, scheme.outlineVariant, shape)
+                            state == AgentStatus.IDLE -> Modifier.border(1.dp, status.idle, shape)
+                            else -> Modifier.border(1.dp, status.unknown, shape)
                         }
                     )
                     .then(
