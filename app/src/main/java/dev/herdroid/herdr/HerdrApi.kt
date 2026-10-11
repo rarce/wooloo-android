@@ -1,6 +1,6 @@
 package dev.herdroid.herdr
 
-import dev.herdroid.ssh.ExecChannel
+import dev.herdroid.ssh.CommandChannel
 import dev.herdroid.ssh.SshSession
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.awaitClose
@@ -11,8 +11,11 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
-import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import dev.herdroid.ssh.interruptibleIo
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.TimeoutCancellationException
+import java.net.SocketTimeoutException
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -49,11 +52,13 @@ val herdrJson = Json {
  * request gets its own exec channel on the shared SSH transport; event subscriptions keep
  * theirs open.
  */
-class HerdrApi(
-    private val ssh: SshSession,
+class HerdrApi internal constructor(
+    private val openChannel: suspend (String) -> CommandChannel,
     private val session: String,
     private val herdrPath: String?,
 ) {
+    constructor(ssh: SshSession, session: String, herdrPath: String?) :
+        this(ssh::exec, session, herdrPath)
     private val ids = AtomicLong()
     private val concurrency = Semaphore(MAX_CONCURRENT_REQUESTS)
 
@@ -61,20 +66,29 @@ class HerdrApi(
         method: String,
         params: JsonObject = JsonObject(emptyMap()),
         timeoutMs: Long = REQUEST_TIMEOUT_MS,
-    ): JsonObject = concurrency.withPermit {
-        withContext(Dispatchers.IO) {
-            val channel = ssh.exec(RemoteCommand.apiBridge(session, herdrPath))
-            try {
-                withTimeout(timeoutMs) {
-                    val id = "herdroid_${ids.incrementAndGet()}"
-                    channel.writeLine(requestLine(id, method, params))
-                    val line = channel.stdoutReader().readLine()
-                        ?: throw channel.failure("herdr closed the API connection")
-                    parseResponse(line)
+    ): JsonObject {
+        try {
+            return withTimeout(timeoutMs) {
+                concurrency.withPermit {
+                    val channel = openChannel(RemoteCommand.apiBridge(session, herdrPath))
+                    try {
+                        interruptibleIo {
+                            val id = "herdroid_${ids.incrementAndGet()}"
+                            channel.writeLine(requestLine(id, method, params))
+                            val line = channel.stdoutReader().readLine()
+                                ?: throw channel.failure("herdr closed the API connection")
+                            parseResponse(line)
+                        }
+                    } finally {
+                        channel.close()
+                    }
                 }
-            } finally {
-                channel.close()
             }
+        } catch (e: TimeoutCancellationException) {
+            // An outer cancellation must remain cancellation. Our own deadline is
+            // a transport failure so the connection loop can report it and retry.
+            if (!currentCoroutineContext().isActive) throw e
+            throw SocketTimeoutException("herdr $method timed out after ${timeoutMs}ms").apply { initCause(e) }
         }
     }
 
@@ -88,23 +102,26 @@ class HerdrApi(
 
     /** Like [subscribe] but with full subscription objects, e.g. ones scoped to a `pane_id`. */
     fun subscribeRaw(subscriptions: List<JsonObject>): Flow<JsonObject> = callbackFlow {
-        val channel = ssh.exec(RemoteCommand.apiBridge(session, herdrPath))
+        val channel = openChannel(RemoteCommand.apiBridge(session, herdrPath))
         val reader = launch(Dispatchers.IO) {
             try {
-                channel.writeLine(
-                    requestLine(
-                        "herdroid_sub_${ids.incrementAndGet()}",
-                        "events.subscribe",
-                        buildJsonObject {
-                            putJsonArray("subscriptions") { subscriptions.forEach { add(it) } }
-                        },
-                    )
-                )
                 val input = channel.stdoutReader()
-                val ack = input.readLine() ?: throw channel.failure("event subscription closed")
-                parseResponse(ack)
+                withTimeout(REQUEST_TIMEOUT_MS) {
+                    interruptibleIo {
+                        channel.writeLine(
+                            requestLine(
+                                "herdroid_sub_${ids.incrementAndGet()}",
+                                "events.subscribe",
+                                buildJsonObject {
+                                    putJsonArray("subscriptions") { subscriptions.forEach { add(it) } }
+                                },
+                            )
+                        )
+                        parseResponse(input.readLine() ?: throw channel.failure("event subscription closed"))
+                    }
+                }
                 while (isActive) {
-                    val line = input.readLine() ?: break
+                    val line = interruptibleIo { input.readLine() } ?: break
                     if (line.isBlank()) continue
                     val obj = herdrJson.parseToJsonElement(line).jsonObject
                     if (obj.containsKey("error")) parseResponse(line)
@@ -239,16 +256,16 @@ class HerdrApi(
     }
 }
 
-internal fun ExecChannel.writeLine(line: String) {
+internal fun CommandChannel.writeLine(line: String) {
     stdin.write((line + "\n").toByteArray(Charsets.UTF_8))
     stdin.flush()
 }
 
-internal fun ExecChannel.stdoutReader(): BufferedReader =
+internal fun CommandChannel.stdoutReader(): BufferedReader =
     BufferedReader(InputStreamReader(stdout, Charsets.UTF_8), 64 * 1024)
 
 /** Turns a dead channel into the most useful exception we can, using stderr. */
-internal fun ExecChannel.failure(fallback: String): Exception {
+internal fun CommandChannel.failure(fallback: String): Exception {
     val err = runCatching { stderr.readBytes().toString(Charsets.UTF_8).trim() }.getOrDefault("")
     return when {
         err.contains(RemoteCommand.NOT_FOUND_MESSAGE) -> HerdrNotFoundException(
