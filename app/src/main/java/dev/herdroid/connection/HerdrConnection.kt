@@ -51,6 +51,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
 import java.net.ConnectException
 import java.net.NoRouteToHostException
@@ -71,6 +73,13 @@ sealed interface ConnectionStatus {
     data class Reconnecting(val attempt: Int, val reason: String, val retryAtMs: Long) : ConnectionStatus
     data class Failed(val kind: FailureKind, val message: String) : ConnectionStatus
 }
+
+/** Snapshot freshness is independent of the SSH transport and live terminals. */
+data class SnapshotHealth(
+    val stale: Boolean = true,
+    val refreshing: Boolean = false,
+    val error: String? = null,
+)
 
 sealed interface UserPrompt {
     data class HostKey(
@@ -115,6 +124,10 @@ class HerdrConnection(
 
     private val _snapshot = MutableStateFlow<SessionSnapshot?>(null)
     val snapshot: StateFlow<SessionSnapshot?> = _snapshot.asStateFlow()
+
+    private val _snapshotHealth = MutableStateFlow(SnapshotHealth())
+    val snapshotHealth: StateFlow<SnapshotHealth> = _snapshotHealth.asStateFlow()
+    private val snapshotRefreshLock = Mutex()
 
     private val _prompt = MutableStateFlow<UserPrompt?>(null)
     val prompt: StateFlow<UserPrompt?> = _prompt.asStateFlow()
@@ -231,6 +244,7 @@ class HerdrConnection(
                 val context = cycleProfile.remoteContextKey()
                 synchronized(remoteStateLock) {
                     if (context != remoteContext) {
+                        _snapshotHealth.value = SnapshotHealth()
                         _snapshot.value = null
                         subscribedPanes.value = emptySet()
                         remoteHome = null
@@ -251,7 +265,7 @@ class HerdrConnection(
                 catch (e: CancellationException) { throw e }
                 catch (_: Exception) { null }
                 _status.value = ConnectionStatus.Connecting("Loading herdr session…")
-                applySnapshot(api, api.snapshot())
+                snapshotRefreshLock.withLock { applySnapshot(api, api.snapshot()) }
                 quotas.resume()
                 _status.value = ConnectionStatus.Connected
                 deps.hosts.markConnected(profile.id)
@@ -469,11 +483,36 @@ class HerdrConnection(
     private suspend fun refreshWorker() {
         for (unused in refreshRequests) {
             delay(REFRESH_DEBOUNCE_MS)
-            val api = api ?: continue
-            runCatching {
-                val next = api.snapshot()
-                // A refresh may finish after its transport has been replaced.
-                applySnapshot(api, next)
+            refreshSnapshot()
+        }
+    }
+
+    /** Re-read authoritative state without replacing SSH or interrupting live terminals. */
+    suspend fun refreshSnapshot(): Result<Unit> = snapshotRefreshLock.withLock {
+        val source = synchronized(remoteStateLock) {
+            val current = api ?: return@withLock Result.failure(IllegalStateException("Not connected"))
+            _snapshotHealth.value = _snapshotHealth.value.copy(refreshing = true)
+            current
+        }
+        try {
+            val next = source.snapshot()
+            currentCoroutineContext().ensureActive()
+            applySnapshot(source, next)
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            currentCoroutineContext().ensureActive()
+            synchronized(remoteStateLock) {
+                if (api === source) _snapshotHealth.value = SnapshotHealth(
+                    stale = true,
+                    error = "Could not refresh the herdr session.",
+                )
+            }
+            Result.failure(e)
+        } finally {
+            synchronized(remoteStateLock) {
+                if (api === source) _snapshotHealth.value = _snapshotHealth.value.copy(refreshing = false)
             }
         }
     }
@@ -483,6 +522,7 @@ class HerdrConnection(
             if (api !== sourceApi) return
             val previous = _snapshot.value
             _snapshot.value = next
+            _snapshotHealth.value = SnapshotHealth(stale = false)
             subscribedPanes.value = next.agents.map { it.paneId }.toSet()
             previous to (transport?.profile ?: profile)
         }
@@ -599,6 +639,7 @@ class HerdrConnection(
         quotas.invalidate()
         val old = synchronized(remoteStateLock) {
             api = null
+            _snapshotHealth.value = SnapshotHealth(stale = true)
             val old = transport
             transport = null
             old

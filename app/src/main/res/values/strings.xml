@@ -5,4 +5,9 @@
         <item quantity="one">%d machine connection</item>
         <item quantity="other">%d machine connections</item>
     </plurals>
+    <string name="snapshot_stale_title">Session data may be outdated</string>
+    <string name="snapshot_stale_body">Refresh failed. Showing the last known state; live terminals can continue.</string>
+    <string name="snapshot_retry">Refresh</string>
+    <string name="snapshot_cached_agents">Last known agent states</string>
+    <string name="snapshot_connected_stale">Connected · session data outdated</string>
 </resources>

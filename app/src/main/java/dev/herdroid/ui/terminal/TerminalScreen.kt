@@ -101,6 +101,7 @@ import dev.herdroid.terminal.TerminalView
 import dev.herdroid.terminal.TerminalViewListener
 import dev.herdroid.ui.components.ComposerSheet
 import dev.herdroid.ui.components.ConfirmDialog
+import dev.herdroid.ui.components.SnapshotBanner
 import dev.herdroid.ui.components.ConnectionBanner
 import dev.herdroid.ui.components.ConnectionPrompts
 import dev.herdroid.ui.components.FieldSpec
@@ -167,6 +168,7 @@ private fun TerminalScreenContent(
     var paneId by rememberSaveable { mutableStateOf(initialPaneId) }
     val status by connection.status.collectAsState()
     val snapshot by connection.snapshot.collectAsState()
+    val snapshotHealth by connection.snapshotHealth.collectAsState()
     val prompt by connection.prompt.collectAsState()
     val fontSize by app.preferences.fontSize.collectAsState()
     val keepScreenOn by app.preferences.keepScreenOn.collectAsState()
@@ -230,11 +232,11 @@ private fun TerminalScreenContent(
     // A pane that disappears from the session (closed elsewhere) sends us back. Only once we
     // have seen it: a pane we just created by splitting isn't in the snapshot yet.
     var paneSeen by remember(paneId) { mutableStateOf(false) }
-    LaunchedEffect(snapshot, paneId) {
+    LaunchedEffect(snapshot, paneId, status, snapshotHealth.stale) {
         val snap = snapshot ?: return@LaunchedEffect
         if (snap.pane(paneId) != null) {
             paneSeen = true
-        } else if (paneSeen && status == ConnectionStatus.Connected) {
+        } else if (paneSeen && status == ConnectionStatus.Connected && !snapshotHealth.stale) {
             Toast.makeText(context, "That pane was closed", Toast.LENGTH_SHORT).show()
             onBack()
         }
@@ -286,6 +288,9 @@ private fun TerminalScreenContent(
                 },
             )
             ConnectionBanner(status, onRetry = { connection.retryNow() }, onEditHost = onEditHost)
+            if (status == ConnectionStatus.Connected) {
+                SnapshotBanner(snapshotHealth, onRetry = { connection.requestRefresh() })
+            }
             snapshot?.let { snap ->
                 pane?.let { PaneSwitcher(snap, it) { id -> paneId = id } }
             }

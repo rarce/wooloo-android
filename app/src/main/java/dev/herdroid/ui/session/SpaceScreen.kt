@@ -62,6 +62,7 @@ import dev.herdroid.herdr.AgentInfo
 import dev.herdroid.herdr.PaneInfo
 import dev.herdroid.herdr.SessionSnapshot
 import dev.herdroid.herdr.TabInfo
+import dev.herdroid.ui.components.SnapshotBanner
 import dev.herdroid.ui.components.ConnectionBanner
 import dev.herdroid.ui.components.ConnectionPrompts
 import dev.herdroid.ui.components.StatusDot
@@ -88,6 +89,7 @@ fun SpaceScreen(
     }
     val status by connection.status.collectAsState()
     val snapshot by connection.snapshot.collectAsState()
+    val snapshotHealth by connection.snapshotHealth.collectAsState()
     val prompt by connection.prompt.collectAsState()
     val ui = rememberSessionUi(connection)
     var menu by remember { mutableStateOf(false) }
@@ -95,9 +97,9 @@ fun SpaceScreen(
 
     // The space was closed (here or on the desktop): go back up to the spaces.
     var seen by remember { mutableStateOf(false) }
-    LaunchedEffect(workspace, status) {
+    LaunchedEffect(workspace, status, snapshotHealth.stale) {
         if (workspace != null) seen = true
-        else if (seen && status == ConnectionStatus.Connected) onBack()
+        else if (seen && status == ConnectionStatus.Connected && !snapshotHealth.stale) onBack()
     }
 
     Scaffold(
@@ -133,6 +135,9 @@ fun SpaceScreen(
     ) { padding ->
         Column(Modifier.padding(padding).fillMaxSize()) {
             ConnectionBanner(status, onRetry = { connection.retryNow() }, onEditHost = onEditHost)
+            if (status == ConnectionStatus.Connected) {
+                SnapshotBanner(snapshotHealth, onRetry = { connection.requestRefresh() })
+            }
             RefreshBox(connection) {
                 val snap = snapshot
                 if (snap == null || workspace == null) {
@@ -141,7 +146,7 @@ fun SpaceScreen(
                     SpaceContent(
                         snapshot = snap,
                         workspaceId = workspaceId,
-                        stale = status !is ConnectionStatus.Connected,
+                        stale = status !is ConnectionStatus.Connected || snapshotHealth.stale,
                         onOpenPane = onOpenPane,
                         onPaneMenu = { ui.paneSheet = it },
                         onCompose = { ui.composeFor = it },
