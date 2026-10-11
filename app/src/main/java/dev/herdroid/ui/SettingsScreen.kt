@@ -71,7 +71,7 @@ fun SettingsScreen(onBack: () -> Unit) {
                             valueRange = TerminalView.MIN_FONT_SP..TerminalView.MAX_FONT_SP,
                         )
                         Text(
-                            "┌─ herd ─┐ agents: 3 ✓",
+                            "┌─ wooloo ─┐ agents: 3 ✓",
                             fontFamily = Mono,
                             fontSize = MaterialTheme.typography.bodySmall.fontSize * (fontSize / 12f),
                         )
