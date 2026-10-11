@@ -21,6 +21,8 @@ import net.schmizz.sshj.userauth.password.Resource
 import java.security.MessageDigest
 import java.security.PublicKey
 import java.util.Base64
+import java.io.InputStream
+import java.io.OutputStream
 
 /** What the user is asked when a server presents an unknown or changed host key. */
 data class HostKeyChallenge(
@@ -122,12 +124,21 @@ class SshSession(
     }
 
     /** Opens a new exec channel. The caller owns the returned session and must close it. */
-    suspend fun exec(command: String): ExecChannel = withContext(Dispatchers.IO) {
-        val session = client.startSession()
+    suspend fun exec(command: String): ExecChannel {
+        var opened: ExecChannel? = null
         try {
-            ExecChannel(session, session.exec(command))
-        } catch (e: Exception) {
-            runCatching { session.close() }
+            return interruptibleIo {
+                val session = client.startSession()
+                try {
+                    ExecChannel(session, session.exec(command)).also { opened = it }
+                } catch (e: Throwable) {
+                    runCatching { session.close() }
+                    throw e
+                }
+            }
+        } catch (e: Throwable) {
+            // Cancellation can win while the result is dispatched back to the caller.
+            opened?.close()
             throw e
         }
     }
@@ -157,11 +168,18 @@ class SshSession(
     }
 }
 
-class ExecChannel(private val session: Session, val command: Session.Command) : AutoCloseable {
-    val stdin get() = command.outputStream
-    val stdout get() = command.inputStream
-    val stderr get() = command.errorStream
-    val isOpen: Boolean get() = command.isOpen
+interface CommandChannel : AutoCloseable {
+    val stdin: OutputStream
+    val stdout: InputStream
+    val stderr: InputStream
+    val isOpen: Boolean
+}
+
+class ExecChannel(private val session: Session, val command: Session.Command) : CommandChannel {
+    override val stdin get() = command.outputStream
+    override val stdout get() = command.inputStream
+    override val stderr get() = command.errorStream
+    override val isOpen: Boolean get() = command.isOpen
 
     override fun close() {
         runCatching { command.close() }
