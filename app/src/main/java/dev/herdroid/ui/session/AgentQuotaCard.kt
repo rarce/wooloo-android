@@ -111,7 +111,7 @@ internal fun AgentQuotaCard(connection: HerdrConnection, modifier: Modifier = Mo
             }
         }
         if (enabled && !collapsed) {
-            TextButton(onClick = { prefs.setAgentQuotas(quotaProfile, false) }) { Text("Turn off") }
+            TextButton(onClick = { prefs.setAgentQuotas(quotaProfile, false); monitor.clear() }) { Text("Turn off") }
         }
     }
 }

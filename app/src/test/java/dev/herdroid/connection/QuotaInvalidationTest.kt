@@ -2,6 +2,7 @@ package dev.herdroid.connection
 
 import dev.herdroid.herdr.AgentProvider
 import dev.herdroid.herdr.AgentQuotaFiles
+import dev.herdroid.data.HostProfile
 import kotlinx.coroutines.*
 import kotlinx.coroutines.test.*
 import org.junit.Assert.*
@@ -98,6 +99,28 @@ class QuotaInvalidationTest {
         monitor.acquire()
         runCurrent()
         assertEquals(2, calls)
+        monitor.release()
+    }
+
+    @Test fun retainedUiLeaseCannotReadAnUnapprovedNewDestination(): Unit = runTest {
+        val approved = HostProfile(hostname = "approved", username = "alice")
+        var active = approved
+        var probes = 0
+        var requests = 0
+        val reader = AgentQuotaReader({
+            readConsentedQuotaFiles(active, { it == approved }) { probes++; signedIn }
+        }, QuotaHttp { _, _ -> requests++; 200 to usage })
+        val monitor = AgentQuotaMonitor(backgroundScope, reader, clock = { 0 })
+        monitor.acquire()
+        runCurrent()
+        assertEquals(1, probes)
+        assertEquals(1, requests)
+        monitor.invalidate()
+        active = approved.copy(hostname = "unapproved")
+        monitor.resume() // Old UI lease deliberately remains acquired.
+        runCurrent()
+        assertEquals(1, probes)
+        assertEquals(1, requests)
         monitor.release()
     }
 }

@@ -4,6 +4,7 @@ import dev.herdroid.herdr.AgentProvider
 import dev.herdroid.herdr.AgentQuota
 import dev.herdroid.herdr.AgentQuotaFiles
 import dev.herdroid.herdr.AgentQuotaParser
+import dev.herdroid.data.HostProfile
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -79,6 +80,18 @@ fun interface QuotaHttp {
 }
 
 class QuotaException(message: String) : Exception(message)
+
+/** UI leases can outlive a reconnect. Authorize the captured transport before any credential read. */
+internal suspend fun readConsentedQuotaFiles(
+    profile: HostProfile,
+    canRead: (HostProfile) -> Boolean,
+    read: suspend () -> AgentQuotaFiles,
+): AgentQuotaFiles {
+    if (!canRead(profile)) throw QuotaException("Agent quotas are not enabled for this machine")
+    val files = read()
+    if (!canRead(profile)) throw QuotaException("Agent quotas are not enabled for this machine")
+    return files
+}
 
 /**
  * Reads the quotas of one machine's Claude Code and Codex sign-ins (wooloo's `AgentQuotaReader`).
