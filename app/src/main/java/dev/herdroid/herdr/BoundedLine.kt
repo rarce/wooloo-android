@@ -27,3 +27,11 @@ internal fun InputStream.readAtMostBytes(limit: Int): ByteArray {
     }
     return result.toByteArray()
 }
+
+/** A complete probe response must fit; truncated credential JSON must never be accepted. */
+internal fun InputStream.readBoundedBytes(limit: Int): ByteArray {
+    require(limit in 0 until Int.MAX_VALUE)
+    val bytes = readAtMostBytes(limit + 1)
+    if (bytes.size > limit) throw IOException("Remote response exceeds the size limit")
+    return bytes
+}

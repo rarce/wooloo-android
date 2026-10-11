@@ -29,6 +29,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import dev.herdroid.app
+import dev.herdroid.data.quotaConsentKey
 import dev.herdroid.connection.AgentQuotaMonitor
 import dev.herdroid.connection.ConnectionStatus
 import dev.herdroid.connection.HerdrConnection
@@ -47,7 +48,8 @@ import kotlinx.coroutines.delay
 @Composable
 internal fun AgentQuotaCard(connection: HerdrConnection, modifier: Modifier = Modifier) {
     val prefs = LocalContext.current.app.preferences
-    val enabled by prefs.agentQuotas.collectAsState()
+    val approvedContexts by prefs.agentQuotaContexts.collectAsState()
+    val enabled = quotaConsentKey(connection.profile) in approvedContexts
     val status by connection.status.collectAsState()
     val lifecycle by LocalLifecycleOwner.current.lifecycle.currentStateFlow.collectAsState()
     val active = enabled && status == ConnectionStatus.Connected && lifecycle.isAtLeast(Lifecycle.State.RESUMED)
@@ -87,7 +89,7 @@ internal fun AgentQuotaCard(connection: HerdrConnection, modifier: Modifier = Mo
         },
     ) {
         when {
-            !enabled -> OptIn(onEnable = { prefs.setAgentQuotas(true) })
+            !enabled -> OptIn(onEnable = { prefs.setAgentQuotas(connection.profile, true) })
             states.isEmpty() -> Hint(
                 if (loaded) "No Claude Code or Codex sign-in on ${connection.profile.displayName}" else "Reading…",
             )
@@ -104,11 +106,10 @@ internal fun AgentQuotaCard(connection: HerdrConnection, modifier: Modifier = Mo
                 AgentProvider.entries.forEach { provider ->
                     states[provider]?.let { Provider(provider, it, now) }
                 }
-                TextButton(
-                    onClick = { prefs.setAgentQuotas(false) },
-                    modifier = Modifier.align(Alignment.End),
-                ) { Text("Turn off") }
             }
+        }
+        if (enabled && !collapsed) {
+            TextButton(onClick = { prefs.setAgentQuotas(connection.profile, false) }) { Text("Turn off") }
         }
     }
 }

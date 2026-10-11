@@ -4,6 +4,8 @@ import android.content.SharedPreferences
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import java.security.MessageDigest
+import java.util.Locale
 
 /** Small per-device UI preferences. */
 class UiPreferences(private val prefs: SharedPreferences) {
@@ -24,8 +26,9 @@ class UiPreferences(private val prefs: SharedPreferences) {
      * Claude Code and Codex quotas on the spaces screen. Off until the user turns it on, since it
      * reads the agents' sign-ins on the host and sends their tokens to Anthropic and OpenAI.
      */
-    private val _agentQuotas = MutableStateFlow(prefs.getBoolean(KEY_AGENT_QUOTAS, false))
-    val agentQuotas: StateFlow<Boolean> = _agentQuotas.asStateFlow()
+    // The former global flag is deliberately not migrated: consent belongs to one remote identity.
+    private val _agentQuotaContexts = MutableStateFlow(prefs.getStringSet(KEY_AGENT_QUOTA_CONTEXTS, emptySet()).orEmpty().toSet())
+    val agentQuotaContexts: StateFlow<Set<String>> = _agentQuotaContexts.asStateFlow()
 
     fun setFontSize(sp: Float) {
         _fontSize.value = sp
@@ -47,9 +50,12 @@ class UiPreferences(private val prefs: SharedPreferences) {
         prefs.edit().putBoolean(KEY_STATUS_SYMBOLS, on).apply()
     }
 
-    fun setAgentQuotas(on: Boolean) {
-        _agentQuotas.value = on
-        prefs.edit().putBoolean(KEY_AGENT_QUOTAS, on).apply()
+    @Synchronized
+    fun setAgentQuotas(profile: HostProfile, on: Boolean) {
+        val key = quotaConsentKey(profile)
+        val contexts = if (on) _agentQuotaContexts.value + key else _agentQuotaContexts.value - key
+        prefs.edit().putStringSet(KEY_AGENT_QUOTA_CONTEXTS, contexts).apply()
+        _agentQuotaContexts.value = contexts
     }
 
     private companion object {
@@ -57,6 +63,16 @@ class UiPreferences(private val prefs: SharedPreferences) {
         const val KEY_SCREEN_ON = "keep_screen_on"
         const val KEY_HAPTICS = "haptics"
         const val KEY_STATUS_SYMBOLS = "status_symbols"
-        const val KEY_AGENT_QUOTAS = "agent_quotas"
+        const val KEY_AGENT_QUOTA_CONTEXTS = "agent_quota_contexts"
     }
+}
+
+/** No tokens or passwords are stored in the consent key. Length prefixes avoid identity collisions. */
+internal fun quotaConsentKey(profile: HostProfile): String {
+    val identity = listOf(profile.id, profile.transport.name, profile.hostname.lowercase(Locale.ROOT),
+        (if (profile.transport == Transport.CLOUDFLARE) 443 else profile.port).toString(),
+        profile.username, profile.session, profile.herdrPath.orEmpty(), profile.auth.name,
+        profile.keyId.orEmpty(), profile.accessClientId.orEmpty()) + profile.hostKeyFingerprints.sorted()
+    val encoded = identity.joinToString("") { "${it.length}:$it" }.toByteArray(Charsets.UTF_8)
+    return MessageDigest.getInstance("SHA-256").digest(encoded).joinToString("") { "%02x".format(it) }
 }
