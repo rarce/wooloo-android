@@ -5,6 +5,7 @@ import java.util.Locale
 /** Cumulative CPU time of a host, in ticks. Usage is the busy share of the ticks between two samples. */
 data class CpuTicks(val busy: Long, val total: Long) {
     fun usage(since: CpuTicks): Double? {
+        if (busy < 0 || total < busy || since.busy < 0 || since.total < since.busy) return null
         if (total <= since.total || busy < since.busy) return null
         return minOf(1.0, (busy - since.busy).toDouble() / (total - since.total))
     }
@@ -111,35 +112,35 @@ object HostProbe {
         }.toMap()
         // macOS reports its Bonjour name; the .local suffix adds nothing on screen.
         val host = values["host"]?.removeSuffix(".local")?.takeIf { it.isNotEmpty() } ?: return null
-        val cpuCount = values["ncpu"]?.toIntOrNull()
-        val load = values["load"].orEmpty().split(' ').filter { it.isNotEmpty() }.take(3).mapNotNull { it.toDoubleOrNull() }
+        val cpuCount = values["ncpu"]?.toIntOrNull()?.takeIf { it > 0 }
+        val load = values["load"].orEmpty().split(' ').filter { it.isNotEmpty() }.take(3).mapNotNull { it.nonNegativeDouble() }
         var sample = HostSample(hostname = host, cpuCount = cpuCount, loadAverage = load)
 
         val stat = values["stat"]
         if (stat != null) {
             // cpu user nice system idle iowait irq softirq steal …; idle and iowait are not busy.
-            val ticks = stat.split(' ').filter { it.isNotEmpty() }.drop(1).mapNotNull { it.toLongOrNull() }
-            if (ticks.size >= 4) {
-                val total = ticks.take(8).sum()
-                val idle = ticks[3] + (ticks.getOrNull(4) ?: 0)
-                sample = sample.copy(cpuTicks = CpuTicks(busy = total - idle, total = total))
+            val ticks = stat.split(' ').filter { it.isNotEmpty() }.drop(1).take(8).map { it.nonNegativeLong() }
+            if (ticks.size >= 4 && ticks.all { it != null }) {
+                val total = checkedSum(ticks.filterNotNull())
+                val idle = checkedSum(listOf(ticks[3]!!, ticks.getOrNull(4) ?: 0))
+                if (total != null && idle != null) sample = sample.copy(cpuTicks = CpuTicks(busy = total - idle, total = total))
             }
-            val total = values["MemTotal"]?.toLongOrNull()?.times(1024)
-            val available = values["MemAvailable"]?.toLongOrNull()?.times(1024)
+            val total = values["MemTotal"].nonNegativeLong()?.checkedTimes(1024)?.takeIf { it > 0 }
+            val available = values["MemAvailable"].nonNegativeLong()?.checkedTimes(1024)
             if (total != null && available != null) {
                 sample = sample.copy(memoryTotal = total, memoryUsed = total - minOf(available, total))
             }
-            sample = sample.copy(uptimeSeconds = values["uptime"]?.toDoubleOrNull())
+            sample = sample.copy(uptimeSeconds = values["uptime"].nonNegativeDouble())
         } else {
-            sample = sample.copy(memoryTotal = values["memsize"]?.toLongOrNull())
-            values["pagesize"]?.toLongOrNull()?.let { pageSize ->
-                val pages = listOf("active", "wired down", "occupied by compressor").mapNotNull { values[it]?.toLongOrNull() }
-                if (pages.isNotEmpty()) sample = sample.copy(memoryUsed = pages.sum() * pageSize)
+            sample = sample.copy(memoryTotal = values["memsize"].nonNegativeLong()?.takeIf { it > 0 })
+            values["pagesize"].nonNegativeLong()?.takeIf { it > 0 }?.let { pageSize ->
+                val pages = listOf("active", "wired down", "occupied by compressor").mapNotNull { values[it].nonNegativeLong() }
+                if (pages.isNotEmpty()) sample = sample.copy(memoryUsed = checkedSum(pages)?.checkedTimes(pageSize))
             }
-            val boot = values["boottime"]?.toDoubleOrNull()
-            val now = values["now"]?.toDoubleOrNull()
+            val boot = values["boottime"].nonNegativeDouble()
+            val now = values["now"].nonNegativeDouble()
             if (boot != null && now != null) sample = sample.copy(uptimeSeconds = maxOf(0.0, now - boot))
-            val percent = values["pscpu"]?.toDoubleOrNull()
+            val percent = values["pscpu"].nonNegativeDouble()
             if (percent != null && cpuCount != null && cpuCount > 0) {
                 sample = sample.copy(cpuUsage = minOf(1.0, percent / 100 / cpuCount))
             }
@@ -148,12 +149,17 @@ object HostProbe {
         // Filesystem 1024-blocks Used Available Capacity Mounted-on; the name may hold spaces, so count from the end.
         val df = values["df"].orEmpty().split(' ').filter { it.isNotEmpty() }
         if (df.size >= 6) {
-            val total = df[df.size - 5].toLongOrNull()
-            val available = df[df.size - 3].toLongOrNull()
+            val total = df[df.size - 5].nonNegativeLong()?.checkedTimes(1024)?.takeIf { it > 0 }
+            val available = df[df.size - 3].nonNegativeLong()?.checkedTimes(1024)
             if (total != null && available != null) {
-                sample = sample.copy(diskTotal = total * 1024, diskFree = available * 1024)
+                sample = sample.copy(diskTotal = total, diskFree = minOf(available, total))
             }
         }
         return sample
     }
+
+    private fun String?.nonNegativeDouble() = this?.toDoubleOrNull()?.takeIf { it.isFinite() && it >= 0 }
+    private fun String?.nonNegativeLong() = this?.toLongOrNull()?.takeIf { it >= 0 }
+    private fun Long.checkedTimes(other: Long) = runCatching { Math.multiplyExact(this, other) }.getOrNull()
+    private fun checkedSum(values: List<Long>) = runCatching { values.fold(0L, Math::addExact) }.getOrNull()
 }

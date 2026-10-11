@@ -68,6 +68,33 @@ class HostStatsTest {
         assertNull(HostProbe.parse(""))
     }
 
+    @Test fun malformedNumericFieldsNeverProduceNonfiniteOrNegativeMetrics() {
+        listOf("NaN", "Infinity", "-Infinity", "-1").forEach { invalid ->
+            val mac = HostProbe.parse("host=bad\nncpu=2\npscpu=$invalid\nload=$invalid 1 2\nboottime=$invalid\nnow=1")!!
+            assertNull(mac.cpuUsage)
+            assertNull(mac.uptimeSeconds)
+            assertEquals(listOf(1.0, 2.0), mac.loadAverage)
+            assertNull(HostProbe.parse("host=bad\nstat=cpu 1 2 3 4\nuptime=$invalid")!!.uptimeSeconds)
+        }
+        val sample = HostProbe.parse("host=bad\nncpu=-1\nmemsize=-1\npagesize=-1\nactive=2\ndf=x -1 0 -1 0% /")!!
+        assertNull(sample.cpuCount)
+        assertNull(sample.memoryTotal)
+        assertNull(sample.memoryUsed)
+        assertNull(sample.diskTotal)
+        assertNull(sample.diskFree)
+    }
+
+    @Test fun oversizedCountersDoNotWrapAroundOrShiftInvalidTickPositions() {
+        val overflow = HostProbe.parse("host=bad\nstat=cpu ${Long.MAX_VALUE} 1 0 0\nMemTotal=${Long.MAX_VALUE}\nMemAvailable=0\ndf=x ${Long.MAX_VALUE} 0 1 0% /")!!
+        assertNull(overflow.cpuTicks)
+        assertNull(overflow.memoryTotal)
+        assertNull(overflow.diskTotal)
+        assertNull(HostProbe.parse("host=bad\nstat=cpu 1 invalid 2 3 4")!!.cpuTicks)
+        assertNull(HostProbe.parse("host=bad\nstat=cpu 1 -1 2 3 4")!!.cpuTicks)
+        assertNull(HostProbe.parse("host=bad\npagesize=16384\nactive=${Long.MAX_VALUE}")!!.memoryUsed)
+        assertNull(CpuTicks(-1, 100).usage(CpuTicks(0, 1)))
+    }
+
     @Test
     fun cpuUsageComesFromTheTicksBetweenSamples() {
         val first = CpuTicks(busy = 100, total = 1000)
