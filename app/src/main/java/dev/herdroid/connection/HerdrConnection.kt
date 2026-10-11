@@ -5,6 +5,8 @@ import dev.herdroid.data.HostProfile
 import dev.herdroid.data.KnownHost
 import dev.herdroid.data.SecretStore
 import dev.herdroid.data.Transport
+import dev.herdroid.data.RemoteContextKey
+import dev.herdroid.data.remoteContextKey
 import dev.herdroid.herdr.AgentInfo
 import dev.herdroid.herdr.AgentStatus
 import dev.herdroid.herdr.DirListing
@@ -100,7 +102,7 @@ class HerdrConnection(
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
-    var profile: HostProfile = initialProfile
+    @Volatile var profile: HostProfile = initialProfile
         private set
 
     private val _status = MutableStateFlow<ConnectionStatus>(ConnectionStatus.Idle)
@@ -116,7 +118,10 @@ class HerdrConnection(
     val alerts: SharedFlow<AgentAlert> = _alerts.asSharedFlow()
 
     @Volatile
-    private var ssh: SshSession? = null
+    private var transport: ActiveTransport? = null
+    private data class ActiveTransport(val ssh: SshSession, val profile: HostProfile)
+    private val ssh: SshSession? get() = transport?.ssh
+    private var remoteContext: RemoteContextKey? = null
 
     @Volatile
     var api: HerdrApi? = null
@@ -192,12 +197,12 @@ class HerdrConnection(
         readOnly: Boolean,
         scope: CoroutineScope,
     ): TerminalStream {
-        val ssh = ssh?.takeIf { it.isConnected } ?: throw IllegalStateException("Not connected")
+        val active = transport?.takeIf { it.ssh.isConnected } ?: throw IllegalStateException("Not connected")
         return TerminalStream.open(
-            ssh = ssh,
+            ssh = active.ssh,
             scope = scope,
-            session = profile.session,
-            herdrPath = profile.herdrPath,
+            session = active.profile.session,
+            herdrPath = active.profile.herdrPath,
             target = paneId,
             cols = cols,
             rows = rows,
@@ -212,6 +217,14 @@ class HerdrConnection(
         var attempt = 0
         while (currentCoroutineContext().isActive) {
             try {
+                val cycleProfile = profile
+                val context = cycleProfile.remoteContextKey()
+                if (context != remoteContext) {
+                    _snapshot.value = null
+                    subscribedPanes.value = emptySet()
+                    remoteHome = null
+                    remoteContext = context
+                }
                 _status.value = ConnectionStatus.Connecting(
                     when {
                         attempt > 0 -> "Reconnecting…"
@@ -219,11 +232,10 @@ class HerdrConnection(
                         else -> "Opening SSH to ${profile.hostname}…"
                     }
                 )
-                val session = openSsh()
-                ssh = session
-                val api = HerdrApi(session, profile.session, profile.herdrPath)
+                val session = openSsh(cycleProfile)
+                val api = HerdrApi(session, cycleProfile.session, cycleProfile.herdrPath)
                 this.api = api
-                if (remoteHome == null) remoteHome = try { readRemoteHome(session) }
+                remoteHome = try { readRemoteHome(session) }
                 catch (e: CancellationException) { throw e }
                 catch (_: Exception) { null }
                 _status.value = ConnectionStatus.Connecting("Loading herdr session…")
@@ -436,7 +448,7 @@ class HerdrConnection(
         }
     }
 
-    private suspend fun openSsh(): SshSession {
+    private suspend fun openSsh(profile: HostProfile): SshSession {
         val tunnel = if (profile.transport == Transport.CLOUDFLARE) {
             CloudflareTunnel(
                 hostname = profile.hostname,
@@ -452,12 +464,12 @@ class HerdrConnection(
             username = profile.username,
             knownFingerprint = { host, port -> deps.knownHosts.find(host, port)?.fingerprint },
             tunnel = tunnel,
-            verifyHostKey = { challenge -> askHostKey(challenge) },
+            verifyHostKey = { challenge -> askHostKey(challenge, profile) },
         )
         // Own the transport before authentication or any UI prompt can suspend.
-        ssh = session
+        transport = ActiveTransport(session, profile)
         try {
-            session.connect(credential())
+            session.connect(credential(profile))
             return session
         } catch (e: Throwable) {
             session.close()
@@ -465,7 +477,7 @@ class HerdrConnection(
         }
     }
 
-    private suspend fun credential(): SshCredential = when (profile.auth) {
+    private suspend fun credential(profile: HostProfile): SshCredential = when (profile.auth) {
         AuthMethod.KEY -> {
             val keyId = profile.keyId ?: throw SshAuthException("No SSH key selected for this host.")
             SshCredential.Key { deps.keys.keyProvider(keyId) }
@@ -483,7 +495,7 @@ class HerdrConnection(
         }
     }
 
-    private suspend fun askHostKey(challenge: HostKeyChallenge): Boolean {
+    private suspend fun askHostKey(challenge: HostKeyChallenge, profile: HostProfile): Boolean {
         // A pinned key (from wooloo's QR code) is trusted as if the user had accepted it.
         val accepted = challenge.fingerprint in profile.hostKeyFingerprints ||
             (ask<Boolean> { UserPrompt.HostKey(challenge, CompletableDeferred()) } ?: false)
@@ -522,8 +534,9 @@ class HerdrConnection(
 
     private fun closeTransport() {
         api = null
-        ssh?.close()
-        ssh = null
+        val old = transport
+        transport = null
+        old?.ssh?.close()
     }
 
     private fun classify(e: Throwable): FailureKind {
