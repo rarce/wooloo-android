@@ -51,6 +51,8 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.herdroid.app
+import androidx.compose.ui.res.stringResource
+import dev.herdroid.R
 import dev.herdroid.connection.ConnectionStatus
 import dev.herdroid.connection.HerdrConnection
 import dev.herdroid.data.HostProfile
@@ -173,7 +175,8 @@ private fun HostCard(
 ) {
     val status = connection?.status?.collectAsState()?.value ?: ConnectionStatus.Idle
     val snapshot = connection?.snapshot?.collectAsState()?.value
-    HostItem(host, status, snapshot, connection != null, onOpen, onEdit, onDisconnect, onDelete, position)
+    val stale = connection?.snapshotHealth?.collectAsState()?.value?.stale ?: true
+    HostItem(host, status, snapshot, connection != null, onOpen, onEdit, onDisconnect, onDelete, position, stale)
 }
 
 /** Machine connection state stays distinct from the agent states received from herdr. */
@@ -188,6 +191,7 @@ internal fun HostItem(
     onDisconnect: () -> Unit,
     onDelete: () -> Unit,
     position: ListRowPosition = ListRowPosition(),
+    snapshotStale: Boolean = false,
 ) {
     var menu by remember { mutableStateOf(false) }
     val live = status is ConnectionStatus.Connected
@@ -220,7 +224,7 @@ internal fun HostItem(
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
         FlowRow(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(statusLine(status, host), style = MaterialTheme.typography.bodySmall,
+            Text(if (live && snapshotStale) stringResource(R.string.snapshot_connected_stale) else statusLine(status, host), style = MaterialTheme.typography.bodySmall,
                 color = if (status is ConnectionStatus.Failed) MaterialTheme.colorScheme.error
                     else MaterialTheme.colorScheme.onSurfaceVariant)
             if (live && snapshot != null) {
@@ -229,9 +233,9 @@ internal fun HostItem(
             }
         }
         snapshot?.let {
-            AgentStatusSummary(it.agents, Modifier.alpha(if (live) 1f else 0.45f))
-            if (!live) {
-                Text("Last known agent states", style = MaterialTheme.typography.bodySmall,
+            AgentStatusSummary(it.agents, Modifier.alpha(if (live && !snapshotStale) 1f else 0.45f))
+            if (!live || snapshotStale) {
+                Text(stringResource(R.string.snapshot_cached_agents), style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }

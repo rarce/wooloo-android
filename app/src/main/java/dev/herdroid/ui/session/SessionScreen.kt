@@ -39,7 +39,6 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -58,13 +57,13 @@ import dev.herdroid.connection.HerdrConnection
 import dev.herdroid.herdr.SessionSnapshot
 import dev.herdroid.herdr.TabInfo
 import dev.herdroid.herdr.WorkspaceInfo
+import dev.herdroid.ui.components.SnapshotBanner
 import dev.herdroid.ui.components.ConnectionBanner
 import dev.herdroid.ui.components.ConnectionPrompts
 import dev.herdroid.ui.components.EmptyState
 import dev.herdroid.ui.components.StatusLabel
 import dev.herdroid.ui.components.SessionListRow
 import dev.herdroid.ui.components.ListRowPosition
-import kotlinx.coroutines.launch
 
 /**
  * A machine's herdr session: its spaces (herdr workspaces), in the order reported by herdr. Spaces are
@@ -86,6 +85,7 @@ fun SessionScreen(
     }
     val status by connection.status.collectAsState()
     val snapshot by connection.snapshot.collectAsState()
+    val snapshotHealth by connection.snapshotHealth.collectAsState()
     val prompt by connection.prompt.collectAsState()
     val ui = rememberSessionUi(connection)
     var menu by remember { mutableStateOf(false) }
@@ -138,6 +138,9 @@ fun SessionScreen(
     ) { padding ->
         Column(Modifier.padding(padding).fillMaxSize()) {
             ConnectionBanner(status, onRetry = { connection.retryNow() }, onEditHost = onEditHost)
+            if (status == ConnectionStatus.Connected) {
+                SnapshotBanner(snapshotHealth, onRetry = { connection.requestRefresh() })
+            }
             RefreshBox(connection) {
                 val snap = snapshot
                 when {
@@ -151,7 +154,7 @@ fun SessionScreen(
                     }
                     else -> SpacesContent(
                         snapshot = snap,
-                        stale = status !is ConnectionStatus.Connected,
+                        stale = status !is ConnectionStatus.Connected || snapshotHealth.stale,
                         onOpenSpace = onOpenSpace,
                         onSpaceAction = { ui.dialog = it },
                         header = {
@@ -174,17 +177,10 @@ fun SessionScreen(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun RefreshBox(connection: HerdrConnection, content: @Composable () -> Unit) {
-    val scope = rememberCoroutineScope()
-    var refreshing by remember { mutableStateOf(false) }
+    val health by connection.snapshotHealth.collectAsState()
     PullToRefreshBox(
-        isRefreshing = refreshing,
-        onRefresh = {
-            refreshing = true
-            scope.launch {
-                connection.action { snapshot() }
-                refreshing = false
-            }
-        },
+        isRefreshing = health.refreshing,
+        onRefresh = { connection.requestRefresh() },
         modifier = Modifier.fillMaxSize(),
     ) { content() }
 }
