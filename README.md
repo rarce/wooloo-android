@@ -84,11 +84,16 @@ Updating the app keeps saved machines, keys and preferences.
 ```bash
 ./gradlew assembleDebug            # app/build/outputs/apk/debug/app-debug.apk
 ./gradlew testDebugUnitTest        # unit tests (emulator, key encoding, protocol, models)
+./gradlew assembleRelease          # unsigned, minified APK for distribution signing
 ```
 
 Optional checks:
 
 ```bash
+# Ed25519 generation, import and signature rejection on the minified APK in an isolated emulator.
+# This flag signs release with the debug key only for the smoke test; do not distribute that APK.
+./gradlew connectedReleaseAndroidTest -PreleaseSmoke
+
 # End-to-end against a real herdr over SSH (appends a generated test key to the given authorized_keys)
 HERDROID_E2E_HOST=127.0.0.1 HERDROID_E2E_PORT=2222 HERDROID_E2E_USER=herd \
 HERDROID_E2E_AUTHORIZED_KEYS=/home/herd/.ssh/authorized_keys ./gradlew testDebugUnitTest --tests '*HerdrEndToEndTest*'

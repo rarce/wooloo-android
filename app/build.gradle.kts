@@ -6,6 +6,8 @@ plugins {
 }
 
 android {
+    val releaseSmoke = providers.gradleProperty("releaseSmoke").isPresent
+    testBuildType = if (releaseSmoke) "release" else "debug"
     // Preserve the installed app's identity across the wooloo mobile rename.
     namespace = "dev.herdroid"
     compileSdk = 36
@@ -16,11 +18,17 @@ android {
         targetSdk = 36
         versionCode = 1
         versionName = "0.1.0"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables { useSupportLibrary = true }
     }
 
     buildTypes {
         release {
+            if (releaseSmoke) {
+                signingConfig = signingConfigs.getByName("debug")
+                proguardFiles("release-smoke-rules.pro")
+            }
+            testProguardFiles("release-test-rules.pro")
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(
@@ -111,4 +119,6 @@ dependencies {
     testImplementation(platform(libs.androidx.compose.bom))
     testImplementation(libs.androidx.compose.ui.test.junit4)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
+    androidTestImplementation(libs.junit)
+    androidTestImplementation(libs.androidx.test.runner)
 }
