@@ -80,4 +80,24 @@ class QuotaInvalidationTest {
         assertNotNull(monitor.states.value[AgentProvider.CLAUDE]!!.failure)
         monitor.release()
     }
+
+    @Test fun uiCannotResumeAnInvalidTransportAndConsentCanBeReenabled(): Unit = runTest {
+        var calls = 0
+        val reader = AgentQuotaReader({ signedIn }, QuotaHttp { _, _ -> calls++; 200 to usage })
+        val monitor = AgentQuotaMonitor(backgroundScope, reader, clock = { 0 })
+        monitor.invalidate()
+        monitor.acquire()
+        monitor.clear()
+        runCurrent()
+        assertEquals(0, calls)
+        monitor.resume() // Only the connection owner declares a verified transport ready.
+        runCurrent()
+        assertEquals(1, calls)
+        monitor.release()
+        monitor.clear() // Consent disabled, while the transport stays ready.
+        monitor.acquire()
+        runCurrent()
+        assertEquals(2, calls)
+        monitor.release()
+    }
 }
