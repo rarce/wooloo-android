@@ -14,6 +14,7 @@ import dev.herdroid.data.SecretStore
 import dev.herdroid.data.SshKeyManager
 import dev.herdroid.data.UiPreferences
 import dev.herdroid.data.quotaConsentKey
+import dev.herdroid.update.AppUpdater
 import org.bouncycastle.jce.provider.BouncyCastleProvider
 import java.io.File
 import java.security.Security
@@ -26,6 +27,7 @@ class WoolooMobileApp : Application() {
     lateinit var notifier: Notifier; private set
     lateinit var connections: ConnectionManager; private set
     lateinit var preferences: UiPreferences; private set
+    lateinit var updater: AppUpdater; private set
 
     override fun onCreate() {
         super.onCreate()
@@ -42,7 +44,9 @@ class WoolooMobileApp : Application() {
             ConnectionDeps(hosts, keys, secrets, knownHosts, notifier,
                 canReadQuotas = { quotaConsentKey(it) in preferences.agentQuotaContexts.value }),
         )
+        updater = AppUpdater(this, getSharedPreferences("updates", Context.MODE_PRIVATE), notifier)
         AppForeground.install()
+        updater.start()
         watchNetwork()
     }
 

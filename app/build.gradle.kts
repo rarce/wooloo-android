@@ -7,6 +7,11 @@ plugins {
 
 android {
     val releaseSmoke = providers.gradleProperty("releaseSmoke").isPresent
+    // `-PappVersion=X.Y.Z` (the release tag) marks a published build; the version code grows with it.
+    val publishedVersion = providers.gradleProperty("appVersion").orNull
+    val appVersion = publishedVersion ?: "0.1.0"
+    val (major, minor, patch) = Regex("""(\d+)\.(\d+)\.(\d+)""").matchEntire(appVersion)?.destructured
+        ?: error("appVersion must look like 1.2.3, got $appVersion")
     testBuildType = if (releaseSmoke) "release" else "debug"
     // Preserve the installed app's identity across the wooloo mobile rename.
     namespace = "dev.herdroid"
@@ -16,10 +21,15 @@ android {
         applicationId = "dev.herdroid"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = major.toInt() * 1_000_000 + minor.toInt() * 1_000 + patch.toInt()
+        versionName = appVersion
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables { useSupportLibrary = true }
+        // `-PupdateFeedUrl=https://…` points a build at another feed, to try updates before publishing.
+        val updateFeedUrl = providers.gradleProperty("updateFeedUrl")
+            .getOrElse("https://github.com/rarce/herdroid/releases/latest/download/update.json")
+        buildConfigField("String", "UPDATE_FEED_URL", "\"$updateFeedUrl\"")
+        buildConfigField("boolean", "UPDATES", "false")
     }
 
     buildTypes {
@@ -27,6 +37,10 @@ android {
             if (releaseSmoke) {
                 signingConfig = signingConfigs.getByName("debug")
                 proguardFiles("release-smoke-rules.pro")
+            } else if (publishedVersion != null) {
+                // Only published releases (signed by .github/workflows/release.yml) update themselves:
+                // any other build would offer a release that Android can't install over it.
+                buildConfigField("boolean", "UPDATES", "true")
             }
             testProguardFiles("release-test-rules.pro")
             isMinifyEnabled = true

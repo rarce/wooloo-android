@@ -100,6 +100,8 @@ fun WoolooMobileRoot(openRequests: MutableStateFlow<OpenRequest?>, hostLinks: Mu
         openHostLink(r.link)
     }
 
+    UpdatePrompt(context.app.updater)
+
     NavHost(
         navController = nav,
         startDestination = Routes.HOSTS,

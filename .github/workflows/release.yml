@@ -1,0 +1,162 @@
+name: Release
+
+# Pushing a tag vX.Y.Z builds wooloo mobile at that version and publishes the GitHub release with the
+# signed APK and update.json. Installed copies read update.json from the latest release
+# (UPDATE_FEED_URL in app/build.gradle.kts, read by dev.herdroid.update.AppUpdater), so every release
+# must carry it.
+#
+# The build job runs Gradle with a read-only token and no signing key; only the publish job, which
+# builds nothing, can write releases and read the keystore. See docs/updates.md.
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+
+      # The version code is derived from it (app/build.gradle.kts), so it must stay numeric.
+      - name: Check the version
+        run: |
+          version=${GITHUB_REF_NAME#v}
+          if ! printf '%s' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::Release tags look like v1.2.3, not $GITHUB_REF_NAME"
+            exit 1
+          fi
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@0b6dd653ba04f4f93bf581ec31e66cbd7dcb644d # v4
+        with:
+          cache-read-only: true
+      - name: Install Android SDK packages
+        run: '"$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-36" "build-tools;36.0.0"'
+
+      - name: Test and build the unsigned release
+        run: ./gradlew testDebugUnitTest assembleRelease -PappVersion="$VERSION" --console=plain
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: unsigned-apk
+          path: app/build/outputs/apk/release/app-release-unsigned.apk
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    name: Sign and publish
+    needs: build
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+
+      - name: Set the version
+        run: |
+          echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+          echo "BUILD_TOOLS=$ANDROID_HOME/build-tools/36.0.0" >> "$GITHUB_ENV"
+
+      - name: Install Android build tools
+        run: '"$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "build-tools;36.0.0"'
+
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: unsigned-apk
+          path: build/release
+
+      # Every release must be signed with the same key, or Android refuses to install it as an update.
+      - name: Sign the APK
+        env:
+          KEYSTORE_BASE64: ${{ secrets.HERDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.HERDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.HERDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.HERDROID_KEY_PASSWORD }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ] || [ -z "$KEYSTORE_PASSWORD" ] || [ -z "$KEY_ALIAS" ]; then
+            echo "::error::The HERDROID_KEYSTORE_BASE64, HERDROID_KEYSTORE_PASSWORD and HERDROID_KEY_ALIAS secrets must be set"
+            exit 1
+          fi
+          export KEY_PASSWORD=${KEY_PASSWORD:-$KEYSTORE_PASSWORD}
+          keystore="$RUNNER_TEMP/release.jks"
+          trap 'rm -f "$keystore"' EXIT
+          printf '%s' "$KEYSTORE_BASE64" | base64 -d > "$keystore"
+          "$BUILD_TOOLS/apksigner" sign --ks "$keystore" --ks-key-alias "$KEY_ALIAS" \
+            --ks-pass env:KEYSTORE_PASSWORD --key-pass env:KEY_PASSWORD \
+            --out "build/release/wooloo-mobile-$VERSION.apk" build/release/app-release-unsigned.apk
+          "$BUILD_TOOLS/apksigner" verify --print-certs "build/release/wooloo-mobile-$VERSION.apk"
+
+      # docs/releases/vX.Y.Z.md when written by hand, otherwise GitHub's notes since the last release.
+      - name: Release notes
+        run: |
+          if [ -f "docs/releases/$GITHUB_REF_NAME.md" ]; then
+            cp "docs/releases/$GITHUB_REF_NAME.md" build/release/notes.md
+          else
+            gh api "repos/$GITHUB_REPOSITORY/releases/generate-notes" -f tag_name="$GITHUB_REF_NAME" \
+              --jq .body > build/release/notes.md
+          fi
+
+      - name: Write update.json
+        run: |
+          apk="wooloo-mobile-$VERSION.apk"
+          badging=$("$BUILD_TOOLS/aapt2" dump badging "build/release/$apk" | head -n 1)
+          code=$(printf '%s' "$badging" | sed -n "s/.*versionCode='\([0-9]*\)'.*/\1/p")
+          name=$(printf '%s' "$badging" | sed -n "s/.*versionName='\([^']*\)'.*/\1/p")
+          if [ -z "$code" ] || [ "$name" != "$VERSION" ]; then
+            echo "::error::The APK reports version '$name' ($code), expected $VERSION"
+            exit 1
+          fi
+          jq -n \
+            --argjson versionCode "$code" \
+            --arg versionName "$VERSION" \
+            --arg url "https://github.com/$GITHUB_REPOSITORY/releases/download/$GITHUB_REF_NAME/$apk" \
+            --arg sha256 "$(sha256sum "build/release/$apk" | awk '{print $1}')" \
+            --argjson size "$(stat -c %s "build/release/$apk")" \
+            --rawfile notes build/release/notes.md \
+            '{versionCode: $versionCode, versionName: $versionName, url: $url, sha256: $sha256, size: $size, notes: $notes}' \
+            > build/release/update.json
+          cat build/release/update.json
+
+      - name: Publish
+        run: |
+          apk="wooloo-mobile-$VERSION.apk"
+          hash=$(sha256sum "build/release/$apk" | awk '{print $1}')
+          {
+            cat build/release/notes.md
+            printf '\n## Install\n\n'
+            printf 'Download `%s` on your phone and open it (allow installs from your browser when Android asks).\n\n' "$apk"
+            printf 'Installed copies update themselves: **Settings → Check for updates**.\n\n'
+            printf 'Requires Android 8.0 or later.\n\n'
+            printf 'SHA-256 (`sha256sum %s`):\n\n```\n%s\n```\n' "$apk" "$hash"
+          } > build/release/body.md
+          # The feed is read from the latest release: a fix to an older line must not replace it.
+          latest=$(gh release view --json tagName --jq .tagName 2>/dev/null || true)
+          latest=${latest#v}
+          if [ -z "$latest" ] || [ "$(printf '%s\n%s\n' "$latest" "$VERSION" | sort -V | tail -n 1)" = "$VERSION" ]; then
+            make_latest=true
+          else
+            make_latest=false
+          fi
+          gh release create "$GITHUB_REF_NAME" "build/release/$apk" build/release/update.json \
+            --verify-tag --title "wooloo mobile $VERSION" --notes-file build/release/body.md --latest="$make_latest"

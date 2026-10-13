@@ -123,6 +123,7 @@ fun SettingsScreen(onBack: () -> Unit) {
                 headlineContent = { Text("Notifications") },
                 supportingContent = { Text("Choose how agent alerts reach you") },
             )
+            UpdateSettings(context.app.updater)
             ListItem(
                 headlineContent = { Text("About") },
                 supportingContent = {

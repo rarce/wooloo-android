@@ -32,7 +32,8 @@ HERDROID_E2E_AUTHORIZED_KEYS=/home/herd/.ssh/authorized_keys \
 ./gradlew testDebugUnitTest --tests '*HerdrEndToEndTest*'
 ```
 
-`-ProbolectricDeps=<dir>` points Robolectric at pre-downloaded android-all jars for offline runs. There is no
+`-PappVersion=X.Y.Z` sets the version (and enables self-updates); `-PupdateFeedUrl=https://…` points at
+another update feed. `-ProbolectricDeps=<dir>` points Robolectric at pre-downloaded android-all jars for offline runs. There is no
 lint/format tooling configured beyond `kotlin.code.style=official`. Dependencies are in `gradle/libs.versions.toml`.
 
 ## Architecture
@@ -79,6 +80,14 @@ lint/format tooling configured beyond `kotlin.code.style=official`. Dependencies
   gestures (scroll → herdr scrollback, pinch → resize remote pane, tap → mouse click).
 - `KeyEncoder` maps keys/modifiers to terminal byte sequences. `TerminalController` ties a `TerminalStream`
   to the emulator and exposes `PaneState` (busy/closed/takeover) to `TerminalScreen`.
+
+### Updates (`update/`)
+
+- `AppUpdater` updates the app from GitHub releases without the Play Store: it reads `update.json` from
+  the latest release, downloads the APK (size + SHA-256 checked by `UpdateHttp`), verifies package, version
+  and signer, and installs through `PackageInstaller` (`UpdateInstallReceiver` gets the outcome). Only
+  builds made with `-PappVersion=X.Y.Z` have `BuildConfig.UPDATES`. `.github/workflows/release.yml` builds,
+  signs and publishes on a `vX.Y.Z` tag. Details and the pending setup steps: `docs/updates.md`.
 
 ### App wiring, data, UI
 

@@ -32,6 +32,10 @@ class Notifier(private val context: Context) {
                     setShowBadge(false)
                 }
         )
+        manager.createNotificationChannel(
+            NotificationChannel(CHANNEL_UPDATES, "App updates", NotificationManager.IMPORTANCE_LOW)
+                .apply { description = "Confirms when ${context.getString(R.string.app_name)} has updated itself" }
+        )
     }
 
     fun agentAlert(alert: AgentAlert) {
@@ -71,6 +75,23 @@ class Notifier(private val context: Context) {
         post(profile.id.hashCode(), notification)
     }
 
+    /** Posted by the new version after [dev.herdroid.update.AppUpdater] installed it. */
+    fun appUpdated(versionName: String) {
+        val intent = PendingIntent.getActivity(
+            context, 0,
+            Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        val notification = NotificationCompat.Builder(context, CHANNEL_UPDATES)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setContentTitle("Updated to ${context.getString(R.string.app_name)} $versionName")
+            .setContentText("Tap to open it")
+            .setAutoCancel(true)
+            .setContentIntent(intent)
+            .build()
+        post(UPDATED_ID, notification)
+    }
+
     private fun post(id: Int, notification: android.app.Notification) {
         if (Build.VERSION.SDK_INT >= 33 &&
             ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) !=
@@ -97,6 +118,8 @@ class Notifier(private val context: Context) {
     companion object {
         const val CHANNEL_AGENTS = "agents"
         const val CHANNEL_CONNECTION = "connection"
+        const val CHANNEL_UPDATES = "updates"
+        private const val UPDATED_ID = 0x75706461
 
         /*
          * Explicit groups keep Android from auto-bundling alerts with the ongoing connection
