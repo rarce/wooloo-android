@@ -79,7 +79,7 @@ import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 
 private val qrOptions = BarcodeScannerOptions.Builder().setBarcodeFormats(Barcode.FORMAT_QR_CODE).build()
-private const val INVALID_QR = "This isn't a Wooloo machine QR. Open Remote Access on your Mac and scan its QR."
+private const val INVALID_QR = "This isn't a Wooloo machine QR. Open wooloo Remote Access and scan the QR for your selected machine."
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -175,8 +175,8 @@ fun ScanQrScreen(onBack: () -> Unit, onScanned: (String) -> Unit) {
             Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            Text("Connect to your Mac", style = MaterialTheme.typography.headlineSmall)
-            Text("In wooloo on your Mac, open Remote Access and start the tunnel. Scan the QR to load your machine and session.")
+            Text("Connect to your machine", style = MaterialTheme.typography.headlineSmall)
+            Text("In wooloo, open Remote Access for the selected machine. Scan its direct SSH QR, or use a Cloudflare tunnel for your local Mac.")
             Box(
                 Modifier.fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(20.dp))
                     .background(MaterialTheme.colorScheme.surfaceContainer),
@@ -197,7 +197,7 @@ fun ScanQrScreen(onBack: () -> Unit, onScanned: (String) -> Unit) {
                 } else {
                     Column(Modifier.padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Text(cameraError ?: "Allow camera access to scan the QR on your Mac.")
+                        Text(cameraError ?: "Allow camera access to scan the machine QR from wooloo Remote Access.")
                         Button(onClick = {
                             if (granted) { cameraError = null; cameraAttempt++ }
                             else { requested = true; permission.launch(Manifest.permission.CAMERA) }
@@ -235,7 +235,7 @@ fun ScanQrScreen(onBack: () -> Unit, onScanned: (String) -> Unit) {
                 label = { Text("Link from Remote Access") },
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
                 isError = pastedError,
-                supportingText = { if (pastedError) Text("Paste the machine link copied from wooloo on your Mac.") },
+                supportingText = { if (pastedError) Text("Paste the machine link copied from wooloo Remote Access for your selected machine.") },
             )
         },
         confirmButton = { TextButton(onClick = { if (accept(pastedLink)) paste = false else pastedError = true }) { Text("Continue") } },
@@ -257,7 +257,7 @@ private fun CameraQrPreview(attempt: Int, onCodes: (List<String>) -> Unit, onErr
         val executor = Executors.newSingleThreadExecutor()
         val scanner = BarcodeScanning.getClient(qrOptions)
         val preview = Preview.Builder().build().also { it.surfaceProvider = previewView.surfaceProvider }
-        // Mac links include several host key fingerprints; give dense QR codes enough pixels.
+        // Machine links include several host key fingerprints; give dense QR codes enough pixels.
         val resolution = ResolutionSelector.Builder().setResolutionStrategy(
             ResolutionStrategy(Size(1280, 720), ResolutionStrategy.FALLBACK_RULE_CLOSEST_HIGHER_THEN_LOWER),
         ).build()
