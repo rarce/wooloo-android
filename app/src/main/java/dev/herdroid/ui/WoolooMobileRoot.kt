@@ -13,9 +13,12 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import android.widget.Toast
@@ -62,6 +65,21 @@ private object Routes {
 fun WoolooMobileRoot(openRequests: MutableStateFlow<OpenRequest?>, hostLinks: MutableStateFlow<HostLinkRequest?>) {
     val nav = rememberNavController()
     val context = LocalContext.current
+    val focusManager = LocalFocusManager.current
+    val keyboard = LocalSoftwareKeyboardController.current
+    val currentEntry by nav.currentBackStackEntryAsState()
+
+    // Selection screens must not inherit the terminal's or an editor's input focus/IME.
+    // Run only on navigation so dialogs and data fields can still request the keyboard.
+    LaunchedEffect(currentEntry) {
+        when (currentEntry?.destination?.route) {
+            Routes.HOSTS, Routes.SESSION, Routes.SPACE -> {
+                focusManager.clearFocus(force = true)
+                keyboard?.hide()
+            }
+        }
+    }
+
     val request by openRequests.collectAsState()
     val hostLink by hostLinks.collectAsState()
 
