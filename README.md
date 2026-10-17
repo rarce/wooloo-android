@@ -70,19 +70,34 @@ Requires a herdr server with `terminal session control` and `remote-api-bridge`.
   herdr missing → set its path).
 - **Notifications.** A foreground service keeps connections alive and posts a notification when an agent blocks
   or finishes. Tapping it opens that agent's pane.
-- **Keys and security.** Generate an Ed25519 key on the phone (with a copyable `authorized_keys` one-liner) or
+- **Keys and security.** Generate an Ed25519 key on the phone (with **Copy public key** and sharing) or
   import OpenSSH/PEM/PKCS#8 keys. Private keys and saved passwords are encrypted with the Android Keystore. Host
   keys are trust-on-first-use, with a loud warning if a key changes.
-- **Cloudflare Tunnel and QR import.** Use **Scan QR** in the machine list to scan wooloo's Remote Access QR
-  with the phone's camera, choose a QR image, or paste the copied machine link. The bundled reader works offline
-  and camera permission is requested only when opening the scanner. A `herdroid://add-host?…` link opens the host
-  editor prefilled with the tunnel hostname, user, session, herdr path and the machine's host key fingerprints,
-  which are then trusted without a prompt. Review the details, choose an authorized SSH key or password and tap
-  **Connect**. The QR carries connection details, not SSH credentials; a link never connects by itself.
+- **Direct SSH, Cloudflare and QR import.** In wooloo, select the machine and open **Remote Access**.
+  Its direct SSH QR carries that server's address and port; your phone must be able to reach them.
+  Cloudflare Tunnel is an option for the local Mac. Use **Scan QR** in the mobile machine list to scan,
+  choose a QR image, or paste the copied machine link. The bundled reader works offline and camera permission
+  is requested only when opening the scanner. A compatible `herdroid://add-host?…` link opens the host editor
+  prefilled with the transport, host, SSH port, user, session, herdr path and host key fingerprints, which are
+  trusted without another prompt. Review the details and fingerprints, choose an authorized SSH key or password
+  and tap **Connect**. The QR carries connection details, not SSH credentials; a link never connects by itself.
   Quick tunnel hostnames change on every restart, so scanning a new code updates the matching machine (same
   name, user and session) instead of adding a duplicate.
 - Pastes like `user@host:2222` (or a tunnel's `https://` URL) are split into separate fields automatically.
   Several machines can be connected at once.
+
+## Authorize your phone in wooloo
+
+1. In wooloo mobile, open **SSH keys** and generate a key or select an existing one. Tap **Copy public key**;
+   this copies the public key itself, without a shell command. Keep the private key on the phone.
+2. In wooloo on your Mac, select the local or remote SSH machine and open **Remote Access**. Paste the public key,
+   review the destination account, public key fingerprint and `authorized_keys` path, then authorize it on that machine.
+3. Scan that machine's QR in wooloo mobile, review the connection details and choose the matching phone key.
+   For direct SSH, the phone needs network access to the server's host and port; a QR does not create a tunnel.
+   Cloudflare Tunnel is available for the local Mac.
+
+You can also append the copied public key manually to the destination account's `~/.ssh/authorized_keys`.
+Existing `herdroid://add-host` links remain compatible, including links without an explicit transport (SSH).
 
 ## Naming and compatibility
 

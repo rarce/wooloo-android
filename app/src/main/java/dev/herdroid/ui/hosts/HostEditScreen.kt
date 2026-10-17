@@ -579,7 +579,7 @@ private fun KeyPicker(
         }
         if (isError && keys.isEmpty()) {
             Text(
-                "Generate a key here, then add it to the machine's ~/.ssh/authorized_keys.",
+                "Generate a key here, then paste its public key into wooloo Remote Access for the selected machine.",
                 color = MaterialTheme.colorScheme.error,
                 style = MaterialTheme.typography.bodySmall,
             )
@@ -587,12 +587,11 @@ private fun KeyPicker(
     }
 }
 
-/** Shows the public key with copy/share and the exact command to authorize it. */
+/** Shares only the public key so wooloo can authorize it on the reviewed SSH destination. */
 @Composable
 fun PublicKeyCard(key: SshKeyInfo) {
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
-    val command = "mkdir -p ~/.ssh && echo '${key.publicKey}' >> ~/.ssh/authorized_keys"
     Card(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
         shape = RoundedCornerShape(16.dp),
@@ -600,21 +599,21 @@ fun PublicKeyCard(key: SshKeyInfo) {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("Authorize this key on the machine", style = MaterialTheme.typography.titleSmall)
             Text(
-                "Run this once in a terminal on the machine (or append the key to ~/.ssh/authorized_keys):",
+                "Copy this public key into wooloo Remote Access. Review the destination account, public key fingerprint and authorized_keys path before authorizing it.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            // Shown whole and selectable: it's what the user pastes on the machine, so it must be checkable.
+            // Keep the whole public key selectable and reviewable before copying or sharing.
             SelectionContainer {
-                Text(command, fontFamily = Mono, style = MaterialTheme.typography.bodySmall)
+                Text(key.publicKey, fontFamily = Mono, style = MaterialTheme.typography.bodySmall)
             }
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 TextButton(onClick = {
-                    clipboard.setText(AnnotatedString(command))
-                    Toast.makeText(context, "Command copied", Toast.LENGTH_SHORT).show()
+                    clipboard.setText(AnnotatedString(key.publicKey))
+                    Toast.makeText(context, "Public key copied", Toast.LENGTH_SHORT).show()
                 }) {
                     Icon(Icons.Outlined.ContentCopy, null)
-                    Text(" Copy command")
+                    Text(" Copy public key")
                 }
                 TextButton(onClick = {
                     val send = Intent(Intent.ACTION_SEND).apply {
