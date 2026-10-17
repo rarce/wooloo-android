@@ -256,6 +256,7 @@ private fun TerminalScreenContent(
                 agentName = agent?.displayName,
                 agentStatus = agent?.agentStatus,
                 agentLabel = agent?.statusLabel(),
+                metrics = { PaneMetrics(connection, agent?.agent ?: pane?.agent) },
                 onBack = onBack,
                 menu = menu,
                 onMenu = { menu = it },
@@ -486,6 +487,7 @@ internal fun TerminalTopBar(
     onClosePane: () -> Unit,
     onReconnect: () -> Unit,
     onSwipeAgent: ((Int) -> Unit)? = null,
+    metrics: @Composable () -> Unit = {},
 ) {
     Row(
         Modifier.fillMaxWidth().height(56.dp).padding(end = 4.dp),
@@ -530,6 +532,7 @@ internal fun TerminalTopBar(
                 overflow = TextOverflow.Ellipsis,
             )
         }
+        metrics()
         if (agentStatus != null && agentLabel != null) StatusPill(agentStatus, agentLabel)
         if (readOnly) {
             Icon(Icons.Outlined.Visibility, "Watching", Modifier.padding(horizontal = 6.dp), tint = MaterialTheme.colorScheme.tertiary)
