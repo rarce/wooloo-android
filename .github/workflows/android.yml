@@ -32,7 +32,7 @@ jobs:
       - name: Install Android SDK packages
         run: '"$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-36" "build-tools;36.0.0"'
       - name: Run tests, lint and production release build
-        run: ./gradlew testDebugUnitTest lintDebug assembleDebug assembleRelease --console=plain
+        run: ./gradlew jacocoDebugCoverageVerification paneMetricsCoverageVerification lintDebug assembleDebug assembleRelease --console=plain
       - name: Compile minified Ed25519 smoke-test APKs
         run: ./gradlew -PreleaseSmoke assembleRelease assembleReleaseAndroidTest --console=plain
       - name: Preserve test and lint reports
@@ -42,6 +42,7 @@ jobs:
           name: android-reports
           path: |
             app/build/reports/tests/
+            app/build/reports/jacoco/
             app/build/test-results/
             app/build/reports/lint-results-debug.*
           retention-days: 7

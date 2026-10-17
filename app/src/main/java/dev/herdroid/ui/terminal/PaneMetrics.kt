@@ -18,7 +18,6 @@ import dev.herdroid.data.quotaConsentKey
 import dev.herdroid.herdr.AgentProvider
 import dev.herdroid.herdr.HostStats
 import kotlinx.coroutines.delay
-import kotlin.math.roundToInt
 
 /** Host resources and remaining subscription quota for the provider running in this pane. */
 @Composable
@@ -28,11 +27,7 @@ internal fun PaneMetrics(connection: HerdrConnection, agent: String?) {
     val lifecycle by LocalLifecycleOwner.current.lifecycle.currentStateFlow.collectAsState()
     val contextKey = connection.activeProfile?.let(::quotaConsentKey)
     val active = status == ConnectionStatus.Connected && lifecycle == Lifecycle.State.RESUMED
-    val provider = when (agent?.lowercase()) {
-        "claude", "claude-code", "claude_code" -> AgentProvider.CLAUDE
-        "codex" -> AgentProvider.CODEX
-        else -> null
-    }
+    val provider = paneProvider(agent)
     var stats by remember(connection, contextKey) { mutableStateOf<HostStats?>(null) }
     LaunchedEffect(connection, contextKey, active) {
         if (!active) return@LaunchedEffect
@@ -59,25 +54,27 @@ internal fun PaneMetrics(connection: HerdrConnection, agent: String?) {
             delay(60_000)
         }
     }
-    fun percent(value: Double?) = value?.let { "${(it * 100).roundToInt()}%" } ?: "–"
+    PaneMetricsContent(
+        if (active) stats else null,
+        paneQuotaText(provider, states[provider], enabled, active, now),
+    )
+}
+
+@Composable
+internal fun PaneMetricsContent(stats: HostStats?, quotaText: String?) {
     Column(Modifier.widthIn(max = 150.dp).padding(horizontal = 6.dp)) {
         Text(
-            "CPU ${percent(if (active) stats?.cpuUsage else null)} · RAM ${percent(if (active) stats?.memoryFraction else null)}",
+            "CPU ${metricPercent(stats?.cpuUsage)} · RAM ${metricPercent(stats?.memoryFraction)}",
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1,
         )
-        if (provider != null) {
-            val state = states[provider]
-            val windows = if (active && enabled && state?.failure == null) state?.quota?.windows.orEmpty() else emptyList()
-            Text(
-                "${provider.title} " + if (!enabled) "quota off" else windows.takeIf { it.isNotEmpty() }
-                    ?.joinToString(" · ", postfix = " left") { "${it.label} ${percent(1.0 - it.usedFraction(now))}" } ?: "quota –",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-            )
-        }
+        if (quotaText != null) Text(
+            quotaText,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+        )
     }
 }

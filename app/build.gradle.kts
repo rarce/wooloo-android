@@ -1,4 +1,5 @@
 plugins {
+    jacoco
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
@@ -132,10 +133,61 @@ dependencies {
     testImplementation(libs.roborazzi.compose)
     testImplementation(platform(libs.androidx.compose.bom))
     testImplementation(libs.androidx.compose.ui.test.junit4)
+    androidTestImplementation(libs.androidx.test.espresso.core)
+    androidTestImplementation(libs.androidx.test.rules)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
     androidTestImplementation("androidx.test:runner:1.6.2")
     debugImplementation(libs.androidx.compose.ui.test.manifest)
     androidTestImplementation(libs.junit)
     androidTestImplementation(libs.androidx.test.runner)
+}
+
+jacoco { toolVersion = "0.8.13" }
+
+tasks.withType<Test>().configureEach {
+    extensions.configure<JacocoTaskExtension> {
+        isIncludeNoLocationClasses = true
+        excludes = listOf("jdk.internal.*")
+    }
+}
+
+val coverageClasses = fileTree(layout.buildDirectory.dir("tmp/kotlin-classes/debug")) {
+    exclude("**/R.class", "**/R\$*.class", "**/BuildConfig.*", "**/*\$serializer.class")
+}
+val coverageReport = tasks.register<JacocoReport>("jacocoDebugReport") {
+    dependsOn("testDebugUnitTest")
+    executionData(layout.buildDirectory.file("outputs/unit_test_code_coverage/debugUnitTest/testDebugUnitTest.exec"))
+    classDirectories.setFrom(coverageClasses)
+    sourceDirectories.setFrom(files("src/main/java"))
+    reports { xml.required.set(true); html.required.set(true) }
+}
+
+// Keep the overall baseline visible, with a stronger floor for protocol/storage/terminal logic.
+val coreCoverageClasses = fileTree(layout.buildDirectory.dir("tmp/kotlin-classes/debug")) {
+    include("dev/herdroid/herdr/**", "dev/herdroid/data/**", "dev/herdroid/ssh/**",
+        "dev/herdroid/connection/**", "dev/herdroid/terminal/**", "dev/herdroid/update/**")
+    exclude("**/*\$serializer.class")
+}
+tasks.register<JacocoCoverageVerification>("jacocoDebugCoverageVerification") {
+    dependsOn(coverageReport)
+    executionData(layout.buildDirectory.file("outputs/unit_test_code_coverage/debugUnitTest/testDebugUnitTest.exec"))
+    classDirectories.setFrom(coreCoverageClasses)
+    sourceDirectories.setFrom(files("src/main/java"))
+    violationRules {
+        rule { limit { counter = "LINE"; minimum = "0.70".toBigDecimal() } }
+    }
+}
+tasks.register<JacocoCoverageVerification>("paneMetricsCoverageVerification") {
+    dependsOn(coverageReport)
+    executionData(layout.buildDirectory.file("outputs/unit_test_code_coverage/debugUnitTest/testDebugUnitTest.exec"))
+    classDirectories.setFrom(fileTree(layout.buildDirectory.dir("tmp/kotlin-classes/debug")) {
+        include("dev/herdroid/ui/terminal/PaneMetricsModelKt*.class")
+    })
+    violationRules {
+        rule {
+            limit { counter = "LINE"; minimum = "0.90".toBigDecimal() }
+            limit { counter = "BRANCH"; minimum = "0.80".toBigDecimal() }
+        }
+    }
 }
