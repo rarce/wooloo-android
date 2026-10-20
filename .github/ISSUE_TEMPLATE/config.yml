@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/rarce/wooloo-android/security/advisories/new
+    about: Report vulnerabilities privately, not in a public issue.
+  - name: Join the Google Play test
+    url: https://wooloo.dev/mobile/
+    about: Steps to install the test version from Google Play.

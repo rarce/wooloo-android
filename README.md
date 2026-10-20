@@ -11,7 +11,16 @@ workspaces, let you reply to them, and drive any pane from your phone.
 ## Install and first connection
 
 Requires Android 8 or newer and a reachable SSH account with herdr installed.
-Open [latest release](https://github.com/rarce/wooloo-android/releases/latest) and choose its
+
+**Google Play (closed test):** follow the steps at [wooloo.dev/mobile](https://wooloo.dev/mobile/): join the
+[wooloo-mobile-testers](https://groups.google.com/g/wooloo-mobile-testers) group, opt in at
+[play.google.com/apps/testing/dev.wooloo.mobile](https://play.google.com/apps/testing/dev.wooloo.mobile) with the same
+Google account, and install it from Google Play. Google Play needs 12 testers for 14 days before the app can be public.
+
+**No server yet?** Tap **Try the demo machine** on the first screen (also in Settings) to explore a simulated herdr
+session with agents, terminals and alerts that runs on the phone.
+
+**APK:** open [latest release](https://github.com/rarce/wooloo-android/releases/latest) and choose its
 `wooloo-mobile-X.Y.Z.apk`. If no release is available, distribution is not ready;
 do not use a debug or smoke-test APK as a production release. Compare the published
 SHA-256 and signer fingerprint, allow installation for your browser when Android asks,
@@ -37,7 +46,8 @@ The launcher uses the readable name **wooloo mobile**. Provider names identify
 interoperability and do not imply endorsement.
 
 Report sanitized bugs through [GitHub Issues](https://github.com/rarce/wooloo-android/issues).
-Read [security reporting](SECURITY.md) before reporting a vulnerability. The
+Report vulnerabilities privately, as described in [SECURITY.md](SECURITY.md). To contribute, read
+[CONTRIBUTING.md](CONTRIBUTING.md); the project follows the [Contributor Covenant](CODE_OF_CONDUCT.md). The
 [release checklist](todo.md) tracks production signing, public availability and remaining validation.
 
 ## How it talks to herdr
