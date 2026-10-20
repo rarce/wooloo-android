@@ -24,10 +24,19 @@ class HostSaveReviewTest {
         assertTrue(review(updated).credentialsDescription().contains("saved Cloudflare Access secret"))
     }
 
+    @Test fun matchingQrCannotSilentlySwapHerdrExecutable() {
+        val link = HostLink.parse("herdroid://add-host?transport=cloudflare&host=old.trycloudflare.com&user=alice&label=Mac&herdr=/tmp/evil")!!
+        val updated = link.applyTo(original)
+        assertEquals(original.hostname, updated.hostname)
+        assertEquals("/tmp/evil", updated.herdrPath)
+        assertTrue(review(updated).requiresConfirmation(original))
+        assertTrue(review(updated).herdrPathChanged(original))
+    }
+
     @Test fun manualSecurityChangesRequireReview() {
         listOf(original.copy(hostname = "new.example"), original.copy(username = "bob"),
             original.copy(transport = Transport.SSH), original.copy(accessClientId = "other"),
-            original.copy(hostKeyFingerprints = emptyList())).forEach {
+            original.copy(hostKeyFingerprints = emptyList()), original.copy(herdrPath = "/opt/herdr")).forEach {
             assertTrue(review(it).requiresConfirmation(original))
         }
         val ssh = original.copy(transport = Transport.SSH)
@@ -40,6 +49,9 @@ class HostSaveReviewTest {
         val twoKeys = original.copy(hostKeyFingerprints = listOf("a", "b"))
         assertFalse(review(twoKeys.copy(hostKeyFingerprints = listOf("b", "a", "a"))).requiresConfirmation(twoKeys))
         assertFalse(review(original).requiresConfirmation(null))
+        val withPath = original.copy(herdrPath = "/opt/herdr")
+        assertFalse(review(withPath.copy(herdrPath = " /opt/herdr ")).requiresConfirmation(withPath))
+        assertFalse(review(original.copy(herdrPath = "")).requiresConfirmation(original))
     }
 
 }

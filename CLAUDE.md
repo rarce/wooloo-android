@@ -108,7 +108,7 @@ lint/format tooling configured beyond `kotlin.code.style=official`. Dependencies
 - `herdroid://add-host?…` links (wooloo's QR code) are parsed by `data/HostLink` and open the host editor
   prefilled (the raw link travels base64url-encoded in the `edit` route). A Cloudflare link matching a saved
   machine's label + user + session updates that machine. Links never connect by themselves. Editing an existing
-  destination, account, Access client ID or pinned keys requires the `HostSaveReview` confirmation before saving
+  destination, account, Access client ID, pinned keys or herdr executable requires the `HostSaveReview` confirmation before saving
   or connecting. Approval binds the exact profile, credential drafts and action and stays only in memory.
 - Password and Access secret drafts in `HostEditScreen` use `remember`, not `rememberSaveable`: recreation clears
   the drafts and any pending trust review, while restoring non-secret edits and keeping encrypted vault entries.

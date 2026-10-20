@@ -110,7 +110,7 @@ fun SessionScreen(
                     IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, "Back") }
                 },
                 actions = {
-                    IconButton(onClick = { ui.dialog = SessionDialog.NewSpace }, enabled = connection.isLive) {
+                    IconButton(onClick = { ui.dialog = SessionDialog.NewSpace }, enabled = status == ConnectionStatus.Connected) {
                         Icon(Icons.Outlined.DashboardCustomize, "New space")
                     }
                     Box {

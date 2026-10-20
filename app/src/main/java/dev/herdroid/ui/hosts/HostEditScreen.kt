@@ -134,7 +134,8 @@ fun HostEditScreen(
     var herdrPath by rememberSaveable { mutableStateOf(initial.herdrPath.orEmpty()) }
     var notifyBlocked by rememberSaveable { mutableStateOf(initial.notifyWhenBlocked) }
     var notifyDone by rememberSaveable { mutableStateOf(initial.notifyWhenDone) }
-    var advanced by rememberSaveable { mutableStateOf(false) }
+    // A link that sets the herdr executable shows it up front: it runs on every connection.
+    var advanced by rememberSaveable { mutableStateOf(imported?.herdrPath != null && imported.herdrPath != existing?.herdrPath) }
     var showErrors by rememberSaveable { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val hostFocus = remember { FocusRequester() }
@@ -264,11 +265,15 @@ fun HostEditScreen(
             title = { Text("Trust changed connection?") },
             text = {
                 Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Saving changes where this machine sends credentials and which SSH keys it trusts. Only continue if you trust these details.")
+                    Text("Saving changes where this machine sends credentials, which SSH keys it trusts and which program it runs. Only continue if you trust these details.")
                     Text("Previous: ${existing?.transport} ${existing?.target}")
                     Text("New: ${review.profile.transport} ${review.profile.target}")
                     Text("Previous trusted SSH keys:\n${existing?.hostKeyFingerprints?.joinToString("\n").orEmpty().ifEmpty { "No keys pinned by this profile; normal host verification applies" }}")
                     Text("New trusted SSH keys:\n${review.profile.hostKeyFingerprints.joinToString("\n").ifEmpty { "No keys pinned by this profile; normal host verification applies" }}")
+                    if (review.herdrPathChanged(existing)) {
+                        Text("Previous herdr executable: ${existing?.herdrPath ?: "found automatically"}")
+                        Text("New herdr executable: ${review.profile.herdrPath ?: "found automatically"}\nIt runs on the machine with your account every time you connect.")
+                    }
                     Text(review.credentialsDescription(keys.firstOrNull { it.id == review.profile.keyId }?.let { "${it.name} (${it.fingerprint})" }))
                     if (review.profile.accessClientId != null) {
                         Text("Cloudflare Access client ID: ${review.profile.accessClientId}\nThe Access secret is sent to this hostname before SSH host verification.")

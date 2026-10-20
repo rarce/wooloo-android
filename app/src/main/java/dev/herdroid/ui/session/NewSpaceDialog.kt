@@ -54,6 +54,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import dev.herdroid.connection.ConnectionStatus
 import dev.herdroid.connection.HerdrConnection
 import dev.herdroid.herdr.DirListing
 
@@ -73,6 +74,7 @@ internal fun NewSpaceDialog(
     var nameIsAuto by rememberSaveable { mutableStateOf(true) }
     var browsing by rememberSaveable { mutableStateOf(false) }
     val snapshot by connection.snapshot.collectAsState()
+    val status by connection.status.collectAsState()
     val recent = remember(snapshot) {
         snapshot?.panes.orEmpty()
             .mapNotNull { (it.foregroundCwd ?: it.cwd)?.trimEnd('/')?.takeIf { p -> p.isNotEmpty() } }
@@ -107,7 +109,7 @@ internal fun NewSpaceDialog(
                     placeholder = { Text("~/project (optional)") },
                     singleLine = true,
                     trailingIcon = {
-                        IconButton(onClick = { browsing = true }, enabled = connection.isLive) {
+                        IconButton(onClick = { browsing = true }, enabled = status == ConnectionStatus.Connected) {
                             Icon(Icons.Outlined.FolderOpen, "Browse directories")
                         }
                     },

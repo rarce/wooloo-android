@@ -20,8 +20,13 @@ internal data class HostSaveReview(
             (profile.transport == Transport.SSH && existing.port != profile.port) ||
             existing.username != profile.username ||
             existing.accessClientId != profile.accessClientId ||
-            existing.hostKeyFingerprints.toSet() != profile.hostKeyFingerprints.toSet()
+            existing.hostKeyFingerprints.toSet() != profile.hostKeyFingerprints.toSet() ||
+            herdrPathChanged(existing)
         )
+
+    /** The executable run on every connection, tried before the usual install locations. */
+    fun herdrPathChanged(existing: HostProfile?): Boolean =
+        existing != null && existing.herdrPath?.trim().orEmpty() != profile.herdrPath?.trim().orEmpty()
 
     private fun normalizedHostname(host: HostProfile): String =
         (if (host.transport == Transport.CLOUDFLARE) HostLink.normalizeHostname(host.hostname) else host.hostname.trim())
