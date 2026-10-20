@@ -1,7 +1,7 @@
 package dev.herdroid.ui.terminal
 
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Column
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import dev.herdroid.connection.AgentQuotaMonitor
@@ -19,7 +19,8 @@ class PaneMetricsFunctionalTest {
         val states = mapOf(
             AgentProvider.CODEX to AgentQuotaMonitor.State(AgentQuota(listOf(QuotaWindow("codex", "5H", 0.3, null)), null, 1)),
             AgentProvider.CLAUDE to AgentQuotaMonitor.State(AgentQuota(listOf(QuotaWindow("claude", "5H", 0.8, null)), null, 1)))
-        compose.setContent { WoolooMobileTheme { Row {
+        // Stacked as in the pane header on narrow screens, where the metrics take the full width.
+        compose.setContent { WoolooMobileTheme { Column {
             PaneMetricsContent(HostStats(HostSample("host", memoryUsed = 50, memoryTotal = 100), 0.25),
                 paneQuotaText(provider.value, states[provider.value], true, true, 1))
             StatusPill(AgentStatus.WORKING, "working")
