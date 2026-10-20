@@ -49,6 +49,12 @@ lint/format tooling configured beyond `kotlin.code.style=official`. Dependencies
   stream (what `cloudflared access ssh` does). The port is ignored (known hosts use 443). Optional Cloudflare
   Access service token: `accessClientId` in the profile, secret under `SecretStore.accessSecretKey(hostId)`.
   `hostKeyFingerprints` are pinned keys trusted without the TOFU prompt.
+- Commands run on a `RemoteShell`: `SshSession`, or `demo/DemoShell` for a profile with `demo = true`. The demo
+  machine is `DemoHerdr`, a herdr simulated in memory that answers the same `RemoteCommand` lines (API bridge,
+  terminal sessions, `$HOME`, directory listing, host probe, uploads) with scripted agents, so everything above
+  `HerdrConnection` runs unchanged and offline. It's offered on the empty machine list and in Settings
+  (`HostRepository.demo()`), has nothing to edit, never matches `herdroid://` links and shows no agent quotas.
+  Store reviewers use it, so keep it working without a network.
 - `RemoteCommand` builds every remote command line. It wraps herdr invocations in `/bin/sh -c` and probes a list
   of install locations (non-interactive SSH often lacks `~/.local/bin` on PATH), exiting 127 with
   `NOT_FOUND_MESSAGE` if herdr isn't found — that's how `HerdrNotFoundException` / `FailureKind.HERDR_MISSING`

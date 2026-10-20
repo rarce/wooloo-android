@@ -116,7 +116,7 @@ fun SessionScreen(
                     Box {
                         IconButton(onClick = { menu = true }) { Icon(Icons.Outlined.MoreVert, "More") }
                         DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                            DropdownMenuItem(
+                            if (!connection.profile.demo) DropdownMenuItem(
                                 text = { Text("Edit machine") },
                                 leadingIcon = { Icon(Icons.Outlined.Edit, null) },
                                 onClick = { menu = false; onEditHost() },
@@ -160,7 +160,8 @@ fun SessionScreen(
                         header = {
                             Column {
                                 HostStatsCard(connection)
-                                AgentQuotaCard(connection)
+                                // Nothing is signed in on the demo machine.
+                                if (!connection.profile.demo) AgentQuotaCard(connection)
                             }
                         },
                     )

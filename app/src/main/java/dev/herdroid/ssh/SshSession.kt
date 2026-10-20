@@ -60,14 +60,14 @@ class SshSession(
     private val knownFingerprint: (host: String, port: Int) -> String?,
     private val tunnel: CloudflareTunnel? = null,
     private val verifyHostKey: suspend (HostKeyChallenge) -> Boolean,
-) {
+) : RemoteShell {
     private val port = if (tunnel != null) CloudflareTunnelSocketFactory.TUNNEL_PORT else port
 
     private val client = SSHClient(AndroidConfig().apply {
         keepAliveProvider = KeepAliveProvider.KEEP_ALIVE
     })
 
-    val isConnected: Boolean
+    override val isConnected: Boolean
         get() = client.isConnected && client.isAuthenticated
 
     suspend fun connect(credential: SshCredential) {
@@ -153,7 +153,7 @@ class SshSession(
     }
 
     /** Opens a new exec channel. The caller owns the returned session and must close it. */
-    suspend fun exec(command: String): ExecChannel = openExecChannel(command, {
+    override suspend fun exec(command: String): ExecChannel = openExecChannel(command, {
         check(isConnected) { "SSH transport is not authenticated" }
         SessionChannel(client.connection, client.remoteCharset)
     }, ::abortTransport)
@@ -162,7 +162,7 @@ class SshSession(
         runCatching { client.socket?.close() }
     }
 
-    fun close() {
+    override fun close() {
         // SSHClient.disconnect can throw before SocketClient.disconnect runs.
         runCatching { client.socket?.close() }
         runCatching { client.disconnect() }

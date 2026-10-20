@@ -41,12 +41,12 @@ data class HostLink(
         if (transport == Transport.CLOUDFLARE) {
             if (label.isBlank() || username.isBlank()) null
             else hosts.firstOrNull {
-                it.transport == Transport.CLOUDFLARE && it.label == label &&
+                !it.demo && it.transport == Transport.CLOUDFLARE && it.label == label &&
                     it.username == username && it.session == session
             }
         } else {
             hosts.firstOrNull {
-                it.transport == Transport.SSH && it.hostname.equals(hostname, ignoreCase = true) &&
+                !it.demo && it.transport == Transport.SSH && it.hostname.equals(hostname, ignoreCase = true) &&
                     it.port == port && it.username == username && it.session == session
             }
         }

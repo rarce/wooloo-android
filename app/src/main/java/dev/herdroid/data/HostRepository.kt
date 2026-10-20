@@ -34,6 +34,11 @@ class HostRepository(private val file: File) {
         }
     }
 
+    /** The offline demo machine, added the first time it is asked for. */
+    @Synchronized
+    fun demo(): HostProfile =
+        _hosts.value.firstOrNull { it.demo } ?: HostProfile(label = "Demo machine", hostname = "demo", demo = true).also(::upsert)
+
     @Synchronized
     fun markConnected(id: String) {
         val profile = get(id) ?: return

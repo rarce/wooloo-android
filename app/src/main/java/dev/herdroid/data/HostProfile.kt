@@ -39,12 +39,14 @@ data class HostProfile(
     val lastConnectedAt: Long? = null,
     val notifyWhenBlocked: Boolean = true,
     val notifyWhenDone: Boolean = true,
+    /** The offline demo machine: herdr is simulated on the phone and nothing goes over the network. */
+    val demo: Boolean = false,
 ) {
     val displayName: String
         get() = label.ifBlank { if (session == "default") hostname else "$hostname/$session" }
 
     val target: String
-        get() = buildString {
+        get() = if (demo) "Simulated on this phone" else buildString {
             if (username.isNotBlank()) append(username).append('@')
             append(hostname)
             if (transport == Transport.SSH && port != 22) append(':').append(port)

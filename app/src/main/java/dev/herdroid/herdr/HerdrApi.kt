@@ -1,7 +1,7 @@
 package dev.herdroid.herdr
 
 import dev.herdroid.ssh.CommandChannel
-import dev.herdroid.ssh.SshSession
+import dev.herdroid.ssh.RemoteShell
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
@@ -56,7 +56,7 @@ class HerdrApi internal constructor(
     private val session: String,
     private val herdrPath: String?,
 ) {
-    constructor(ssh: SshSession, session: String, herdrPath: String?) :
+    constructor(ssh: RemoteShell, session: String, herdrPath: String?) :
         this(ssh::exec, session, herdrPath)
     private val ids = AtomicLong()
     private val concurrency = Semaphore(MAX_CONCURRENT_REQUESTS)

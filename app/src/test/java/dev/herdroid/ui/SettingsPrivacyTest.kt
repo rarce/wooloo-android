@@ -19,7 +19,7 @@ class SettingsPrivacyTest {
     @get:Rule val compose = createComposeRule()
 
     @Test fun legalDocumentsCanBeReadAndDismissedOffline() {
-        compose.setContent { WoolooMobileTheme { SettingsScreen(onBack = {}) } }
+        compose.setContent { WoolooMobileTheme { SettingsScreen(onBack = {}, onOpenDemo = {}) } }
         compose.onNodeWithText("Privacy").performScrollTo()
         if (System.getProperty("herdroid.screenshots") == "true") {
             compose.onRoot().captureRoboImage("build/screenshots/settings-privacy.png")

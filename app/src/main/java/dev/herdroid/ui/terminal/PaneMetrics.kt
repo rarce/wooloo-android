@@ -30,7 +30,8 @@ internal fun PaneMetrics(connection: HerdrConnection, agent: String?) {
     val lifecycle by LocalLifecycleOwner.current.lifecycle.currentStateFlow.collectAsState()
     val contextKey = connection.activeProfile?.let(::quotaConsentKey)
     val active = status == ConnectionStatus.Connected && lifecycle == Lifecycle.State.RESUMED
-    val provider = paneProvider(agent)
+    // Nothing is signed in on the demo machine.
+    val provider = if (connection.profile.demo) null else paneProvider(agent)
     var stats by remember(connection, contextKey) { mutableStateOf<HostStats?>(null) }
     LaunchedEffect(connection, contextKey, active) {
         if (!active) return@LaunchedEffect

@@ -22,6 +22,7 @@ import androidx.compose.material.icons.outlined.Dns
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.Key
 import androidx.compose.material.icons.outlined.MoreVert
+import androidx.compose.material.icons.outlined.PlayCircle
 import androidx.compose.material.icons.outlined.QrCodeScanner
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.AlertDialog
@@ -50,6 +51,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.herdroid.app
@@ -129,6 +131,20 @@ fun HostsScreen(
                     Icon(Icons.Outlined.Add, null)
                     Text("  Add a machine")
                 }
+                TextButton(enabled = !edits.busy, onClick = {
+                    edits.submit(scope, "Could not add the demo machine. Try again.",
+                        work = { app.hosts.demo() },
+                        success = { onOpenHost(it.id) })
+                }) {
+                    Icon(Icons.Outlined.PlayCircle, null)
+                    Text("  Try the demo machine")
+                }
+                Text(
+                    "No server needed: a simulated herdr session with agents runs on this phone.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                )
             }
         } else {
             LazyColumn(
@@ -227,7 +243,8 @@ internal fun HostItem(
                     Icon(Icons.Outlined.MoreVert, "Machine actions for ${host.displayName}")
                 }
                 DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                    DropdownMenuItem(text = { Text("Edit") }, leadingIcon = { Icon(Icons.Outlined.Edit, null) },
+                    // The demo machine has nothing to configure.
+                    if (!host.demo) DropdownMenuItem(text = { Text("Edit") }, leadingIcon = { Icon(Icons.Outlined.Edit, null) },
                         onClick = { menu = false; onEdit() })
                     if (canDisconnect) {
                         DropdownMenuItem(text = { Text("Disconnect") },

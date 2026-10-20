@@ -4,7 +4,7 @@ import java.util.Base64
 import dev.herdroid.ssh.CommandChannel
 import dev.herdroid.ssh.closeBounded
 import dev.herdroid.ssh.channelIo
-import dev.herdroid.ssh.SshSession
+import dev.herdroid.ssh.RemoteShell
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -241,7 +241,7 @@ class TerminalStream private constructor(
         internal fun fromChannel(channel: CommandChannel, scope: CoroutineScope, readOnly: Boolean = false) =
             TerminalStream(channel, scope, readOnly).also { it.start() }
         suspend fun open(
-            ssh: SshSession,
+            ssh: RemoteShell,
             scope: CoroutineScope,
             session: String,
             herdrPath: String?,

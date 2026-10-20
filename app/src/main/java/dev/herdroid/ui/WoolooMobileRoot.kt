@@ -156,7 +156,12 @@ fun WoolooMobileRoot(openRequests: MutableStateFlow<OpenRequest?>, hostLinks: Mu
         ) { entry ->
             KeysScreen(onBack = { nav.popBackStack() }, startWithImport = entry.arguments?.getBoolean("import") == true)
         }
-        composable(Routes.SETTINGS) { SettingsScreen(onBack = { nav.popBackStack() }) }
+        composable(Routes.SETTINGS) {
+            SettingsScreen(onBack = { nav.popBackStack() }, onOpenDemo = { hostId ->
+                nav.popBackStack()
+                nav.navigate(Routes.session(hostId)) { launchSingleTop = true }
+            })
+        }
         composable(Routes.SESSION) { entry ->
             val hostId = entry.arguments?.getString("hostId").orEmpty()
             SessionScreen(

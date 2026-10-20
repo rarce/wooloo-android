@@ -29,6 +29,8 @@ import dev.herdroid.ssh.HostKeyRejectedException
 import dev.herdroid.ssh.SshAuthException
 import dev.herdroid.ssh.SshCredential
 import dev.herdroid.ssh.SshSession
+import dev.herdroid.ssh.RemoteShell
+import dev.herdroid.demo.DemoShell
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
@@ -138,8 +140,8 @@ class HerdrConnection(
 
     @Volatile
     private var transport: ActiveTransport? = null
-    private data class ActiveTransport(val ssh: SshSession, val profile: HostProfile)
-    private val ssh: SshSession? get() = transport?.ssh
+    private data class ActiveTransport(val ssh: RemoteShell, val profile: HostProfile)
+    private val ssh: RemoteShell? get() = transport?.ssh
     /** Captured configuration owned by the current transport; check status before using it. */
     val activeProfile: HostProfile? get() = transport?.profile
     private var remoteContext: RemoteContextKey? = null
@@ -255,11 +257,12 @@ class HerdrConnection(
                 _status.value = ConnectionStatus.Connecting(
                     when {
                         attempt > 0 -> "Reconnecting…"
+                        profile.demo -> "Starting the demo machine…"
                         profile.transport == Transport.CLOUDFLARE -> "Opening Cloudflare tunnel to ${profile.hostname}…"
                         else -> "Opening SSH to ${profile.hostname}…"
                     }
                 )
-                val session = openSsh(cycleProfile)
+                val session = if (cycleProfile.demo) openDemo(cycleProfile) else openSsh(cycleProfile)
                 val api = HerdrApi(session, cycleProfile.session, cycleProfile.herdrPath)
                 synchronized(remoteStateLock) { this.api = api }
                 remoteHome = try { readRemoteHome(session) }
@@ -421,7 +424,7 @@ class HerdrConnection(
         }
     }
 
-    private suspend fun readRemoteHome(session: SshSession): String? =
+    private suspend fun readRemoteHome(session: RemoteShell): String? =
         withTimeoutOrNull(15_000) {
             val channel = session.exec("/bin/sh -c 'printf %s \"\$HOME\"'")
             try {
@@ -429,7 +432,7 @@ class HerdrConnection(
             } finally { channel.closeBounded() }
         }
 
-    private suspend fun runEventStreams(api: HerdrApi, session: SshSession) = coroutineScope {
+    private suspend fun runEventStreams(api: HerdrApi, session: RemoteShell) = coroutineScope {
         val poller = launch {
             while (isActive) {
                 delay(SAFETY_POLL_MS)
@@ -551,6 +554,10 @@ class HerdrConnection(
             }
         }
     }
+
+    /** A simulated herdr server on this phone, for trying the app without a machine. */
+    private fun openDemo(profile: HostProfile): RemoteShell =
+        DemoShell().also { transport = ActiveTransport(it, profile) }
 
     private suspend fun openSsh(profile: HostProfile): SshSession {
         val tunnel = if (profile.transport == Transport.CLOUDFLARE) {

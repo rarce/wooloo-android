@@ -32,6 +32,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -39,6 +40,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import dev.herdroid.BuildConfig
 import dev.herdroid.R
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import dev.herdroid.app
 import dev.herdroid.herdr.AgentStatus
 import dev.herdroid.terminal.TerminalView
@@ -49,9 +53,10 @@ import dev.herdroid.ui.theme.Mono
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsScreen(onBack: () -> Unit) {
+fun SettingsScreen(onBack: () -> Unit, onOpenDemo: (hostId: String) -> Unit) {
     val context = LocalContext.current
     var document by remember { mutableStateOf<Pair<String, String>?>(null) }
+    val scope = rememberCoroutineScope()
     var notices by remember { mutableStateOf(false) }
     if (notices && document == null) {
         ThirdPartyNoticesDialog(
@@ -145,6 +150,15 @@ fun SettingsScreen(onBack: () -> Unit) {
                 },
                 headlineContent = { Text("Notifications") },
                 supportingContent = { Text("Enable or disable agent alerts in Android settings") },
+            )
+            ListItem(
+                modifier = Modifier.clickable {
+                    scope.launch {
+                        runCatching { withContext(Dispatchers.IO) { context.app.hosts.demo() } }.onSuccess { onOpenDemo(it.id) }
+                    }
+                },
+                headlineContent = { Text("Demo machine") },
+                supportingContent = { Text("Try the app with a simulated herdr session that runs on this phone") },
             )
             UpdateSettings(context.app.updater)
             listOf(
