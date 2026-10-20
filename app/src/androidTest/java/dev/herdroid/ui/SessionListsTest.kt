@@ -176,15 +176,18 @@ class SessionListsTest {
             compose.runOnIdle { snapshot.value = fixture }
         }
         if (scale > 1f) {
-            agentRow("diagnostics").performScrollTo().assertIsDisplayed()
+            // The space is a lazy list: on a small screen the last agent isn't composed until it's scrolled to.
+            compose.onNode(hasScrollToNodeAction()).performScrollToNode(agentRowMatcher("diagnostics"))
+            agentRow("diagnostics").assertIsDisplayed()
             compose.onNodeWithContentDescription("Message diagnostics").performClick()
             compose.runOnIdle { assertEquals("w1:p4", reply) }
         }
     }
 
-    private fun agentRow(name: String) = compose.onNode(
+    private fun agentRowMatcher(name: String) =
         hasText(name) and hasAnyDescendant(hasContentDescription("Message $name"))
-    )
+
+    private fun agentRow(name: String) = compose.onNode(agentRowMatcher(name))
 
     private fun capture(name: String) {
         compose.mainClock.advanceTimeBy(600)
