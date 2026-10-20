@@ -110,10 +110,15 @@ class CloudflareTunnelSocket internal constructor(
         if (closed) throw SocketException("Socket is closed")
         if (connected) throw SocketException("Already connected")
         remote = endpoint as? InetSocketAddress
-        val request = Request.Builder().url(url).apply {
-            tunnel.accessClientId?.takeIf { it.isNotBlank() }?.let { header("CF-Access-Client-Id", it) }
-            tunnel.accessClientSecret?.takeIf { it.isNotBlank() }?.let { header("CF-Access-Client-Secret", it) }
-        }.build()
+        val request = try {
+            Request.Builder().url(url).apply {
+                tunnel.accessClientId?.takeIf { it.isNotBlank() }?.let { header("CF-Access-Client-Id", it) }
+                tunnel.accessClientSecret?.takeIf { it.isNotBlank() }?.let { header("CF-Access-Client-Secret", it) }
+            }.build()
+        } catch (_: IllegalArgumentException) {
+            // OkHttp header validation includes the invalid value in its exception.
+            throw CloudflareTunnelException("Invalid Cloudflare address or Access credentials. Check the machine settings.")
+        }
         val socket = client.newWebSocket(request, Listener())
         webSocket = socket
         val waitMs = if (timeout > 0) timeout.toLong() else DEFAULT_CONNECT_TIMEOUT_MS

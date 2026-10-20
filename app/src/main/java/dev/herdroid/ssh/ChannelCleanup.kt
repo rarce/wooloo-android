@@ -4,7 +4,7 @@ import kotlinx.coroutines.*
 import java.util.concurrent.atomic.AtomicBoolean
 
 /** Graceful SSH close may await a peer acknowledgement. Never run it on the caller's thread. */
-internal suspend fun CommandChannel.closeBounded() = withContext(NonCancellable) {
+internal suspend fun CommandChannel.closeBounded(terminateRemote: Boolean = false) = withContext(NonCancellable) {
     coroutineScope {
         val aborted = AtomicBoolean()
         fun abortOnce() {
@@ -17,7 +17,7 @@ internal suspend fun CommandChannel.closeBounded() = withContext(NonCancellable)
             abortOnce()
         }
         try {
-            withTimeout(CHANNEL_CLOSE_GRACE_MS) { interruptibleIo { close() } }
+            withTimeout(CHANNEL_CLOSE_GRACE_MS) { interruptibleIo { close(terminateRemote) } }
         } catch (_: Exception) {
             withContext(Dispatchers.IO) { abortOnce() }
         } finally {

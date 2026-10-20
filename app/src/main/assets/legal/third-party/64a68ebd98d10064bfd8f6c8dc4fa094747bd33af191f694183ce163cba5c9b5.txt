@@ -1,0 +1,8 @@
+Ooura FFT
+
+Source(s):
+com.google.mlkit:barcode-scanning:17.3.0!third_party_licenses.txt
+
+Copyright(C) 1997,2001 Takuya OOURA (email: ooura@kurims.kyoto-u.ac.jp).
+You may use, copy, modify this code for any purpose and 
+without fee. You may distribute this ORIGINAL package.

@@ -29,6 +29,10 @@ Read the [privacy policy](app/src/main/assets/legal/privacy.txt), also available
 in Settings. Quotas are experimental and require per-identity consent to read remote
 agent tokens and query providers from the phone. Disabling them does not disable SSH.
 The project code is [MIT licensed](LICENSE); dependencies retain their own licenses (see the [resolved inventory](docs/dependencies.md)).
+Original third-party notices are available offline in Settings → Third-party notices.
+See the [security and license review](docs/security-licenses/README.md) for dependency
+updates, disclosure details and open distribution requirements, including provider
+restrictions on the current Claude quota integration.
 The launcher uses the readable name **wooloo mobile**. Provider names identify
 interoperability and do not imply endorsement.
 

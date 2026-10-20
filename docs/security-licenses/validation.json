@@ -1,0 +1,47 @@
+{
+  "baseCommit": "46c69e8",
+  "source": "uncommitted security and license changes",
+  "jvm": {
+    "tests": 235,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 6
+  },
+  "pythonTests": 5,
+  "checks": [
+    "clean",
+    "testDebugUnitTest (with isolated SSH fixture)",
+    "jacocoDebugCoverageVerification",
+    "paneMetricsCoverageVerification",
+    "lintDebug",
+    "assembleDebug",
+    "assembleRelease"
+  ],
+  "artifacts": [
+    {
+      "path": "app/build/outputs/apk/debug/app-debug.apk",
+      "sha256": "b84e2352872aa0c90da06671299f44dfca5de61c0e442f264e68f04be7af3aa4",
+      "bytes": 48863581
+    },
+    {
+      "path": "app/build/outputs/apk/release/app-release-unsigned.apk",
+      "sha256": "b93d87f26f850f4bbdaf70b2db297fa30df2b18e4525cc7b3babe9ceb3b5f01a",
+      "bytes": 28992030
+    }
+  ],
+  "androidDebug": {
+    "tests": 11,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "emulator": "wooloo_review_20261020, emulator-5556, Android 16/API 36, arm64, 4096-byte pages",
+  "offlineNoticesVerified": 68,
+  "androidReleaseSmoke": {
+    "tests": 1,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "releaseSmokeNote": "R8-minified APK signed with temporary debug certificate; not a production-signed release"
+}

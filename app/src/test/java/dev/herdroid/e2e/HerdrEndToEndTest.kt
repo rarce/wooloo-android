@@ -66,6 +66,30 @@ class HerdrEndToEndTest {
     }
 
     @Test
+    fun changedHostKeyIsRejectedBeforeCredentialsAreUsed(): Unit = runBlocking {
+        var credentialUsed = false
+        var challenged = false
+        val previous = "SHA256:deliberately-different-fixture"
+        val ssh = SshSession(host!!, port, user, knownFingerprint = { _, _ -> previous }) {
+            challenged = true
+            assertEquals(previous, it.previousFingerprint)
+            assertTrue(it.fingerprint != previous)
+            false
+        }
+        try {
+            try {
+                withTimeout(20_000) {
+                    ssh.connect(SshCredential.Key { credentialUsed = true; error("Must not authenticate") })
+                }
+                org.junit.Assert.fail("Expected host-key rejection")
+            } catch (_: dev.herdroid.ssh.HostKeyRejectedException) { }
+            assertTrue(challenged)
+            org.junit.Assert.assertFalse(credentialUsed)
+            org.junit.Assert.assertFalse(ssh.isConnected)
+        } finally { ssh.close() }
+    }
+
+    @Test
     fun fullRoundTrip(): Unit = runBlocking {
         val challenges = mutableListOf<HostKeyChallenge>()
         val ssh = SshSession(host!!, port, user, knownFingerprint = { _, _ -> null }) {

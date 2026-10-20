@@ -25,6 +25,51 @@ class SecretTransactionTest {
     private val key = SecretKeySpec(ByteArray(32) { it.toByte() }, "AES")
     private fun prefs() = RuntimeEnvironment.getApplication().getSharedPreferences("txn", Context.MODE_PRIVATE)
 
+    @Test fun removingMachineKeepsMetadataOnSecretFailureAndCanBeRetried() {
+        val prefs = prefs()
+        val unreliable = FailOncePreferences(prefs)
+        val secrets = SecretStore(unreliable) { key }
+        val hosts = HostRepository(File(RuntimeEnvironment.getApplication().filesDir, "delete-host.json"))
+        val host = HostProfile(id = "delete-host", hostname = "example.test")
+        hosts.upsert(host)
+        secrets.put(SecretStore.passwordKey(host.id), "password")
+        secrets.put(SecretStore.accessSecretKey(host.id), "access")
+        unreliable.failNext = true
+        try { hosts.deleteWithCredentials(host.id, secrets); fail("Expected failure") }
+        catch (_: IllegalStateException) { }
+        assertNotNull(hosts.get(host.id))
+        assertEquals("password", secrets.get(SecretStore.passwordKey(host.id)))
+        assertEquals("access", secrets.get(SecretStore.accessSecretKey(host.id)))
+        hosts.deleteWithCredentials(host.id, secrets)
+        assertNull(hosts.get(host.id))
+        assertFalse(secrets.contains(SecretStore.passwordKey(host.id)))
+        assertFalse(secrets.contains(SecretStore.accessSecretKey(host.id)))
+    }
+
+    @Test fun removingKeyRollsBackSecretsIfMetadataFailsAndWorksWithoutKeystore() {
+        val prefs = prefs()
+        val path = File(RuntimeEnvironment.getApplication().filesDir, "delete-key.json")
+        val metadata = """[{"id":"key","name":"Fixture","type":"ed25519","publicKey":"ssh-ed25519 AAAA","createdAt":0}]"""
+        path.writeText(metadata)
+        // Deleting ciphertext must not require a usable Keystore.
+        val secrets = SecretStore(prefs) { error("Keystore unavailable") }
+        prefs.edit().putString(SecretStore.privateKey("key"), "opaque ciphertext")
+            .putString("passphrase:key", "opaque passphrase").commit()
+        val keys = SshKeyManager(path, secrets)
+        path.delete()
+        path.mkdirs()
+        try { keys.delete("key"); fail("Expected metadata failure") }
+        catch (_: IOException) { }
+        assertNotNull(keys.get("key"))
+        assertTrue(secrets.contains(SecretStore.privateKey("key")))
+        assertTrue(secrets.contains("passphrase:key"))
+        path.delete()
+        keys.delete("key")
+        assertNull(keys.get("key"))
+        assertFalse(secrets.contains(SecretStore.privateKey("key")))
+        assertFalse(secrets.contains("passphrase:key"))
+    }
+
     @Test fun failedMetadataRestoresRawEntriesIncludingCorruptionAndWrongTypes() {
         val prefs = prefs()
         prefs.edit().putInt("password", 123).putString("access", "damaged encrypted entry")

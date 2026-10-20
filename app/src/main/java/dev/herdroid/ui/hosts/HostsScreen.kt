@@ -174,9 +174,8 @@ fun HostsScreen(
                     if (edits.busy) return@TextButton
                     edits.submit(scope, "Could not remove this machine. Try again.", work = {
                         app.connections.disconnect(host.id)
-                        app.hosts.delete(host.id)
-                        app.secrets.remove(dev.herdroid.data.SecretStore.passwordKey(host.id))
-                        app.secrets.remove(dev.herdroid.data.SecretStore.accessSecretKey(host.id))
+                        app.preferences.setAgentQuotas(host, false)
+                        app.hosts.deleteWithCredentials(host.id, app.secrets)
                     }, success = { pendingDelete = null })
                 }) { Text("Remove", color = MaterialTheme.colorScheme.error) }
             },

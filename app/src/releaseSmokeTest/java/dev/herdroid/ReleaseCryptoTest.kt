@@ -37,6 +37,16 @@ class ReleaseCryptoTest {
                 tampered.initVerify(key.public)
                 tampered.update("different message".toByteArray())
                 assertFalse(tampered.verify(envelope))
+                // CVE-2020-36843: the removed EdDSA dependency accepted S + L.
+                val order = java.math.BigInteger("1000000000000000000000000000000014def9dea2f79cd65812631a5cf5d3ed", 16)
+                val scalar = java.math.BigInteger(1, signature.copyOfRange(32, 64).reversedArray())
+                val nonCanonical = signature.copyOf()
+                scalar.add(order).toByteArray().reversedArray().copyInto(nonCanonical, 32)
+                val strict = SignatureEdDSA.Factory().create()
+                strict.initVerify(key.public)
+                strict.update(message)
+                val malformed = Buffer.PlainBuffer().putString("ssh-ed25519").putString(nonCanonical).compactData
+                assertFalse(strict.verify(malformed))
             }
         } finally {
             importedId?.let(app.keys::delete)

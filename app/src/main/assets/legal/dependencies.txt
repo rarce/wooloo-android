@@ -1,128 +1,126 @@
 # Release dependency inventory
 
-Generated 2026-10-20 from the resolved `releaseRuntimeClasspath`, with AndroidX ExifInterface 1.4.2.
-License declarations below come from cached upstream POMs, not an independent legal or security audit.
-Review upstream LICENSE/NOTICE files and bundled native components before public distribution.
-The project MIT license does not replace third-party terms. Atkinson Hyperlegible uses the bundled OFL.
-ML Kit/Google components also require review of their distribution terms.
+117 resolved Maven coordinates. Generated from releaseRuntimeClasspath by scripts/dependency_notices.py.
+POM declarations are obtained from official Maven repositories, including parent declarations.
+Original bundled notices (including Google native components) and supplemental upstream LICENSE/NOTICE texts are available offline in Settings → Third-party notices.
+This inventory is not a declaration that all third-party terms are Apache/MIT or a legal approval. See docs/security-licenses/README.md for scope and remaining decisions.
 
-| Artifact | Declared license |
-| --- | --- |
-| `androidx.activity:activity-compose:1.10.1` | Not declared in cached POM — review required |
-| `androidx.activity:activity-ktx:1.10.1` | Not declared in cached POM — review required |
-| `androidx.activity:activity:1.10.1` | Not declared in cached POM — review required |
-| `androidx.annotation:annotation-experimental:1.4.1` | Not declared in cached POM — review required |
-| `androidx.annotation:annotation-jvm:1.9.1` | Not declared in cached POM — review required |
-| `androidx.appcompat:appcompat-resources:1.6.1` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) |
-| `androidx.appcompat:appcompat:1.6.1` | Not declared in cached POM — review required |
-| `androidx.arch.core:core-common:2.2.0` | Not declared in cached POM — review required |
-| `androidx.arch.core:core-runtime:2.2.0` | Not declared in cached POM — review required |
-| `androidx.autofill:autofill:1.0.0` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) |
-| `androidx.camera.featurecombinationquery:featurecombinationquery:1.5.3` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) |
-| `androidx.camera:camera-camera2:1.5.3` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) |
-| `androidx.camera:camera-core:1.5.3` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt); BSD License (https://chromium.googlesource.com/libyuv/libyuv/+/refs/heads/main/README.chromium) |
-| `androidx.camera:camera-lifecycle:1.5.3` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) |
-| `androidx.camera:camera-video:1.5.3` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) |
-| `androidx.camera:camera-view:1.5.3` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) |
-| `androidx.collection:collection-jvm:1.5.0` | Not declared in cached POM — review required |
-| `androidx.collection:collection-ktx:1.5.0` | Not declared in cached POM — review required |
-| `androidx.compose.animation:animation-android:1.8.3` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) |
-| `androidx.compose.animation:animation-core-android:1.8.3` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) |
-| `androidx.compose.foundation:foundation-android:1.8.3` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) |
-| `androidx.compose.foundation:foundation-layout-android:1.8.3` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) |
-| `androidx.compose.material3:material3-android:1.3.2` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) |
-| `androidx.compose.material:material-icons-core-android:1.7.8` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) |
-| `androidx.compose.material:material-icons-extended-android:1.7.8` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) |
-| `androidx.compose.material:material-ripple-android:1.8.3` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) |
-| `androidx.compose.runtime:runtime-android:1.8.3` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) |
-| `androidx.compose.runtime:runtime-saveable-android:1.8.3` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) |
-| `androidx.compose.ui:ui-android:1.8.3` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) |
-| `androidx.compose.ui:ui-geometry-android:1.8.3` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) |
-| `androidx.compose.ui:ui-graphics-android:1.8.3` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) |
-| `androidx.compose.ui:ui-text-android:1.8.3` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) |
-| `androidx.compose.ui:ui-tooling-preview-android:1.8.3` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) |
-| `androidx.compose.ui:ui-unit-android:1.8.3` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) |
-| `androidx.compose.ui:ui-util-android:1.8.3` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) |
-| `androidx.concurrent:concurrent-futures-ktx:1.2.0` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) |
-| `androidx.concurrent:concurrent-futures:1.2.0` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) |
-| `androidx.core:core-ktx:1.16.0` | Not declared in cached POM — review required |
-| `androidx.core:core-viewtree:1.0.0` | Not declared in cached POM — review required |
-| `androidx.core:core:1.16.0` | Not declared in cached POM — review required |
-| `androidx.cursoradapter:cursoradapter:1.0.0` | Not declared in cached POM — review required |
-| `androidx.customview:customview-poolingcontainer:1.0.0` | Not declared in cached POM — review required |
-| `androidx.customview:customview:1.0.0` | Not declared in cached POM — review required |
-| `androidx.drawerlayout:drawerlayout:1.0.0` | Not declared in cached POM — review required |
-| `androidx.emoji2:emoji2-views-helper:1.4.0` | Not declared in cached POM — review required |
-| `androidx.emoji2:emoji2:1.4.0` | Not declared in cached POM — review required |
-| `androidx.exifinterface:exifinterface:1.4.2` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) |
-| `androidx.fragment:fragment:1.3.6` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) |
-| `androidx.graphics:graphics-path:1.0.1` | Not declared in cached POM — review required |
-| `androidx.interpolator:interpolator:1.0.0` | Not declared in cached POM — review required |
-| `androidx.lifecycle:lifecycle-common-java8:2.9.1` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) |
-| `androidx.lifecycle:lifecycle-common-jvm:2.9.1` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) |
-| `androidx.lifecycle:lifecycle-livedata-core-ktx:2.9.1` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) |
-| `androidx.lifecycle:lifecycle-livedata-core:2.9.1` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) |
-| `androidx.lifecycle:lifecycle-livedata:2.9.1` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) |
-| `androidx.lifecycle:lifecycle-process:2.9.1` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) |
-| `androidx.lifecycle:lifecycle-runtime-android:2.9.1` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) |
-| `androidx.lifecycle:lifecycle-runtime-compose-android:2.9.1` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) |
-| `androidx.lifecycle:lifecycle-runtime-ktx-android:2.9.1` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) |
-| `androidx.lifecycle:lifecycle-viewmodel-android:2.9.1` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) |
-| `androidx.lifecycle:lifecycle-viewmodel-compose-android:2.9.1` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) |
-| `androidx.lifecycle:lifecycle-viewmodel-ktx:2.9.1` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) |
-| `androidx.lifecycle:lifecycle-viewmodel-savedstate-android:2.9.1` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) |
-| `androidx.lifecycle:lifecycle-viewmodel:2.9.1` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) |
-| `androidx.loader:loader:1.0.0` | Not declared in cached POM — review required |
-| `androidx.navigation:navigation-common-android:2.9.0` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) |
-| `androidx.navigation:navigation-compose-android:2.9.0` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) |
-| `androidx.navigation:navigation-runtime-android:2.9.0` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) |
-| `androidx.profileinstaller:profileinstaller:1.4.0` | Not declared in cached POM — review required |
-| `androidx.resourceinspection:resourceinspection-annotation:1.0.1` | Not declared in cached POM — review required |
-| `androidx.savedstate:savedstate-android:1.3.0` | Not declared in cached POM — review required |
-| `androidx.savedstate:savedstate-compose-android:1.3.0` | Not declared in cached POM — review required |
-| `androidx.savedstate:savedstate-ktx:1.3.0` | Not declared in cached POM — review required |
-| `androidx.startup:startup-runtime:1.1.1` | Not declared in cached POM — review required |
-| `androidx.tracing:tracing-ktx:1.2.0` | Not declared in cached POM — review required |
-| `androidx.tracing:tracing:1.2.0` | Not declared in cached POM — review required |
-| `androidx.vectordrawable:vectordrawable-animated:1.1.0` | Not declared in cached POM — review required |
-| `androidx.vectordrawable:vectordrawable:1.1.0` | Not declared in cached POM — review required |
-| `androidx.versionedparcelable:versionedparcelable:1.1.1` | Not declared in cached POM — review required |
-| `androidx.viewpager:viewpager:1.0.0` | Not declared in cached POM — review required |
-| `com.google.android.datatransport:transport-api:2.2.1` | Not declared in cached POM — review required |
-| `com.google.android.datatransport:transport-backend-cct:2.3.3` | Not declared in cached POM — review required |
-| `com.google.android.datatransport:transport-runtime:2.2.6` | Not declared in cached POM — review required |
-| `com.google.android.gms:play-services-base:18.5.0` | Not declared in cached POM — review required |
-| `com.google.android.gms:play-services-basement:18.4.0` | Not declared in cached POM — review required |
-| `com.google.android.gms:play-services-mlkit-barcode-scanning:18.3.1` | Not declared in cached POM — review required |
-| `com.google.android.gms:play-services-tasks:18.2.0` | Not declared in cached POM — review required |
-| `com.google.android.odml:image:1.0.0-beta1` | Not declared in cached POM — review required |
-| `com.google.auto.value:auto-value-annotations:1.6.3` | Not declared in cached POM — review required |
-| `com.google.firebase:firebase-annotations:16.0.0` | Not declared in cached POM — review required |
-| `com.google.firebase:firebase-components:16.1.0` | Not declared in cached POM — review required |
-| `com.google.firebase:firebase-encoders-json:17.1.0` | Not declared in cached POM — review required |
-| `com.google.firebase:firebase-encoders:16.1.0` | Not declared in cached POM — review required |
-| `com.google.guava:listenablefuture:1.0` | Not declared in cached POM — review required |
-| `com.google.mlkit:barcode-scanning-common:17.0.0` | Not declared in cached POM — review required |
-| `com.google.mlkit:barcode-scanning:17.3.0` | Not declared in cached POM — review required |
-| `com.google.mlkit:common:18.11.0` | Not declared in cached POM — review required |
-| `com.google.mlkit:vision-common:17.3.0` | Not declared in cached POM — review required |
-| `com.google.mlkit:vision-interfaces:16.3.0` | Not declared in cached POM — review required |
-| `com.hierynomus:asn-one:0.6.0` | The Apache License, Version 2.0 (https://www.apache.org/licenses/LICENSE-2.0) |
-| `com.hierynomus:sshj:0.39.0` | The Apache License, Version 2.0 (https://www.apache.org/licenses/LICENSE-2.0) |
-| `com.squareup.okhttp3:okhttp:4.12.0` | Not declared in cached POM — review required |
-| `com.squareup.okio:okio-jvm:3.6.0` | Not declared in cached POM — review required |
-| `javax.inject:javax.inject:1` | Not declared in cached POM — review required |
-| `net.i2p.crypto:eddsa:0.3.0` | CC0 1.0 Universal (https://creativecommons.org/publicdomain/zero/1.0/) |
-| `org.bouncycastle:bcpkix-jdk18on:1.80` | Not declared in cached POM — review required |
-| `org.bouncycastle:bcprov-jdk18on:1.80.2` | Not declared in cached POM — review required |
-| `org.bouncycastle:bcutil-jdk18on:1.80.2` | Not declared in cached POM — review required |
-| `org.jetbrains.kotlin:kotlin-stdlib-jdk7:1.9.10` | Not declared in cached POM — review required |
-| `org.jetbrains.kotlin:kotlin-stdlib-jdk8:1.9.10` | Not declared in cached POM — review required |
-| `org.jetbrains.kotlin:kotlin-stdlib:2.1.21` | The Apache License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) |
-| `org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2` | Not declared in cached POM — review required |
-| `org.jetbrains.kotlinx:kotlinx-coroutines-core-jvm:1.10.2` | Not declared in cached POM — review required |
-| `org.jetbrains.kotlinx:kotlinx-serialization-core-jvm:1.8.1` | Apache-2.0 (https://www.apache.org/licenses/LICENSE-2.0.txt) |
-| `org.jetbrains.kotlinx:kotlinx-serialization-json-jvm:1.8.1` | Apache-2.0 (https://www.apache.org/licenses/LICENSE-2.0.txt) |
-| `org.jetbrains:annotations:23.0.0` | Not declared in cached POM — review required |
-| `org.jspecify:jspecify:1.0.0` | Not declared in cached POM — review required |
-| `org.slf4j:slf4j-api:2.0.13` | Not declared in cached POM — review required |
+| Artifact | Declared license | Source |
+| --- | --- | --- |
+| `androidx.activity:activity-compose:1.10.1` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) | [POM](https://dl.google.com/dl/android/maven2/androidx/activity/activity-compose/1.10.1/activity-compose-1.10.1.pom) |
+| `androidx.activity:activity-ktx:1.10.1` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) | [POM](https://dl.google.com/dl/android/maven2/androidx/activity/activity-ktx/1.10.1/activity-ktx-1.10.1.pom) |
+| `androidx.activity:activity:1.10.1` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) | [POM](https://dl.google.com/dl/android/maven2/androidx/activity/activity/1.10.1/activity-1.10.1.pom) |
+| `androidx.annotation:annotation-experimental:1.4.1` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) | [POM](https://dl.google.com/dl/android/maven2/androidx/annotation/annotation-experimental/1.4.1/annotation-experimental-1.4.1.pom) |
+| `androidx.annotation:annotation-jvm:1.9.1` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) | [POM](https://dl.google.com/dl/android/maven2/androidx/annotation/annotation-jvm/1.9.1/annotation-jvm-1.9.1.pom) |
+| `androidx.appcompat:appcompat-resources:1.6.1` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) | [POM](https://dl.google.com/dl/android/maven2/androidx/appcompat/appcompat-resources/1.6.1/appcompat-resources-1.6.1.pom) |
+| `androidx.appcompat:appcompat:1.6.1` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) | [POM](https://dl.google.com/dl/android/maven2/androidx/appcompat/appcompat/1.6.1/appcompat-1.6.1.pom) |
+| `androidx.arch.core:core-common:2.2.0` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) | [POM](https://dl.google.com/dl/android/maven2/androidx/arch/core/core-common/2.2.0/core-common-2.2.0.pom) |
+| `androidx.arch.core:core-runtime:2.2.0` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) | [POM](https://dl.google.com/dl/android/maven2/androidx/arch/core/core-runtime/2.2.0/core-runtime-2.2.0.pom) |
+| `androidx.autofill:autofill:1.0.0` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) | [POM](https://dl.google.com/dl/android/maven2/androidx/autofill/autofill/1.0.0/autofill-1.0.0.pom) |
+| `androidx.camera.featurecombinationquery:featurecombinationquery:1.5.3` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) | [POM](https://dl.google.com/dl/android/maven2/androidx/camera/featurecombinationquery/featurecombinationquery/1.5.3/featurecombinationquery-1.5.3.pom) |
+| `androidx.camera:camera-camera2:1.5.3` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) | [POM](https://dl.google.com/dl/android/maven2/androidx/camera/camera-camera2/1.5.3/camera-camera2-1.5.3.pom) |
+| `androidx.camera:camera-core:1.5.3` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt); BSD License (https://chromium.googlesource.com/libyuv/libyuv/+/refs/heads/main/README.chromium) | [POM](https://dl.google.com/dl/android/maven2/androidx/camera/camera-core/1.5.3/camera-core-1.5.3.pom) |
+| `androidx.camera:camera-lifecycle:1.5.3` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) | [POM](https://dl.google.com/dl/android/maven2/androidx/camera/camera-lifecycle/1.5.3/camera-lifecycle-1.5.3.pom) |
+| `androidx.camera:camera-video:1.5.3` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) | [POM](https://dl.google.com/dl/android/maven2/androidx/camera/camera-video/1.5.3/camera-video-1.5.3.pom) |
+| `androidx.camera:camera-view:1.5.3` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) | [POM](https://dl.google.com/dl/android/maven2/androidx/camera/camera-view/1.5.3/camera-view-1.5.3.pom) |
+| `androidx.collection:collection-jvm:1.5.0` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) | [POM](https://dl.google.com/dl/android/maven2/androidx/collection/collection-jvm/1.5.0/collection-jvm-1.5.0.pom) |
+| `androidx.collection:collection-ktx:1.5.0` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) | [POM](https://dl.google.com/dl/android/maven2/androidx/collection/collection-ktx/1.5.0/collection-ktx-1.5.0.pom) |
+| `androidx.compose.animation:animation-android:1.8.3` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) | [POM](https://dl.google.com/dl/android/maven2/androidx/compose/animation/animation-android/1.8.3/animation-android-1.8.3.pom) |
+| `androidx.compose.animation:animation-core-android:1.8.3` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) | [POM](https://dl.google.com/dl/android/maven2/androidx/compose/animation/animation-core-android/1.8.3/animation-core-android-1.8.3.pom) |
+| `androidx.compose.foundation:foundation-android:1.8.3` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) | [POM](https://dl.google.com/dl/android/maven2/androidx/compose/foundation/foundation-android/1.8.3/foundation-android-1.8.3.pom) |
+| `androidx.compose.foundation:foundation-layout-android:1.8.3` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) | [POM](https://dl.google.com/dl/android/maven2/androidx/compose/foundation/foundation-layout-android/1.8.3/foundation-layout-android-1.8.3.pom) |
+| `androidx.compose.material3:material3-android:1.3.2` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) | [POM](https://dl.google.com/dl/android/maven2/androidx/compose/material3/material3-android/1.3.2/material3-android-1.3.2.pom) |
+| `androidx.compose.material:material-icons-core-android:1.7.8` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) | [POM](https://dl.google.com/dl/android/maven2/androidx/compose/material/material-icons-core-android/1.7.8/material-icons-core-android-1.7.8.pom) |
+| `androidx.compose.material:material-icons-extended-android:1.7.8` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) | [POM](https://dl.google.com/dl/android/maven2/androidx/compose/material/material-icons-extended-android/1.7.8/material-icons-extended-android-1.7.8.pom) |
+| `androidx.compose.material:material-ripple-android:1.8.3` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) | [POM](https://dl.google.com/dl/android/maven2/androidx/compose/material/material-ripple-android/1.8.3/material-ripple-android-1.8.3.pom) |
+| `androidx.compose.runtime:runtime-android:1.8.3` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) | [POM](https://dl.google.com/dl/android/maven2/androidx/compose/runtime/runtime-android/1.8.3/runtime-android-1.8.3.pom) |
+| `androidx.compose.runtime:runtime-saveable-android:1.8.3` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) | [POM](https://dl.google.com/dl/android/maven2/androidx/compose/runtime/runtime-saveable-android/1.8.3/runtime-saveable-android-1.8.3.pom) |
+| `androidx.compose.ui:ui-android:1.8.3` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) | [POM](https://dl.google.com/dl/android/maven2/androidx/compose/ui/ui-android/1.8.3/ui-android-1.8.3.pom) |
+| `androidx.compose.ui:ui-geometry-android:1.8.3` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) | [POM](https://dl.google.com/dl/android/maven2/androidx/compose/ui/ui-geometry-android/1.8.3/ui-geometry-android-1.8.3.pom) |
+| `androidx.compose.ui:ui-graphics-android:1.8.3` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) | [POM](https://dl.google.com/dl/android/maven2/androidx/compose/ui/ui-graphics-android/1.8.3/ui-graphics-android-1.8.3.pom) |
+| `androidx.compose.ui:ui-text-android:1.8.3` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) | [POM](https://dl.google.com/dl/android/maven2/androidx/compose/ui/ui-text-android/1.8.3/ui-text-android-1.8.3.pom) |
+| `androidx.compose.ui:ui-tooling-preview-android:1.8.3` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) | [POM](https://dl.google.com/dl/android/maven2/androidx/compose/ui/ui-tooling-preview-android/1.8.3/ui-tooling-preview-android-1.8.3.pom) |
+| `androidx.compose.ui:ui-unit-android:1.8.3` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) | [POM](https://dl.google.com/dl/android/maven2/androidx/compose/ui/ui-unit-android/1.8.3/ui-unit-android-1.8.3.pom) |
+| `androidx.compose.ui:ui-util-android:1.8.3` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) | [POM](https://dl.google.com/dl/android/maven2/androidx/compose/ui/ui-util-android/1.8.3/ui-util-android-1.8.3.pom) |
+| `androidx.concurrent:concurrent-futures-ktx:1.2.0` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) | [POM](https://dl.google.com/dl/android/maven2/androidx/concurrent/concurrent-futures-ktx/1.2.0/concurrent-futures-ktx-1.2.0.pom) |
+| `androidx.concurrent:concurrent-futures:1.2.0` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) | [POM](https://dl.google.com/dl/android/maven2/androidx/concurrent/concurrent-futures/1.2.0/concurrent-futures-1.2.0.pom) |
+| `androidx.core:core-ktx:1.16.0` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) | [POM](https://dl.google.com/dl/android/maven2/androidx/core/core-ktx/1.16.0/core-ktx-1.16.0.pom) |
+| `androidx.core:core-viewtree:1.0.0` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) | [POM](https://dl.google.com/dl/android/maven2/androidx/core/core-viewtree/1.0.0/core-viewtree-1.0.0.pom) |
+| `androidx.core:core:1.16.0` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) | [POM](https://dl.google.com/dl/android/maven2/androidx/core/core/1.16.0/core-1.16.0.pom) |
+| `androidx.cursoradapter:cursoradapter:1.0.0` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) | [POM](https://dl.google.com/dl/android/maven2/androidx/cursoradapter/cursoradapter/1.0.0/cursoradapter-1.0.0.pom) |
+| `androidx.customview:customview-poolingcontainer:1.0.0` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) | [POM](https://dl.google.com/dl/android/maven2/androidx/customview/customview-poolingcontainer/1.0.0/customview-poolingcontainer-1.0.0.pom) |
+| `androidx.customview:customview:1.0.0` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) | [POM](https://dl.google.com/dl/android/maven2/androidx/customview/customview/1.0.0/customview-1.0.0.pom) |
+| `androidx.drawerlayout:drawerlayout:1.0.0` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) | [POM](https://dl.google.com/dl/android/maven2/androidx/drawerlayout/drawerlayout/1.0.0/drawerlayout-1.0.0.pom) |
+| `androidx.emoji2:emoji2-views-helper:1.4.0` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) | [POM](https://dl.google.com/dl/android/maven2/androidx/emoji2/emoji2-views-helper/1.4.0/emoji2-views-helper-1.4.0.pom) |
+| `androidx.emoji2:emoji2:1.4.0` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) | [POM](https://dl.google.com/dl/android/maven2/androidx/emoji2/emoji2/1.4.0/emoji2-1.4.0.pom) |
+| `androidx.exifinterface:exifinterface:1.4.2` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) | [POM](https://dl.google.com/dl/android/maven2/androidx/exifinterface/exifinterface/1.4.2/exifinterface-1.4.2.pom) |
+| `androidx.fragment:fragment:1.3.6` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) | [POM](https://dl.google.com/dl/android/maven2/androidx/fragment/fragment/1.3.6/fragment-1.3.6.pom) |
+| `androidx.graphics:graphics-path:1.0.1` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) | [POM](https://dl.google.com/dl/android/maven2/androidx/graphics/graphics-path/1.0.1/graphics-path-1.0.1.pom) |
+| `androidx.interpolator:interpolator:1.0.0` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) | [POM](https://dl.google.com/dl/android/maven2/androidx/interpolator/interpolator/1.0.0/interpolator-1.0.0.pom) |
+| `androidx.lifecycle:lifecycle-common-java8:2.9.1` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) | [POM](https://dl.google.com/dl/android/maven2/androidx/lifecycle/lifecycle-common-java8/2.9.1/lifecycle-common-java8-2.9.1.pom) |
+| `androidx.lifecycle:lifecycle-common-jvm:2.9.1` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) | [POM](https://dl.google.com/dl/android/maven2/androidx/lifecycle/lifecycle-common-jvm/2.9.1/lifecycle-common-jvm-2.9.1.pom) |
+| `androidx.lifecycle:lifecycle-livedata-core-ktx:2.9.1` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) | [POM](https://dl.google.com/dl/android/maven2/androidx/lifecycle/lifecycle-livedata-core-ktx/2.9.1/lifecycle-livedata-core-ktx-2.9.1.pom) |
+| `androidx.lifecycle:lifecycle-livedata-core:2.9.1` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) | [POM](https://dl.google.com/dl/android/maven2/androidx/lifecycle/lifecycle-livedata-core/2.9.1/lifecycle-livedata-core-2.9.1.pom) |
+| `androidx.lifecycle:lifecycle-livedata:2.9.1` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) | [POM](https://dl.google.com/dl/android/maven2/androidx/lifecycle/lifecycle-livedata/2.9.1/lifecycle-livedata-2.9.1.pom) |
+| `androidx.lifecycle:lifecycle-process:2.9.1` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) | [POM](https://dl.google.com/dl/android/maven2/androidx/lifecycle/lifecycle-process/2.9.1/lifecycle-process-2.9.1.pom) |
+| `androidx.lifecycle:lifecycle-runtime-android:2.9.1` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) | [POM](https://dl.google.com/dl/android/maven2/androidx/lifecycle/lifecycle-runtime-android/2.9.1/lifecycle-runtime-android-2.9.1.pom) |
+| `androidx.lifecycle:lifecycle-runtime-compose-android:2.9.1` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) | [POM](https://dl.google.com/dl/android/maven2/androidx/lifecycle/lifecycle-runtime-compose-android/2.9.1/lifecycle-runtime-compose-android-2.9.1.pom) |
+| `androidx.lifecycle:lifecycle-runtime-ktx-android:2.9.1` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) | [POM](https://dl.google.com/dl/android/maven2/androidx/lifecycle/lifecycle-runtime-ktx-android/2.9.1/lifecycle-runtime-ktx-android-2.9.1.pom) |
+| `androidx.lifecycle:lifecycle-viewmodel-android:2.9.1` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) | [POM](https://dl.google.com/dl/android/maven2/androidx/lifecycle/lifecycle-viewmodel-android/2.9.1/lifecycle-viewmodel-android-2.9.1.pom) |
+| `androidx.lifecycle:lifecycle-viewmodel-compose-android:2.9.1` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) | [POM](https://dl.google.com/dl/android/maven2/androidx/lifecycle/lifecycle-viewmodel-compose-android/2.9.1/lifecycle-viewmodel-compose-android-2.9.1.pom) |
+| `androidx.lifecycle:lifecycle-viewmodel-ktx:2.9.1` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) | [POM](https://dl.google.com/dl/android/maven2/androidx/lifecycle/lifecycle-viewmodel-ktx/2.9.1/lifecycle-viewmodel-ktx-2.9.1.pom) |
+| `androidx.lifecycle:lifecycle-viewmodel-savedstate-android:2.9.1` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) | [POM](https://dl.google.com/dl/android/maven2/androidx/lifecycle/lifecycle-viewmodel-savedstate-android/2.9.1/lifecycle-viewmodel-savedstate-android-2.9.1.pom) |
+| `androidx.lifecycle:lifecycle-viewmodel:2.9.1` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) | [POM](https://dl.google.com/dl/android/maven2/androidx/lifecycle/lifecycle-viewmodel/2.9.1/lifecycle-viewmodel-2.9.1.pom) |
+| `androidx.loader:loader:1.0.0` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) | [POM](https://dl.google.com/dl/android/maven2/androidx/loader/loader/1.0.0/loader-1.0.0.pom) |
+| `androidx.navigation:navigation-common-android:2.9.0` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) | [POM](https://dl.google.com/dl/android/maven2/androidx/navigation/navigation-common-android/2.9.0/navigation-common-android-2.9.0.pom) |
+| `androidx.navigation:navigation-compose-android:2.9.0` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) | [POM](https://dl.google.com/dl/android/maven2/androidx/navigation/navigation-compose-android/2.9.0/navigation-compose-android-2.9.0.pom) |
+| `androidx.navigation:navigation-runtime-android:2.9.0` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) | [POM](https://dl.google.com/dl/android/maven2/androidx/navigation/navigation-runtime-android/2.9.0/navigation-runtime-android-2.9.0.pom) |
+| `androidx.profileinstaller:profileinstaller:1.4.0` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) | [POM](https://dl.google.com/dl/android/maven2/androidx/profileinstaller/profileinstaller/1.4.0/profileinstaller-1.4.0.pom) |
+| `androidx.resourceinspection:resourceinspection-annotation:1.0.1` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) | [POM](https://dl.google.com/dl/android/maven2/androidx/resourceinspection/resourceinspection-annotation/1.0.1/resourceinspection-annotation-1.0.1.pom) |
+| `androidx.savedstate:savedstate-android:1.3.0` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) | [POM](https://dl.google.com/dl/android/maven2/androidx/savedstate/savedstate-android/1.3.0/savedstate-android-1.3.0.pom) |
+| `androidx.savedstate:savedstate-compose-android:1.3.0` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) | [POM](https://dl.google.com/dl/android/maven2/androidx/savedstate/savedstate-compose-android/1.3.0/savedstate-compose-android-1.3.0.pom) |
+| `androidx.savedstate:savedstate-ktx:1.3.0` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) | [POM](https://dl.google.com/dl/android/maven2/androidx/savedstate/savedstate-ktx/1.3.0/savedstate-ktx-1.3.0.pom) |
+| `androidx.startup:startup-runtime:1.1.1` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) | [POM](https://dl.google.com/dl/android/maven2/androidx/startup/startup-runtime/1.1.1/startup-runtime-1.1.1.pom) |
+| `androidx.tracing:tracing-ktx:1.2.0` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) | [POM](https://dl.google.com/dl/android/maven2/androidx/tracing/tracing-ktx/1.2.0/tracing-ktx-1.2.0.pom) |
+| `androidx.tracing:tracing:1.2.0` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) | [POM](https://dl.google.com/dl/android/maven2/androidx/tracing/tracing/1.2.0/tracing-1.2.0.pom) |
+| `androidx.vectordrawable:vectordrawable-animated:1.1.0` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) | [POM](https://dl.google.com/dl/android/maven2/androidx/vectordrawable/vectordrawable-animated/1.1.0/vectordrawable-animated-1.1.0.pom) |
+| `androidx.vectordrawable:vectordrawable:1.1.0` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) | [POM](https://dl.google.com/dl/android/maven2/androidx/vectordrawable/vectordrawable/1.1.0/vectordrawable-1.1.0.pom) |
+| `androidx.versionedparcelable:versionedparcelable:1.1.1` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) | [POM](https://dl.google.com/dl/android/maven2/androidx/versionedparcelable/versionedparcelable/1.1.1/versionedparcelable-1.1.1.pom) |
+| `androidx.viewpager:viewpager:1.0.0` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) | [POM](https://dl.google.com/dl/android/maven2/androidx/viewpager/viewpager/1.0.0/viewpager-1.0.0.pom) |
+| `com.google.android.datatransport:transport-api:2.2.1` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) | [POM](https://dl.google.com/dl/android/maven2/com/google/android/datatransport/transport-api/2.2.1/transport-api-2.2.1.pom) |
+| `com.google.android.datatransport:transport-backend-cct:2.3.3` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) | [POM](https://dl.google.com/dl/android/maven2/com/google/android/datatransport/transport-backend-cct/2.3.3/transport-backend-cct-2.3.3.pom) |
+| `com.google.android.datatransport:transport-runtime:2.2.6` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) | [POM](https://dl.google.com/dl/android/maven2/com/google/android/datatransport/transport-runtime/2.2.6/transport-runtime-2.2.6.pom) |
+| `com.google.android.gms:play-services-base:18.5.0` | Android Software Development Kit License (https://developer.android.com/studio/terms.html) | [POM](https://dl.google.com/dl/android/maven2/com/google/android/gms/play-services-base/18.5.0/play-services-base-18.5.0.pom) |
+| `com.google.android.gms:play-services-basement:18.4.0` | Android Software Development Kit License (https://developer.android.com/studio/terms.html) | [POM](https://dl.google.com/dl/android/maven2/com/google/android/gms/play-services-basement/18.4.0/play-services-basement-18.4.0.pom) |
+| `com.google.android.gms:play-services-mlkit-barcode-scanning:18.3.1` | ML Kit Terms of Service (https://developers.google.com/ml-kit/terms) | [POM](https://dl.google.com/dl/android/maven2/com/google/android/gms/play-services-mlkit-barcode-scanning/18.3.1/play-services-mlkit-barcode-scanning-18.3.1.pom) |
+| `com.google.android.gms:play-services-tasks:18.2.0` | Android Software Development Kit License (https://developer.android.com/studio/terms.html) | [POM](https://dl.google.com/dl/android/maven2/com/google/android/gms/play-services-tasks/18.2.0/play-services-tasks-18.2.0.pom) |
+| `com.google.android.odml:image:1.0.0-beta1` | Android Software Development Kit License (https://developer.android.com/studio/terms.html) | [POM](https://dl.google.com/dl/android/maven2/com/google/android/odml/image/1.0.0-beta1/image-1.0.0-beta1.pom) |
+| `com.google.auto.value:auto-value-annotations:1.6.3` | Apache 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) | [POM](https://repo.maven.apache.org/maven2/com/google/auto/value/auto-value-annotations/1.6.3/auto-value-annotations-1.6.3.pom) |
+| `com.google.firebase:firebase-annotations:16.0.0` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) | [POM](https://dl.google.com/dl/android/maven2/com/google/firebase/firebase-annotations/16.0.0/firebase-annotations-16.0.0.pom) |
+| `com.google.firebase:firebase-components:16.1.0` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) | [POM](https://dl.google.com/dl/android/maven2/com/google/firebase/firebase-components/16.1.0/firebase-components-16.1.0.pom) |
+| `com.google.firebase:firebase-encoders-json:17.1.0` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) | [POM](https://dl.google.com/dl/android/maven2/com/google/firebase/firebase-encoders-json/17.1.0/firebase-encoders-json-17.1.0.pom) |
+| `com.google.firebase:firebase-encoders:16.1.0` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) | [POM](https://dl.google.com/dl/android/maven2/com/google/firebase/firebase-encoders/16.1.0/firebase-encoders-16.1.0.pom) |
+| `com.google.guava:listenablefuture:1.0` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) | [POM](https://repo.maven.apache.org/maven2/com/google/guava/listenablefuture/1.0/listenablefuture-1.0.pom) |
+| `com.google.mlkit:barcode-scanning-common:17.0.0` | ML Kit Terms of Service (https://developers.google.com/ml-kit/terms) | [POM](https://dl.google.com/dl/android/maven2/com/google/mlkit/barcode-scanning-common/17.0.0/barcode-scanning-common-17.0.0.pom) |
+| `com.google.mlkit:barcode-scanning:17.3.0` | ML Kit Terms of Service (https://developers.google.com/ml-kit/terms) | [POM](https://dl.google.com/dl/android/maven2/com/google/mlkit/barcode-scanning/17.3.0/barcode-scanning-17.3.0.pom) |
+| `com.google.mlkit:common:18.11.0` | ML Kit Terms of Service (https://developers.google.com/ml-kit/terms) | [POM](https://dl.google.com/dl/android/maven2/com/google/mlkit/common/18.11.0/common-18.11.0.pom) |
+| `com.google.mlkit:vision-common:17.3.0` | ML Kit Terms of Service (https://developers.google.com/ml-kit/terms) | [POM](https://dl.google.com/dl/android/maven2/com/google/mlkit/vision-common/17.3.0/vision-common-17.3.0.pom) |
+| `com.google.mlkit:vision-interfaces:16.3.0` | ML Kit Terms of Service (https://developers.google.com/ml-kit/terms) | [POM](https://dl.google.com/dl/android/maven2/com/google/mlkit/vision-interfaces/16.3.0/vision-interfaces-16.3.0.pom) |
+| `com.hierynomus:asn-one:0.6.0` | The Apache License, Version 2.0 (https://www.apache.org/licenses/LICENSE-2.0) | [POM](https://repo.maven.apache.org/maven2/com/hierynomus/asn-one/0.6.0/asn-one-0.6.0.pom) |
+| `com.hierynomus:sshj:0.40.0` | The Apache License, Version 2.0 (https://www.apache.org/licenses/LICENSE-2.0) | [POM](https://repo.maven.apache.org/maven2/com/hierynomus/sshj/0.40.0/sshj-0.40.0.pom) |
+| `com.squareup.okhttp3:okhttp:4.12.0` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) | [POM](https://repo.maven.apache.org/maven2/com/squareup/okhttp3/okhttp/4.12.0/okhttp-4.12.0.pom) |
+| `com.squareup.okio:okio-jvm:3.6.0` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) | [POM](https://repo.maven.apache.org/maven2/com/squareup/okio/okio-jvm/3.6.0/okio-jvm-3.6.0.pom) |
+| `javax.inject:javax.inject:1` | The Apache Software License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) | [POM](https://repo.maven.apache.org/maven2/javax/inject/javax.inject/1/javax.inject-1.pom) |
+| `org.bouncycastle:bcpkix-jdk18on:1.85` | Bouncy Castle Licence (https://www.bouncycastle.org/licence.html) | [POM](https://repo.maven.apache.org/maven2/org/bouncycastle/bcpkix-jdk18on/1.85/bcpkix-jdk18on-1.85.pom) |
+| `org.bouncycastle:bcprov-jdk18on:1.85` | Bouncy Castle Licence (https://www.bouncycastle.org/licence.html) | [POM](https://repo.maven.apache.org/maven2/org/bouncycastle/bcprov-jdk18on/1.85/bcprov-jdk18on-1.85.pom) |
+| `org.bouncycastle:bcutil-jdk18on:1.85` | Bouncy Castle Licence (https://www.bouncycastle.org/licence.html) | [POM](https://repo.maven.apache.org/maven2/org/bouncycastle/bcutil-jdk18on/1.85/bcutil-jdk18on-1.85.pom) |
+| `org.jetbrains.kotlin:kotlin-stdlib-jdk7:1.9.10` | The Apache License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) | [POM](https://repo.maven.apache.org/maven2/org/jetbrains/kotlin/kotlin-stdlib-jdk7/1.9.10/kotlin-stdlib-jdk7-1.9.10.pom) |
+| `org.jetbrains.kotlin:kotlin-stdlib-jdk8:1.9.10` | The Apache License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) | [POM](https://repo.maven.apache.org/maven2/org/jetbrains/kotlin/kotlin-stdlib-jdk8/1.9.10/kotlin-stdlib-jdk8-1.9.10.pom) |
+| `org.jetbrains.kotlin:kotlin-stdlib:2.1.21` | The Apache License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) | [POM](https://repo.maven.apache.org/maven2/org/jetbrains/kotlin/kotlin-stdlib/2.1.21/kotlin-stdlib-2.1.21.pom) |
+| `org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2` | Apache-2.0 (https://www.apache.org/licenses/LICENSE-2.0.txt) | [POM](https://repo.maven.apache.org/maven2/org/jetbrains/kotlinx/kotlinx-coroutines-android/1.10.2/kotlinx-coroutines-android-1.10.2.pom) |
+| `org.jetbrains.kotlinx:kotlinx-coroutines-core-jvm:1.10.2` | Apache-2.0 (https://www.apache.org/licenses/LICENSE-2.0.txt) | [POM](https://repo.maven.apache.org/maven2/org/jetbrains/kotlinx/kotlinx-coroutines-core-jvm/1.10.2/kotlinx-coroutines-core-jvm-1.10.2.pom) |
+| `org.jetbrains.kotlinx:kotlinx-serialization-core-jvm:1.8.1` | Apache-2.0 (https://www.apache.org/licenses/LICENSE-2.0.txt) | [POM](https://repo.maven.apache.org/maven2/org/jetbrains/kotlinx/kotlinx-serialization-core-jvm/1.8.1/kotlinx-serialization-core-jvm-1.8.1.pom) |
+| `org.jetbrains.kotlinx:kotlinx-serialization-json-jvm:1.8.1` | Apache-2.0 (https://www.apache.org/licenses/LICENSE-2.0.txt) | [POM](https://repo.maven.apache.org/maven2/org/jetbrains/kotlinx/kotlinx-serialization-json-jvm/1.8.1/kotlinx-serialization-json-jvm-1.8.1.pom) |
+| `org.jetbrains:annotations:23.0.0` | The Apache Software License, Version 2.0 (https://www.apache.org/licenses/LICENSE-2.0.txt) | [POM](https://repo.maven.apache.org/maven2/org/jetbrains/annotations/23.0.0/annotations-23.0.0.pom) |
+| `org.jspecify:jspecify:1.0.0` | The Apache License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt) | [POM](https://repo.maven.apache.org/maven2/org/jspecify/jspecify/1.0.0/jspecify-1.0.0.pom) |
+| `org.slf4j:slf4j-api:2.0.17` | MIT (https://opensource.org/license/mit) | [POM](https://repo.maven.apache.org/maven2/org/slf4j/slf4j-api/2.0.17/slf4j-api-2.0.17.pom) |

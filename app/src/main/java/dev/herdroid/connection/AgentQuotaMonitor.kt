@@ -214,8 +214,9 @@ class AgentQuotaReader(
             http.get(url, headers)
         } catch (e: CancellationException) {
             throw e
-        } catch (e: Exception) {
-            throw QuotaException("Usage request failed: ${e.message ?: e.javaClass.simpleName}")
+        } catch (_: Exception) {
+            // HTTP/header exceptions can include a rejected header value (the bearer token).
+            throw QuotaException("Usage request failed. Check connectivity and try again later.")
         }
         return when (status) {
             200 -> body

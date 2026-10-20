@@ -1,0 +1,37 @@
+[
+  {
+    "file": "Apache-2.0.txt",
+    "url": "https://www.apache.org/licenses/LICENSE-2.0.txt",
+    "title": "Apache License 2.0"
+  },
+  {
+    "file": "Bouncy-Castle.html",
+    "url": "https://raw.githubusercontent.com/bcgit/bc-java/r1rv85v2/LICENSE.html",
+    "title": "Bouncy Castle license"
+  },
+  {
+    "file": "ASN-one.txt",
+    "url": "https://raw.githubusercontent.com/hierynomus/asn-one/v0.6.0/LICENSE",
+    "title": "ASN.1 library license"
+  },
+  {
+    "file": "OkHttp.txt",
+    "url": "https://raw.githubusercontent.com/square/okhttp/parent-4.12.0/LICENSE.txt",
+    "title": "OkHttp license"
+  },
+  {
+    "file": "Okio.txt",
+    "url": "https://raw.githubusercontent.com/square/okio/parent-3.6.0/LICENSE.txt",
+    "title": "Okio license"
+  },
+  {
+    "file": "SSHJ.txt",
+    "url": "https://raw.githubusercontent.com/hierynomus/sshj/v0.40.0/LICENSE",
+    "title": "SSHJ license"
+  },
+  {
+    "file": "SSHJ-NOTICE.txt",
+    "url": "https://raw.githubusercontent.com/hierynomus/sshj/v0.40.0/NOTICE",
+    "title": "SSHJ attribution"
+  }
+]

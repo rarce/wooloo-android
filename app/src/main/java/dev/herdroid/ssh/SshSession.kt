@@ -9,6 +9,7 @@ import net.schmizz.sshj.common.SecurityUtils
 import net.schmizz.sshj.connection.channel.direct.Session
 import net.schmizz.sshj.connection.channel.direct.SessionChannel
 import net.schmizz.sshj.common.SSHException
+import net.schmizz.sshj.common.DisconnectReason
 import net.schmizz.sshj.transport.verification.HostKeyVerifier
 import net.schmizz.sshj.userauth.UserAuthException
 import net.schmizz.sshj.userauth.keyprovider.KeyProvider
@@ -118,8 +119,11 @@ class SshSession(
         try {
             client.connect(host, port)
         } catch (e: Exception) {
-            val root = generateSequence(e as Throwable) { it.cause }.last()
-            if (root is HostKeyRejectedException || e.message?.contains("HOST_KEY_NOT_VERIFIABLE") == true) {
+            val rejected = generateSequence(e as Throwable) { it.cause }.any {
+                it is HostKeyRejectedException ||
+                    it is SSHException && it.disconnectReason == DisconnectReason.HOST_KEY_NOT_VERIFIABLE
+            }
+            if (rejected) {
                 throw HostKeyRejectedException("Host key for $host was not trusted")
             }
             throw e
@@ -202,7 +206,7 @@ internal suspend fun openExecChannel(
         } }
     } catch (e: Throwable) {
         // Cancellation can win while the result is dispatched back to the caller.
-        if (opened != null) opened!!.closeBounded() else {
+        if (opened != null) opened!!.closeBounded(terminateRemote = true) else {
             // An interrupted open may still get a late server confirmation.
             // Drop the transport rather than leave an ownerless remote channel.
             abortTransport()
@@ -221,6 +225,8 @@ interface CommandChannel : AutoCloseable {
     val isOpen: Boolean
     /** Breaks non-interruptible IO after the graceful-close budget expires. */
     fun abort() {}
+    /** Only explicitly cancelled long-lived commands need a remote termination signal. */
+    fun close(terminateRemote: Boolean) = close()
 }
 
 class ExecChannel(
@@ -228,15 +234,21 @@ class ExecChannel(
     val command: Session.Command,
     private val abortTransport: () -> Unit,
 ) : CommandChannel {
+    private val closing = java.util.concurrent.atomic.AtomicBoolean()
     override val stdin get() = command.outputStream
     override val stdout get() = command.inputStream
     override val stderr get() = command.errorStream
     override val isOpen: Boolean get() = command.isOpen
 
-    override fun close() {
+    override fun close() = close(terminateRemote = false)
+
+    override fun close(terminateRemote: Boolean) {
+        if (!closing.compareAndSet(false, true)) return
         // Observe bridges do not read stdin. Stop this exec's process before waiting for
         // SSH close acknowledgement, without terminating the shared herdr server.
-        if (command.isOpen) runCatching { command.signal(net.schmizz.sshj.connection.channel.direct.Signal.TERM) }
+        if (terminateRemote && command.isOpen) {
+            runCatching { command.signal(net.schmizz.sshj.connection.channel.direct.Signal.TERM) }
+        }
         // Signal EOF first so a remote bridge waiting on stdin can exit and acknowledge close.
         // This runs inside closeBounded's IO deadline, including a stalled EOF write.
         runCatching { command.outputStream.close() }

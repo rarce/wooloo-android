@@ -27,6 +27,13 @@ class HostRepository(private val file: File) {
         commit(_hosts.value.filterNot { it.id == id })
     }
 
+    /** Keep the profile available for retry if removing its credentials or metadata fails. */
+    fun deleteWithCredentials(id: String, secrets: SecretStore) {
+        secrets.transaction(emptyMap(), setOf(SecretStore.passwordKey(id), SecretStore.accessSecretKey(id))) {
+            delete(id)
+        }
+    }
+
     @Synchronized
     fun markConnected(id: String) {
         val profile = get(id) ?: return

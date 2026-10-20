@@ -34,6 +34,22 @@ class CloudflareTunnelSocketTest {
     /** Binary messages the server received from the socket under test. */
     private val received = LinkedBlockingQueue<ByteString>()
 
+    @Test
+    fun invalidAccessHeaderDoesNotExposeSecretOrSendARequest() {
+        val marker = "private-access-fixture"
+        val tunnel = CloudflareTunnel("example.test", "client", "$marker\ninvalid")
+        val socket = CloudflareTunnelSocket(tunnel, client, server.url("/").toString())
+        try {
+            socket.connect(InetSocketAddress("127.0.0.1", server.port), 1000)
+            fail("Expected invalid header")
+        } catch (e: CloudflareTunnelException) {
+            assertEquals("Invalid Cloudflare address or Access credentials. Check the machine settings.", e.message)
+            org.junit.Assert.assertNull(e.cause)
+            org.junit.Assert.assertFalse(e.toString().contains(marker))
+            assertEquals(0, server.requestCount)
+        } finally { socket.close() }
+    }
+
     @Before
     fun setUp() = server.start()
 

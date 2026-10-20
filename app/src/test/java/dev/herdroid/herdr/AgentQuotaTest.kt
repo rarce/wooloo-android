@@ -184,6 +184,34 @@ class AgentQuotaTest {
     }
 
     @Test
+    fun readerNeverExposesHttpExceptionCredentials() = runBlocking {
+        val token = "private-token-fixture"
+        val files = AgentQuotaFiles(claudeInstalled = true,
+            claudeCredentials = """{"claudeAiOauth":{"accessToken":"$token"}}""")
+        val reader = AgentQuotaReader(readFiles = { files }, http = QuotaHttp { _, _ ->
+            throw IllegalArgumentException("Invalid Authorization: Bearer $token")
+        })
+        val failure = reader.read(0)[AgentProvider.CLAUDE]!!.exceptionOrNull()!!
+        assertEquals("Usage request failed. Check connectivity and try again later.", failure.message)
+        assertNull(failure.cause)
+        assertFalse(failure.toString().contains(token))
+    }
+
+    @Test
+    fun forbiddenAndRateLimitedBodiesAreNotExposed() = runBlocking {
+        for (status in listOf(403, 429)) {
+            val files = AgentQuotaFiles(claudeInstalled = true,
+                claudeCredentials = """{"claudeAiOauth":{"accessToken":"token"}}""")
+            val reader = AgentQuotaReader(readFiles = { files }, http = QuotaHttp { _, _ ->
+                status to "sensitive provider response"
+            })
+            val message = reader.read(0)[AgentProvider.CLAUDE]!!.exceptionOrNull()!!.message!!
+            assertFalse(message.contains("sensitive"))
+            assertTrue(message.contains(if (status == 403) "rejected" else "rate limited"))
+        }
+    }
+
+    @Test
     fun readerStopsSendingARejectedClaudeToken() = runBlocking {
         val files = AgentQuotaFiles(claudeInstalled = true, claudeCredentials = """{"claudeAiOauth": {"accessToken": "t"}}""")
         var calls = 0

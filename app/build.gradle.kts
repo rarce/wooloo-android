@@ -94,6 +94,8 @@ android {
 
     packaging {
         resources {
+            // BC modules ship their license at the same path. Preserve all notices.
+            merges += "META-INF/LICENSE.md"
             excludes += setOf(
                 "/META-INF/{AL2.0,LGPL2.1}",
                 "META-INF/versions/9/OSGI-INF/MANIFEST.MF",

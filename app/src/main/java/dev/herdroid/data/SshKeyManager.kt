@@ -104,9 +104,9 @@ class SshKeyManager(private val file: File, private val secrets: SecretStore) {
 
     @Synchronized
     fun delete(id: String) {
-        commit(_keys.value.filterNot { it.id == id })
-        secrets.remove(SecretStore.privateKey(id))
-        secrets.remove(passphraseKey(id))
+        secrets.transaction(emptyMap(), setOf(SecretStore.privateKey(id), passphraseKey(id))) {
+            commit(_keys.value.filterNot { it.id == id })
+        }
     }
 
     fun keyProvider(id: String): KeyProvider {

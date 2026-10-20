@@ -56,7 +56,9 @@ class ChannelCleanupTest {
         val session = OpenSession(peer.connection)
         val inputEnded = AtomicBoolean()
         val acknowledged = AtomicBoolean()
+        val requests = AtomicInteger()
         peer.onPacket = { message, _ ->
+            if (message == Message.CHANNEL_REQUEST) requests.incrementAndGet()
             if (message == Message.CHANNEL_EOF) inputEnded.set(true)
             if (message == Message.CHANNEL_CLOSE && inputEnded.get() && acknowledged.compareAndSet(false, true)) {
                 // A bridge waiting for stdin only exits and acknowledges close after EOF.
@@ -66,6 +68,7 @@ class ChannelCleanupTest {
         val aborted = AtomicInteger()
         ExecChannel(session, session) { aborted.incrementAndGet() }.closeBounded()
         assertTrue(inputEnded.get())
+        assertEquals("Completed requests must not send a late TERM to a freed server channel", 0, requests.get())
         assertEquals("A cooperative bridge must not disconnect other channels", 0, aborted.get())
         assertTrue(peer.attached.isEmpty())
     }
@@ -88,7 +91,9 @@ class ChannelCleanupTest {
             }
         }
         val aborted = AtomicInteger()
-        ExecChannel(session, session) { aborted.incrementAndGet() }.closeBounded()
+        val channel = ExecChannel(session, session) { aborted.incrementAndGet() }
+        channel.closeBounded(terminateRemote = true)
+        channel.closeBounded(terminateRemote = true)
         assertTrue(terminated.get())
         assertEquals("Stopping this observer must keep the shared transport", 0, aborted.get())
         assertTrue(peer.attached.isEmpty())

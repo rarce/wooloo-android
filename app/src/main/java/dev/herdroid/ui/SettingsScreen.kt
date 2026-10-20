@@ -52,6 +52,13 @@ import dev.herdroid.ui.theme.Mono
 fun SettingsScreen(onBack: () -> Unit) {
     val context = LocalContext.current
     var document by remember { mutableStateOf<Pair<String, String>?>(null) }
+    var notices by remember { mutableStateOf(false) }
+    if (notices && document == null) {
+        ThirdPartyNoticesDialog(
+            onOpen = { title, path -> document = title to path },
+            onDismiss = { notices = false },
+        )
+    }
     document?.let { (title, path) ->
         val text = remember(path) { context.assets.open(path).bufferedReader().use { it.readText() } }
         AlertDialog(
@@ -152,6 +159,11 @@ fun SettingsScreen(onBack: () -> Unit) {
                     supportingContent = { Text("Read offline") },
                 )
             }
+            ListItem(
+                modifier = Modifier.clickable { notices = true },
+                headlineContent = { Text("Third-party notices") },
+                supportingContent = { Text("Original licenses and attributions, available offline") },
+            )
 
             ListItem(
                 headlineContent = { Text("About") },

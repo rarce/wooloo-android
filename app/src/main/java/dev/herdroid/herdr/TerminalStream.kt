@@ -16,6 +16,8 @@ import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.isActive
 import java.io.IOException
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.boolean
@@ -103,7 +105,7 @@ class TerminalStream private constructor(
                 closedReason = closedReason ?: t.message
             } finally {
                 outbox.close()
-                channel.closeBounded()
+                channel.closeBounded(terminateRemote = readOnly && !currentCoroutineContext().isActive)
                 isClosed = true
                 _events.close()
             }
@@ -113,7 +115,7 @@ class TerminalStream private constructor(
                 for (line in outbox) channel.channelIo { channel.writeLine(line) }
             } catch (e: Throwable) {
                 closedReason = closedReason ?: "Terminal write failed"
-                channel.closeBounded()
+                channel.closeBounded(terminateRemote = readOnly)
             }
         }
     }
@@ -224,7 +226,7 @@ class TerminalStream private constructor(
         scope.launch(Dispatchers.IO, start = CoroutineStart.UNDISPATCHED) {
             try { withTimeoutOrNull(500) { writerJob?.join() } } finally {
                 withContext(NonCancellable + Dispatchers.IO) {
-                    channel.closeBounded()
+                    channel.closeBounded(terminateRemote = readOnly)
                     readerJob?.cancel()
                     writerJob?.cancel()
                 }

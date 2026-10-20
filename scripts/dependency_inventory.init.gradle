@@ -1,0 +1,13 @@
+gradle.projectsEvaluated {
+    def app = rootProject.project(':app')
+    app.tasks.register('exportAuditRuntime') {
+        doLast {
+            def artifacts = app.configurations.releaseRuntimeClasspath.resolvedConfiguration.resolvedArtifacts.collect {
+                [coordinate: it.moduleVersion.id.toString(), file: it.file.absolutePath]
+            }.sort { it.coordinate }
+            def output = new File(app.buildDir, 'audit/runtime-artifacts.json')
+            output.parentFile.mkdirs()
+            output.text = groovy.json.JsonOutput.prettyPrint(groovy.json.JsonOutput.toJson(artifacts))
+        }
+    }
+}
