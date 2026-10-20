@@ -10,6 +10,12 @@ name: Release
 on:
   push:
     tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Canonical rehearsal version (artifacts only; never signs or publishes)'
+        required: true
+        default: '0.1.0'
 
 permissions:
   contents: read
@@ -19,24 +25,51 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  authorize:
+    name: Authorize release source (no secrets)
+    runs-on: ubuntu-22.04
+    outputs:
+      version: ${{ steps.identity.outputs.version }}
+      commit: ${{ steps.identity.outputs.commit }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - id: identity
+        env:
+          REHEARSAL_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then
+            version="$REHEARSAL_VERSION"
+          else
+            [[ "$GITHUB_REF" == refs/tags/v* ]] || exit 1
+            version="${GITHUB_REF_NAME#v}"
+          fi
+          commit=$(git rev-parse HEAD)
+          git merge-base --is-ancestor "$commit" refs/remotes/origin/main || {
+            echo '::error::Release commit must be reachable from authorized main'; exit 1;
+          }
+          python3 scripts/release_metadata.py --version "$version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
+
   build:
     name: Build
+    needs: authorize
+    env:
+      VERSION: ${{ needs.authorize.outputs.version }}
     runs-on: ubuntu-22.04
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
+          ref: ${{ needs.authorize.outputs.commit }}
 
-      # The version code is derived from it (app/build.gradle.kts), so it must stay numeric.
-      - name: Check the version
-        run: |
-          version=${GITHUB_REF_NAME#v}
-          if ! printf '%s' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
-            echo "::error::Release tags look like v1.2.3, not $GITHUB_REF_NAME"
-            exit 1
-          fi
-          echo "VERSION=$version" >> "$GITHUB_ENV"
+      - name: Validate release metadata rules
+        run: python3 -m unittest discover -s scripts -p 'test_*.py' -v
 
       - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
         with:
@@ -49,33 +82,45 @@ jobs:
         run: '"$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-36" "build-tools;36.0.0"'
 
       - name: Test and build the unsigned release
-        run: ./gradlew testDebugUnitTest assembleRelease -PappVersion="$VERSION" --console=plain
+        run: ./gradlew testDebugUnitTest jacocoDebugCoverageVerification paneMetricsCoverageVerification lintDebug assembleDebug assembleRelease -PappVersion="$VERSION" --console=plain
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: unsigned-apk
           path: app/build/outputs/apk/release/app-release-unsigned.apk
           if-no-files-found: error
-          retention-days: 7
+          retention-days: 30
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: release-reports-and-mapping
+          path: |
+            app/build/reports/
+            app/build/outputs/mapping/release/
+          retention-days: 90
 
   publish:
     name: Sign and publish
-    needs: build
+    needs: [authorize, build]
+    if: github.event_name == 'push'
     runs-on: ubuntu-22.04
     timeout-minutes: 15
     permissions:
       contents: write
+    environment: release
     env:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
+      VERSION: ${{ needs.authorize.outputs.version }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
+          ref: ${{ needs.authorize.outputs.commit }}
 
-      - name: Set the version
+      - name: Set build tools
         run: |
-          echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
           echo "BUILD_TOOLS=$ANDROID_HOME/build-tools/36.0.0" >> "$GITHUB_ENV"
 
       - name: Install Android build tools
@@ -120,26 +165,21 @@ jobs:
       - name: Write update.json
         run: |
           apk="wooloo-mobile-$VERSION.apk"
-          badging=$("$BUILD_TOOLS/aapt2" dump badging "build/release/$apk" | head -n 1)
-          code=$(printf '%s' "$badging" | sed -n "s/.*versionCode='\([0-9]*\)'.*/\1/p")
-          name=$(printf '%s' "$badging" | sed -n "s/.*versionName='\([^']*\)'.*/\1/p")
-          if [ -z "$code" ] || [ "$name" != "$VERSION" ]; then
-            echo "::error::The APK reports version '$name' ($code), expected $VERSION"
-            exit 1
-          fi
-          jq -n \
-            --argjson versionCode "$code" \
-            --arg versionName "$VERSION" \
-            --arg url "https://github.com/$GITHUB_REPOSITORY/releases/download/$GITHUB_REF_NAME/$apk" \
-            --arg sha256 "$(sha256sum "build/release/$apk" | awk '{print $1}')" \
-            --argjson size "$(stat -c %s "build/release/$apk")" \
-            --rawfile notes build/release/notes.md \
-            '{versionCode: $versionCode, versionName: $versionName, url: $url, sha256: $sha256, size: $size, notes: $notes}' \
-            > build/release/update.json
-          cat build/release/update.json
+          "$BUILD_TOOLS/aapt2" dump badging "build/release/$apk" > build/release/badging.txt
+          python3 scripts/release_metadata.py --version "$VERSION" \
+            --apk "build/release/$apk" --notes build/release/notes.md \
+            --badging build/release/badging.txt \
+            --url "https://github.com/$GITHUB_REPOSITORY/releases/download/$GITHUB_REF_NAME/$apk" \
+            --output build/release/update.json
 
       - name: Publish
+        env:
+          EXPECTED_COMMIT: ${{ needs.authorize.outputs.commit }}
         run: |
+          set -euo pipefail
+          # Refuse a moved/deleted tag rather than attaching artifacts to a different source.
+          tag_commit=$(gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_REF_NAME" --jq .sha)
+          [ "$tag_commit" = "$EXPECTED_COMMIT" ] || { echo "::error::Release tag moved"; exit 1; }
           apk="wooloo-mobile-$VERSION.apk"
           hash=$(sha256sum "build/release/$apk" | awk '{print $1}')
           {
@@ -151,12 +191,13 @@ jobs:
             printf 'SHA-256 (`sha256sum %s`):\n\n```\n%s\n```\n' "$apk" "$hash"
           } > build/release/body.md
           # The feed is read from the latest release: a fix to an older line must not replace it.
-          latest=$(gh release view --json tagName --jq .tagName 2>/dev/null || true)
-          latest=${latest#v}
-          if [ -z "$latest" ] || [ "$(printf '%s\n%s\n' "$latest" "$VERSION" | sort -V | tail -n 1)" = "$VERSION" ]; then
-            make_latest=true
-          else
-            make_latest=false
-          fi
+          # An empty successful response means no stable releases; API failures abort publication.
+          gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
+            --jq '.[] | select(.draft == false and .prerelease == false) | .tag_name' \
+            > build/release/stable-tags.txt
+          python3 scripts/release_metadata.py --version "$VERSION" \
+            --stable-tags build/release/stable-tags.txt \
+            --make-latest-output build/release/make-latest.txt
+          make_latest=$(cat build/release/make-latest.txt)
           gh release create "$GITHUB_REF_NAME" "build/release/$apk" build/release/update.json \
             --verify-tag --title "wooloo mobile $VERSION" --notes-file build/release/body.md --latest="$make_latest"

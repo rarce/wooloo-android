@@ -107,7 +107,11 @@ lint/format tooling configured beyond `kotlin.code.style=official`. Dependencies
   `MainActivity` and deep-link the same way.
 - `herdroid://add-host?…` links (wooloo's QR code) are parsed by `data/HostLink` and open the host editor
   prefilled (the raw link travels base64url-encoded in the `edit` route). A Cloudflare link matching a saved
-  machine's label + user + session updates that machine. Links never connect by themselves.
+  machine's label + user + session updates that machine. Links never connect by themselves. Editing an existing
+  destination, account, Access client ID or pinned keys requires the `HostSaveReview` confirmation before saving
+  or connecting. Approval binds the exact profile, credential drafts and action and stays only in memory.
+- Password and Access secret drafts in `HostEditScreen` use `remember`, not `rememberSaveable`: recreation clears
+  the drafts and any pending trust review, while restoring non-secret edits and keeping encrypted vault entries.
 - `ScanQrScreen` reads QR codes with lifecycle-bound CameraX and the bundled ML Kit decoder; camera permission
   is requested on entry. Photo picker and pasted links also use `HostLink` and the same editor route. Only a
   valid machine link is accepted, once; **Connect** saves the imported details and starts the existing SSH flow.

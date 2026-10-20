@@ -1,0 +1,12 @@
+wooloo-mobile@sdk_gphone64_arm64 [84,368][854,431] false android.widget.TextView
+SHA256:/wDyRXbF0cG/Y2rcU/LKfUs/xO12OQWIPqZ/++w3yhk [84,431][870,527] false android.widget.TextView
+Delete key [902,417][965,480] false android.view.View
+Authorize this key on the machine [121,585][745,638] false android.widget.TextView
+Copy this public key into wooloo Remote Access. Review the destination account, public key fingerprint and authorized_keys path before authorizing it. [121,659][959,803] false android.widget.TextView
+ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJuDmRmFACQMM2lKysTylKNv7Z/tRnkCF56WzxBZai0A wooloo-mobile@sdk_gphone64_arm64 [121,824][959,1016] false android.widget.TextView
+ Copy public key [216,1074][516,1127] false android.widget.TextView
+ Share key [664,1074][855,1127] false android.widget.TextView
+Back [43,190][106,253] false android.view.View
+SSH keys [148,186][373,255] false android.widget.TextView
+Import key [849,190][912,253] false android.view.View
+Generate key [975,190][1038,253] false android.view.View

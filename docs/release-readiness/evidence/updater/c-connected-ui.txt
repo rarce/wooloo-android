@@ -1,0 +1,20 @@
+Mac [118,368][727,421] false android.widget.TextView
+up 1h 26m [748,374][928,415] false android.widget.TextView
+CPU 81% / 16 cores [79,442][1001,508] false android.view.View
+MEM 35.5 GB / 48.0 GB [79,529][1001,595] false android.view.View
+DISK 166 GB free [79,616][1001,682] false android.view.View
+Agent quotas [118,777][859,830] false android.widget.TextView
+Off [880,781][928,827] false android.widget.TextView
+Spaces [47,904][177,957] false android.widget.TextView
+1 [193,904][210,957] false android.widget.TextView
+Active tab layout of ~ [79,1028][195,1107] false android.view.View
+~ [221,1008][245,1071] false android.widget.TextView
+Status unknown [221,1087][253,1119] false android.view.View
+unknown [264,1079][398,1127] false android.widget.TextView
+1 tab, 1 pane [430,1079][617,1127] false android.widget.TextView
+Actions for ~ [933,1036][996,1099] false android.view.View
+Back [43,190][106,253] false android.view.View
+Disposable Local Update [148,163][757,232] false android.widget.TextView
+Session herdroid-release-fixture, herdr 0.9.5 [148,232][806,278] false android.widget.TextView
+New space [849,190][912,253] false android.view.View
+More [975,190][1038,253] false android.view.View

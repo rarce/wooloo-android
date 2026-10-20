@@ -22,6 +22,8 @@ jobs:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
+      - name: Validate release metadata
+        run: python3 -m unittest discover -s scripts -p 'test_*.py' -v
       - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
         with:
           distribution: temurin
@@ -46,3 +48,56 @@ jobs:
             app/build/test-results/
             app/build/reports/lint-results-debug.*
           retention-days: 7
+
+  device-tests:
+    name: Android 36 instrumentation
+    runs-on: ubuntu-22.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@0b6dd653ba04f4f93bf581ec31e66cbd7dcb644d # v4
+        with:
+          cache-read-only: ${{ github.event_name == 'pull_request' }}
+      - name: Install emulator and SDK
+        run: |
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-36" "build-tools;36.0.0" "platform-tools" "emulator" "system-images;android-36;google_apis;x86_64"
+          echo no | "$ANDROID_HOME/cmdline-tools/latest/bin/avdmanager" create avd --name ci --package "system-images;android-36;google_apis;x86_64" --force
+          sudo chmod a+rw /dev/kvm
+      - name: Run debug UI and minified crypto tests
+        env:
+          ANDROID_SERIAL: emulator-5554
+        run: |
+          set -euo pipefail
+          "$ANDROID_HOME/emulator/emulator" -avd ci -port 5554 -no-window -no-audio -no-boot-anim -no-snapshot -gpu swiftshader_indirect > emulator.log 2>&1 &
+          emulator_pid=$!
+          trap 'kill "$emulator_pid" || true' EXIT
+          adb="$ANDROID_HOME/platform-tools/adb"
+          timeout 240 "$adb" wait-for-device
+          booted=false
+          for attempt in $(seq 1 120); do
+            if [ "$("$adb" shell getprop sys.boot_completed | tr -d '\r')" = 1 ]; then
+              booted=true
+              break
+            fi
+            sleep 2
+          done
+          [ "$booted" = true ] || { echo "Emulator did not finish booting"; exit 1; }
+          "$adb" shell input keyevent 82
+          ./gradlew connectedDebugAndroidTest --console=plain
+          ./gradlew connectedReleaseAndroidTest -PreleaseSmoke --console=plain
+      - name: Preserve device test reports
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: device-test-reports
+          path: |
+            app/build/reports/androidTests/
+            app/build/outputs/androidTest-results/
+            emulator.log
+          retention-days: 14

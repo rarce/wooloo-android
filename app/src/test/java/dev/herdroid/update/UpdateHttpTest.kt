@@ -24,10 +24,10 @@ class UpdateHttpTest {
     private fun release(server: MockWebServer, sha256: String = apkSha, size: Long = apk.size.toLong()) =
         UpdateRelease(2, "0.0.2", server.url("/app.apk").toString(), sha256, size)
 
-    @Test fun missingFeedMeansNothingIsPublished(): Unit = runBlocking {
+    @Test fun missingFeedIsAnError(): Unit = runBlocking {
         MockWebServer().use { server ->
             server.enqueue(MockResponse().setResponseCode(404))
-            assertNull(UpdateHttp().fetchFeed(server.url("/update.json").toString()))
+            expectIOException("Update check failed (HTTP 404)") { UpdateHttp().fetchFeed(server.url("/update.json").toString()) }
         }
     }
 

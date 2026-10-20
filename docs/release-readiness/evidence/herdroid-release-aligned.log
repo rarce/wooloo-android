@@ -1,0 +1,160 @@
+> Task :app:buildKotlinToolingMetadata
+> Task :app:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :app:preBuild UP-TO-DATE
+> Task :app:preReleaseBuild UP-TO-DATE
+> Task :app:generateReleaseBuildConfig
+> Task :app:generateReleaseResValues
+> Task :app:mapReleaseSourceSetPaths
+> Task :app:generateReleaseResources
+> Task :app:checkReleaseAarMetadata
+> Task :app:packageReleaseResources
+> Task :app:createReleaseCompatibleScreenManifests
+> Task :app:extractDeepLinksRelease
+> Task :app:parseReleaseLocalResources
+> Task :app:processReleaseMainManifest
+> Task :app:processReleaseManifest
+> Task :app:preReleaseAndroidTestBuild SKIPPED
+> Task :app:javaPreCompileRelease
+> Task :app:processReleaseAndroidTestManifest
+> Task :app:generateReleaseAndroidTestBuildConfig
+> Task :app:checkReleaseAndroidTestAarMetadata
+> Task :app:generateReleaseAndroidTestResValues
+> Task :app:mergeReleaseResources
+> Task :app:mapReleaseAndroidTestSourceSetPaths
+> Task :app:generateReleaseAndroidTestResources
+> Task :app:javaPreCompileReleaseAndroidTest
+> Task :app:mergeReleaseAndroidTestResources
+> Task :app:checkReleaseDuplicateClasses
+> Task :app:extractProguardFiles
+> Task :app:mergeReleaseStartupProfile
+> Task :app:mergeReleaseShaders
+> Task :app:compileReleaseShaders NO-SOURCE
+> Task :app:processReleaseManifestForPackage
+> Task :app:mergeReleaseArtProfile
+> Task :app:generateReleaseAssets UP-TO-DATE
+> Task :app:mergeReleaseAssets
+> Task :app:compressReleaseAssets
+> Task :app:extractReleaseVersionControlInfo
+> Task :app:processReleaseAndroidTestResources
+> Task :app:processReleaseResources
+> Task :app:collectReleaseDependencies
+> Task :app:sdkReleaseDependencyData
+> Task :app:mergeReleaseJniLibFolders
+> Task :app:validateSigningRelease
+> Task :app:writeReleaseAppMetadata
+> Task :app:writeReleaseSigningConfigVersions
+> Task :app:mergeReleaseAndroidTestShaders
+> Task :app:compileReleaseAndroidTestShaders NO-SOURCE
+> Task :app:generateReleaseAndroidTestAssets UP-TO-DATE
+> Task :app:mergeReleaseAndroidTestAssets
+> Task :app:compressReleaseAndroidTestAssets
+> Task :app:mergeReleaseAndroidTestJniLibFolders
+> Task :app:checkReleaseAndroidTestDuplicateClasses
+> Task :app:validateSigningReleaseAndroidTest
+> Task :app:writeReleaseAndroidTestSigningConfigVersions
+> Task :app:mergeReleaseNativeLibs
+> Task :app:mergeReleaseAndroidTestNativeLibs NO-SOURCE
+> Task :app:stripReleaseAndroidTestDebugSymbols NO-SOURCE
+
+> Task :app:stripReleaseDebugSymbols
+Unable to strip the following libraries, packaging them as they are: libandroidx.graphics.path.so, libbarhopper_v3.so, libimage_processing_util_jni.so, libsurface_util_jni.so. Run with --info option to learn more.
+
+> Task :app:compileReleaseKotlin
+w: file:///Users/roberto/devel/herdroid/.devflow/worktrees/test-release-readiness/app/src/main/java/dev/herdroid/ui/components/Composer.kt:297:47 'fun ContainerBox(enabled: Boolean, isError: Boolean, interactionSource: InteractionSource, colors: TextFieldColors = ..., shape: Shape = ..., focusedBorderThickness: Dp = ..., unfocusedBorderThickness: Dp = ...): Unit' is deprecated. Renamed to OutlinedTextFieldDefaults.Container.
+w: file:///Users/roberto/devel/herdroid/.devflow/worktrees/test-release-readiness/app/src/main/java/dev/herdroid/ui/hosts/HostEditScreen.kt:630:21 'val LocalClipboardManager: ProvidableCompositionLocal<ClipboardManager>' is deprecated. Use LocalClipboard instead which supports suspend functions.
+w: file:///Users/roberto/devel/herdroid/.devflow/worktrees/test-release-readiness/app/src/main/java/dev/herdroid/ui/terminal/TerminalScreen.kt:179:21 'val LocalClipboardManager: ProvidableCompositionLocal<ClipboardManager>' is deprecated. Use LocalClipboard instead which supports suspend functions.
+
+> Task :app:compileReleaseJavaWithJavac
+> Task :app:mergeReleaseGeneratedProguardFiles
+> Task :app:processReleaseJavaRes
+> Task :app:bundleReleaseClassesToCompileJar
+> Task :app:generateReleaseLintVitalReportModel
+> Task :app:compileReleaseAndroidTestKotlin
+> Task :app:expandReleaseArtProfileWildcards
+> Task :app:compileReleaseAndroidTestJavaWithJavac
+> Task :app:processReleaseAndroidTestJavaRes
+> Task :app:mergeReleaseAndroidTestJavaResource
+> Task :app:mergeReleaseJavaResource
+> Task :app:lintVitalAnalyzeRelease
+> Task :app:lintVitalReportRelease
+> Task :app:lintVitalRelease
+> Task :app:minifyReleaseWithR8
+> Task :app:convertShrunkResourcesToBinaryRelease
+> Task :app:optimizeReleaseResources
+> Task :app:compileReleaseArtProfile
+> Task :app:packageRelease
+> Task :app:createReleaseApkListingFileRedirect
+> Task :app:minifyReleaseAndroidTestWithR8
+> Task :app:packageReleaseAndroidTest
+> Task :app:createReleaseAndroidTestApkListingFileRedirect
+
+> Task :app:connectedReleaseAndroidTest
+Starting 11 tests on herdroid_release_readiness(AVD) - 16
+
+dev.herdroid.ui.KeyboardNavigationTest > keyboardOpensForDataInputAndClosesWhenReturningToMachines[herdroid_release_readiness(AVD) - 16] [31mFAILED [0m
+	java.lang.NoClassDefFoundError: Failed resolution of: Lkotlinx/coroutines/JobKt;
+	at androidx.compose.ui.test.IdlingResourceRegistry.<init>(IdlingResourceRegistry.jvm.kt:43)
+
+dev.herdroid.ui.SessionListsTest > darkListsRemainCompactAtDefaultFont[herdroid_release_readiness(AVD) - 16] [31mFAILED [0m
+	java.lang.NoClassDefFoundError: Failed resolution of: Lkotlinx/coroutines/JobKt;
+	at androidx.compose.ui.test.IdlingResourceRegistry.<init>(IdlingResourceRegistry.jvm.kt:43)
+
+dev.herdroid.ui.SessionListsTest > lightListsPreserveServerStatesOrderAndCompactAgentRows[herdroid_release_readiness(AVD) - 16] [31mFAILED [0m
+	java.lang.NoClassDefFoundError: Failed resolution of: Lkotlinx/coroutines/JobKt;
+	at androidx.compose.ui.test.IdlingResourceRegistry.<init>(IdlingResourceRegistry.jvm.kt:43)
+
+dev.herdroid.ui.SessionListsTest > darkListsKeepLabelsAndReplyActionsUsableAtLargeFont[herdroid_release_readiness(AVD) - 16] [31mFAILED [0m
+	java.lang.NoClassDefFoundError: Failed resolution of: Lkotlinx/coroutines/JobKt;
+	at androidx.compose.ui.test.IdlingResourceRegistry.<init>(IdlingResourceRegistry.jvm.kt:43)
+
+dev.herdroid.ui.SessionListsTest > lightListsKeepLabelsAndReplyActionsUsableAtLargeFont[herdroid_release_readiness(AVD) - 16] [31mFAILED [0m
+	java.lang.NoClassDefFoundError: Failed resolution of: Lkotlinx/coroutines/JobKt;
+	at androidx.compose.ui.test.IdlingResourceRegistry.<init>(IdlingResourceRegistry.jvm.kt:43)
+
+dev.herdroid.ui.SessionListsTest > emptyMachineActionsRemainReachableWithLargeTextAndShortViewport[herdroid_release_readiness(AVD) - 16] [31mFAILED [0m
+	java.lang.NoClassDefFoundError: Failed resolution of: Lkotlinx/coroutines/JobKt;
+	at androidx.compose.ui.test.IdlingResourceRegistry.<init>(IdlingResourceRegistry.jvm.kt:43)
+
+dev.herdroid.ui.hosts.ImportKeyRetryTest > failureKeepsInputsAndOnlyOneImportCanRunAtOnce[herdroid_release_readiness(AVD) - 16] [31mFAILED [0m
+	java.lang.NoClassDefFoundError: Failed resolution of: Lkotlinx/coroutines/JobKt;
+	at androidx.compose.ui.test.IdlingResourceRegistry.<init>(IdlingResourceRegistry.jvm.kt:43)
+
+dev.herdroid.ui.hosts.RemoteAccessSetupTest > pastedDirectSshLinkPreservesTheSelectedRemoteDestination[herdroid_release_readiness(AVD) - 16] [31mFAILED [0m
+	java.lang.NoClassDefFoundError: Failed resolution of: Lkotlinx/coroutines/JobKt;
+	at androidx.compose.ui.test.IdlingResourceRegistry.<init>(IdlingResourceRegistry.jvm.kt:43)
+
+dev.herdroid.ui.hosts.RemoteAccessSetupTest > copiesThePublicKeyWithoutAShellCommand[herdroid_release_readiness(AVD) - 16] [31mFAILED [0m
+	java.lang.NoClassDefFoundError: Failed resolution of: Lkotlinx/coroutines/JobKt;
+	at androidx.compose.ui.test.IdlingResourceRegistry.<init>(IdlingResourceRegistry.jvm.kt:43)
+
+dev.herdroid.ui.terminal.PaneMetricsFunctionalTest > changingAgentShowsOnlyItsRemainingQuotaBesideStatus[herdroid_release_readiness(AVD) - 16] [31mFAILED [0m
+	java.lang.NoClassDefFoundError: Failed resolution of: Lkotlinx/coroutines/JobKt;
+	at androidx.compose.ui.test.IdlingResourceRegistry.<init>(IdlingResourceRegistry.jvm.kt:43)
+Tests on herdroid_release_readiness(AVD) - 16 failed: There was 10 failure(s).
+
+Finished 11 tests on herdroid_release_readiness(AVD) - 16
+
+> Task :app:connectedReleaseAndroidTest FAILED
+
+[Incubating] Problems report is available at: file:///Users/roberto/devel/herdroid/.devflow/worktrees/test-release-readiness/build/reports/problems/problems-report.html
+
+FAILURE: Build failed with an exception.
+
+* What went wrong:
+Execution failed for task ':app:connectedReleaseAndroidTest'.
+> There were failing tests. See the report at: file:///Users/roberto/devel/herdroid/.devflow/worktrees/test-release-readiness/app/build/reports/androidTests/connected/release/index.html
+
+* Try:
+> Run with --stacktrace option to get the stack trace.
+> Run with --info or --debug option to get more log output.
+> Run with --scan to get full insights.
+> Get more help at https://help.gradle.org.
+
+Deprecated Gradle features were used in this build, making it incompatible with Gradle 9.0.
+
+You can use '--warning-mode all' to show the individual deprecation warnings and determine if they come from your own scripts or plugins.
+
+For more on this, please refer to https://docs.gradle.org/8.14.3/userguide/command_line_interface.html#sec:command_line_warnings in the Gradle documentation.
+
+BUILD FAILED in 2m 6s
+73 actionable tasks: 73 executed

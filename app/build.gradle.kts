@@ -11,9 +11,21 @@ android {
     // `-PappVersion=X.Y.Z` (the release tag) marks a published build; the version code grows with it.
     val publishedVersion = providers.gradleProperty("appVersion").orNull
     val appVersion = publishedVersion ?: "0.1.0"
-    val (major, minor, patch) = Regex("""(\d+)\.(\d+)\.(\d+)""").matchEntire(appVersion)?.destructured
+    val (major, minor, patch) = Regex("""(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)""").matchEntire(appVersion)?.destructured
         ?: error("appVersion must look like 1.2.3, got $appVersion")
+    val majorNumber = major.toLongOrNull() ?: error("appVersion major exceeds Long")
+    val minorNumber = minor.toLongOrNull() ?: error("appVersion minor exceeds Long")
+    val patchNumber = patch.toLongOrNull() ?: error("appVersion patch exceeds Long")
+    require(majorNumber <= Int.MAX_VALUE / 1_000_000L && minorNumber <= 999 && patchNumber <= 999) {
+        "appVersion exceeds versionCode range or minor/patch 999"
+    }
+    val releaseVersionCode = majorNumber * 1_000_000L + minorNumber * 1_000L + patchNumber
+    require(releaseVersionCode in 1..Int.MAX_VALUE.toLong()) { "versionCode must be a positive Int" }
     testBuildType = if (releaseSmoke) "release" else "debug"
+    sourceSets.getByName("androidTest").java.setSrcDirs(
+        if (releaseSmoke) listOf("src/releaseSmokeTest/java")
+        else listOf("src/androidTest/java", "src/releaseSmokeTest/java"),
+    )
     // Preserve the installed app's identity across the wooloo mobile rename.
     namespace = "dev.herdroid"
     compileSdk = 36
@@ -22,7 +34,7 @@ android {
         applicationId = "dev.herdroid"
         minSdk = 26
         targetSdk = 36
-        versionCode = major.toInt() * 1_000_000 + minor.toInt() * 1_000 + patch.toInt()
+        versionCode = releaseVersionCode.toInt()
         versionName = appVersion
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables { useSupportLibrary = true }
@@ -100,6 +112,9 @@ kotlin {
 
 dependencies {
     implementation(libs.androidx.core.ktx)
+    implementation(libs.androidx.exifinterface)
+    // Match AndroidX Test's target dependency; AGP shares these classes across both APKs.
+    implementation(libs.androidx.concurrent.futures.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.lifecycle.viewmodel.compose)

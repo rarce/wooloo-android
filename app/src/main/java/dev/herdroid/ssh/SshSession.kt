@@ -234,6 +234,12 @@ class ExecChannel(
     override val isOpen: Boolean get() = command.isOpen
 
     override fun close() {
+        // Observe bridges do not read stdin. Stop this exec's process before waiting for
+        // SSH close acknowledgement, without terminating the shared herdr server.
+        if (command.isOpen) runCatching { command.signal(net.schmizz.sshj.connection.channel.direct.Signal.TERM) }
+        // Signal EOF first so a remote bridge waiting on stdin can exit and acknowledge close.
+        // This runs inside closeBounded's IO deadline, including a stalled EOF write.
+        runCatching { command.outputStream.close() }
         // sshj SessionChannel implements both objects. Closing it twice repeats
         // its acknowledgement wait when the first close was interrupted.
         runCatching { command.close() }

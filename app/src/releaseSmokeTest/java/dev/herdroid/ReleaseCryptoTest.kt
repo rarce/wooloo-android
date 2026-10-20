@@ -8,7 +8,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Assert.assertFalse
 import org.junit.Test
 
-/** Runs against the minified APK with -PreleaseSmoke; never reads saved identities. */
+/** Shared by debug device tests and the isolated minified crypto smoke suite; never reads saved identities. */
 class ReleaseCryptoTest {
     @Test
     fun generatedAndImportedEd25519KeysSignAndVerify() {

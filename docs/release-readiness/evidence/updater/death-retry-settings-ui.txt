@@ -1,0 +1,31 @@
+Terminal text size [42,337][369,398] false android.widget.TextView
+12.5 sp — pinch the terminal to adjust too [42,398][753,454] false android.widget.TextView
+┌─ wooloo ─┐ agents: 3 ✓ [42,580][589,636] false android.widget.TextView
+Keep screen on in terminal [42,703][543,764] false android.widget.TextView
+Handy while watching an agent work [42,764][665,820] false android.widget.TextView
+Distinct status symbols [42,888][473,949] false android.widget.TextView
+Use a different shape for each state, alongside its color [42,949][859,1061] false android.widget.TextView
+Status idle [42,1061][89,1108] false android.view.View
+idle [89,1064][141,1106] false android.widget.TextView
+Status working [157,1061][204,1108] false android.view.View
+working [204,1064][313,1106] false android.widget.TextView
+Status blocked [329,1061][376,1108] false android.view.View
+blocked [376,1064][486,1106] false android.widget.TextView
+Status done [502,1061][549,1108] false android.view.View
+done [549,1064][618,1106] false android.widget.TextView
+Status unknown [634,1061][681,1108] false android.view.View
+unknown [681,1064][804,1106] false android.widget.TextView
+Key haptics [42,1193][256,1254] false android.widget.TextView
+Agent quotas [42,1339][288,1400] false android.widget.TextView
+Enable quotas on each machine's spaces screen. Permission applies separately to each remote sign-in. [42,1400][1038,1512] false android.widget.TextView
+Notifications [42,1579][277,1640] false android.widget.TextView
+Choose how agent alerts reach you [42,1640][641,1696] false android.widget.TextView
+Check for updates automatically [42,1768][638,1829] false android.widget.TextView
+Once a day, from GitHub releases [42,1829][614,1885] false android.widget.TextView
+Retry update [42,1957][281,2018] false android.widget.TextView
+Update cancelled [42,2018][340,2074] false android.widget.TextView
+About [42,2142][153,2203] false android.widget.TextView
+wooloo mobile 0.91.1
+Watch your agents, reply to them and open their terminals over SSH. [42,2203][1038,2361] false android.widget.TextView
+Back [43,190][106,253] false android.view.View
+Settings [148,186][352,255] false android.widget.TextView

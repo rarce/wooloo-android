@@ -38,7 +38,11 @@ fun interface QuotaHttp {
 
     companion object {
         private val client by lazy {
-            OkHttpClient.Builder().callTimeout(20, TimeUnit.SECONDS).build()
+            OkHttpClient.Builder()
+                .followRedirects(false)
+                .followSslRedirects(false)
+                .callTimeout(20, TimeUnit.SECONDS)
+                .build()
         }
 
         val Default = QuotaHttp { url, headers ->

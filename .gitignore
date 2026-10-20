@@ -10,3 +10,6 @@ build/
 .kotlin/
 *.apk
 *.aab
+
+# Python release tooling
+__pycache__/

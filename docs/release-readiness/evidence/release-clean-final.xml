@@ -1,0 +1,119 @@
+<?xml version='1.0' encoding='UTF-8' ?>
+<testsuite name="dev.herdroid.ReleaseCryptoTest" tests="11" failures="10" errors="0" skipped="0" time="0.434" timestamp="2026-10-17T19:07:47" hostname="localhost">
+  <properties>
+    <property name="device" value="herdroid_release_readiness(AVD) - 16" />
+    <property name="flavor" value="" />
+    <property name="project" value=":app" />
+  </properties>
+  <testcase name="generatedAndImportedEd25519KeysSignAndVerify" classname="dev.herdroid.ReleaseCryptoTest" time="0.06" />
+  <testcase name="keyboardOpensForDataInputAndClosesWhenReturningToMachines" classname="dev.herdroid.ui.KeyboardNavigationTest" time="0.003">
+    <failure>java.lang.NoClassDefFoundError: Failed resolution of: Landroidx/compose/ui/platform/InfiniteAnimationPolicy;
+at androidx.compose.ui.test.junit4.AndroidComposeTestRule.&lt;init&gt;(AndroidComposeTestRule.android.kt:405)
+at androidx.compose.ui.test.junit4.AndroidComposeTestRule.&lt;init&gt;(AndroidComposeTestRule.android.kt:245)
+at androidx.compose.ui.test.junit4.AndroidComposeTestRule_androidKt.createAndroidComposeRule(AndroidComposeTestRule.android.kt:124)
+at dev.herdroid.ui.KeyboardNavigationTest.&lt;init&gt;(KeyboardNavigationTest.kt:44)
+... 32 trimmed
+Caused by: java.lang.ClassNotFoundException: androidx.compose.ui.platform.InfiniteAnimationPolicy
+... 37 more
+</failure>
+  </testcase>
+  <testcase name="darkListsRemainCompactAtDefaultFont" classname="dev.herdroid.ui.SessionListsTest" time="0.001">
+    <failure>java.lang.NoClassDefFoundError: Failed resolution of: Landroidx/compose/ui/platform/InfiniteAnimationPolicy;
+at androidx.compose.ui.test.junit4.AndroidComposeTestRule.&lt;init&gt;(AndroidComposeTestRule.android.kt:405)
+at androidx.compose.ui.test.junit4.AndroidComposeTestRule.&lt;init&gt;(AndroidComposeTestRule.android.kt:245)
+at androidx.compose.ui.test.junit4.AndroidComposeTestRule_androidKt.createAndroidComposeRule(AndroidComposeTestRule.android.kt:124)
+at dev.herdroid.ui.KeyboardNavigationTest.&lt;init&gt;(KeyboardNavigationTest.kt:44)
+... 32 trimmed
+Caused by: java.lang.ClassNotFoundException: androidx.compose.ui.platform.InfiniteAnimationPolicy
+... 37 more
+</failure>
+  </testcase>
+  <testcase name="lightListsPreserveServerStatesOrderAndCompactAgentRows" classname="dev.herdroid.ui.SessionListsTest" time="0.002">
+    <failure>java.lang.NoClassDefFoundError: Failed resolution of: Landroidx/compose/ui/platform/InfiniteAnimationPolicy;
+at androidx.compose.ui.test.junit4.AndroidComposeTestRule.&lt;init&gt;(AndroidComposeTestRule.android.kt:405)
+at androidx.compose.ui.test.junit4.AndroidComposeTestRule.&lt;init&gt;(AndroidComposeTestRule.android.kt:245)
+at androidx.compose.ui.test.junit4.AndroidComposeTestRule_androidKt.createAndroidComposeRule(AndroidComposeTestRule.android.kt:124)
+at dev.herdroid.ui.KeyboardNavigationTest.&lt;init&gt;(KeyboardNavigationTest.kt:44)
+... 32 trimmed
+Caused by: java.lang.ClassNotFoundException: androidx.compose.ui.platform.InfiniteAnimationPolicy
+... 37 more
+</failure>
+  </testcase>
+  <testcase name="darkListsKeepLabelsAndReplyActionsUsableAtLargeFont" classname="dev.herdroid.ui.SessionListsTest" time="0.001">
+    <failure>java.lang.NoClassDefFoundError: Failed resolution of: Landroidx/compose/ui/platform/InfiniteAnimationPolicy;
+at androidx.compose.ui.test.junit4.AndroidComposeTestRule.&lt;init&gt;(AndroidComposeTestRule.android.kt:405)
+at androidx.compose.ui.test.junit4.AndroidComposeTestRule.&lt;init&gt;(AndroidComposeTestRule.android.kt:245)
+at androidx.compose.ui.test.junit4.AndroidComposeTestRule_androidKt.createAndroidComposeRule(AndroidComposeTestRule.android.kt:124)
+at dev.herdroid.ui.KeyboardNavigationTest.&lt;init&gt;(KeyboardNavigationTest.kt:44)
+... 32 trimmed
+Caused by: java.lang.ClassNotFoundException: androidx.compose.ui.platform.InfiniteAnimationPolicy
+... 37 more
+</failure>
+  </testcase>
+  <testcase name="lightListsKeepLabelsAndReplyActionsUsableAtLargeFont" classname="dev.herdroid.ui.SessionListsTest" time="0.001">
+    <failure>java.lang.NoClassDefFoundError: Failed resolution of: Landroidx/compose/ui/platform/InfiniteAnimationPolicy;
+at androidx.compose.ui.test.junit4.AndroidComposeTestRule.&lt;init&gt;(AndroidComposeTestRule.android.kt:405)
+at androidx.compose.ui.test.junit4.AndroidComposeTestRule.&lt;init&gt;(AndroidComposeTestRule.android.kt:245)
+at androidx.compose.ui.test.junit4.AndroidComposeTestRule_androidKt.createAndroidComposeRule(AndroidComposeTestRule.android.kt:124)
+at dev.herdroid.ui.KeyboardNavigationTest.&lt;init&gt;(KeyboardNavigationTest.kt:44)
+... 32 trimmed
+Caused by: java.lang.ClassNotFoundException: androidx.compose.ui.platform.InfiniteAnimationPolicy
+... 37 more
+</failure>
+  </testcase>
+  <testcase name="emptyMachineActionsRemainReachableWithLargeTextAndShortViewport" classname="dev.herdroid.ui.SessionListsTest" time="0.002">
+    <failure>java.lang.NoClassDefFoundError: Failed resolution of: Landroidx/compose/ui/platform/InfiniteAnimationPolicy;
+at androidx.compose.ui.test.junit4.AndroidComposeTestRule.&lt;init&gt;(AndroidComposeTestRule.android.kt:405)
+at androidx.compose.ui.test.junit4.AndroidComposeTestRule.&lt;init&gt;(AndroidComposeTestRule.android.kt:245)
+at androidx.compose.ui.test.junit4.AndroidComposeTestRule_androidKt.createAndroidComposeRule(AndroidComposeTestRule.android.kt:124)
+at dev.herdroid.ui.KeyboardNavigationTest.&lt;init&gt;(KeyboardNavigationTest.kt:44)
+... 32 trimmed
+Caused by: java.lang.ClassNotFoundException: androidx.compose.ui.platform.InfiniteAnimationPolicy
+... 37 more
+</failure>
+  </testcase>
+  <testcase name="failureKeepsInputsAndOnlyOneImportCanRunAtOnce" classname="dev.herdroid.ui.hosts.ImportKeyRetryTest" time="0.001">
+    <failure>java.lang.NoClassDefFoundError: Failed resolution of: Landroidx/compose/ui/platform/InfiniteAnimationPolicy;
+at androidx.compose.ui.test.junit4.AndroidComposeTestRule.&lt;init&gt;(AndroidComposeTestRule.android.kt:405)
+at androidx.compose.ui.test.junit4.AndroidComposeTestRule.&lt;init&gt;(AndroidComposeTestRule.android.kt:245)
+at androidx.compose.ui.test.junit4.AndroidComposeTestRule_androidKt.createAndroidComposeRule(AndroidComposeTestRule.android.kt:124)
+at dev.herdroid.ui.KeyboardNavigationTest.&lt;init&gt;(KeyboardNavigationTest.kt:44)
+... 32 trimmed
+Caused by: java.lang.ClassNotFoundException: androidx.compose.ui.platform.InfiniteAnimationPolicy
+... 37 more
+</failure>
+  </testcase>
+  <testcase name="pastedDirectSshLinkPreservesTheSelectedRemoteDestination" classname="dev.herdroid.ui.hosts.RemoteAccessSetupTest" time="0.001">
+    <failure>java.lang.NoClassDefFoundError: Failed resolution of: Landroidx/compose/ui/platform/InfiniteAnimationPolicy;
+at androidx.compose.ui.test.junit4.AndroidComposeTestRule.&lt;init&gt;(AndroidComposeTestRule.android.kt:405)
+at androidx.compose.ui.test.junit4.AndroidComposeTestRule.&lt;init&gt;(AndroidComposeTestRule.android.kt:245)
+at androidx.compose.ui.test.junit4.AndroidComposeTestRule_androidKt.createAndroidComposeRule(AndroidComposeTestRule.android.kt:124)
+at dev.herdroid.ui.KeyboardNavigationTest.&lt;init&gt;(KeyboardNavigationTest.kt:44)
+... 32 trimmed
+Caused by: java.lang.ClassNotFoundException: androidx.compose.ui.platform.InfiniteAnimationPolicy
+... 37 more
+</failure>
+  </testcase>
+  <testcase name="copiesThePublicKeyWithoutAShellCommand" classname="dev.herdroid.ui.hosts.RemoteAccessSetupTest" time="0.001">
+    <failure>java.lang.NoClassDefFoundError: Failed resolution of: Landroidx/compose/ui/platform/InfiniteAnimationPolicy;
+at androidx.compose.ui.test.junit4.AndroidComposeTestRule.&lt;init&gt;(AndroidComposeTestRule.android.kt:405)
+at androidx.compose.ui.test.junit4.AndroidComposeTestRule.&lt;init&gt;(AndroidComposeTestRule.android.kt:245)
+at androidx.compose.ui.test.junit4.AndroidComposeTestRule_androidKt.createAndroidComposeRule(AndroidComposeTestRule.android.kt:124)
+at dev.herdroid.ui.KeyboardNavigationTest.&lt;init&gt;(KeyboardNavigationTest.kt:44)
+... 32 trimmed
+Caused by: java.lang.ClassNotFoundException: androidx.compose.ui.platform.InfiniteAnimationPolicy
+... 37 more
+</failure>
+  </testcase>
+  <testcase name="changingAgentShowsOnlyItsRemainingQuotaBesideStatus" classname="dev.herdroid.ui.terminal.PaneMetricsFunctionalTest" time="0.001">
+    <failure>java.lang.NoClassDefFoundError: Failed resolution of: Landroidx/compose/ui/platform/InfiniteAnimationPolicy;
+at androidx.compose.ui.test.junit4.AndroidComposeTestRule.&lt;init&gt;(AndroidComposeTestRule.android.kt:405)
+at androidx.compose.ui.test.junit4.AndroidComposeTestRule.&lt;init&gt;(AndroidComposeTestRule.android.kt:245)
+at androidx.compose.ui.test.junit4.AndroidComposeTestRule_androidKt.createAndroidComposeRule(AndroidComposeTestRule.android.kt:124)
+at dev.herdroid.ui.KeyboardNavigationTest.&lt;init&gt;(KeyboardNavigationTest.kt:44)
+... 32 trimmed
+Caused by: java.lang.ClassNotFoundException: androidx.compose.ui.platform.InfiniteAnimationPolicy
+... 37 more
+</failure>
+  </testcase>
+</testsuite>

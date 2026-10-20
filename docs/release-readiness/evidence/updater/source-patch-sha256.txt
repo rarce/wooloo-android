@@ -1,0 +1,1 @@
+39f295376ac9f6b3ad260ce2a68a39c7b70fa11c33117607e7f988e70cc36d48  /private/tmp/herdroid-updater-local-overlay.patch

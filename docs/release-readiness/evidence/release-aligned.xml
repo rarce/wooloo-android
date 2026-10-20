@@ -1,0 +1,163 @@
+<?xml version='1.0' encoding='UTF-8' ?>
+<testsuite name="dev.herdroid.ReleaseCryptoTest" tests="11" failures="10" errors="0" skipped="0" time="0.414" timestamp="2026-10-17T18:50:31" hostname="localhost">
+  <properties>
+    <property name="device" value="herdroid_release_readiness(AVD) - 16" />
+    <property name="flavor" value="" />
+    <property name="project" value=":app" />
+  </properties>
+  <testcase name="generatedAndImportedEd25519KeysSignAndVerify" classname="dev.herdroid.ReleaseCryptoTest" time="0.037" />
+  <testcase name="keyboardOpensForDataInputAndClosesWhenReturningToMachines" classname="dev.herdroid.ui.KeyboardNavigationTest" time="0.001">
+    <failure>java.lang.NoClassDefFoundError: Failed resolution of: Lkotlinx/coroutines/JobKt;
+at androidx.compose.ui.test.IdlingResourceRegistry.&lt;init&gt;(IdlingResourceRegistry.jvm.kt:43)
+at androidx.compose.ui.test.IdlingResourceRegistry.&lt;init&gt;(IdlingResourceRegistry.jvm.kt:34)
+at androidx.compose.ui.test.AndroidComposeUiTestEnvironment.&lt;init&gt;(ComposeUiTest.android.kt:247)
+at androidx.compose.ui.test.junit4.AndroidComposeTestRule$special$$inlined$AndroidComposeUiTestEnvironment$1.&lt;init&gt;(ComposeUiTest.android.kt:212)
+at androidx.compose.ui.test.junit4.AndroidComposeTestRule.&lt;init&gt;(AndroidComposeTestRule.android.kt:405)
+at androidx.compose.ui.test.junit4.AndroidComposeTestRule.&lt;init&gt;(AndroidComposeTestRule.android.kt:245)
+at androidx.compose.ui.test.junit4.AndroidComposeTestRule_androidKt.createAndroidComposeRule(AndroidComposeTestRule.android.kt:124)
+at dev.herdroid.ui.KeyboardNavigationTest.&lt;init&gt;(KeyboardNavigationTest.kt:44)
+... 32 trimmed
+Caused by: java.lang.ClassNotFoundException: kotlinx.coroutines.JobKt
+... 41 more
+</failure>
+  </testcase>
+  <testcase name="darkListsRemainCompactAtDefaultFont" classname="dev.herdroid.ui.SessionListsTest" time="0.0">
+    <failure>java.lang.NoClassDefFoundError: Failed resolution of: Lkotlinx/coroutines/JobKt;
+at androidx.compose.ui.test.IdlingResourceRegistry.&lt;init&gt;(IdlingResourceRegistry.jvm.kt:43)
+at androidx.compose.ui.test.IdlingResourceRegistry.&lt;init&gt;(IdlingResourceRegistry.jvm.kt:34)
+at androidx.compose.ui.test.AndroidComposeUiTestEnvironment.&lt;init&gt;(ComposeUiTest.android.kt:247)
+at androidx.compose.ui.test.junit4.AndroidComposeTestRule$special$$inlined$AndroidComposeUiTestEnvironment$1.&lt;init&gt;(ComposeUiTest.android.kt:212)
+at androidx.compose.ui.test.junit4.AndroidComposeTestRule.&lt;init&gt;(AndroidComposeTestRule.android.kt:405)
+at androidx.compose.ui.test.junit4.AndroidComposeTestRule.&lt;init&gt;(AndroidComposeTestRule.android.kt:245)
+at androidx.compose.ui.test.junit4.AndroidComposeTestRule_androidKt.createAndroidComposeRule(AndroidComposeTestRule.android.kt:124)
+at dev.herdroid.ui.SessionListsTest.&lt;init&gt;(SessionListsTest.kt:203)
+... 32 trimmed
+Caused by: java.lang.ClassNotFoundException: kotlinx.coroutines.JobKt
+... 41 more
+</failure>
+  </testcase>
+  <testcase name="lightListsPreserveServerStatesOrderAndCompactAgentRows" classname="dev.herdroid.ui.SessionListsTest" time="0.003">
+    <failure>java.lang.NoClassDefFoundError: Failed resolution of: Lkotlinx/coroutines/JobKt;
+at androidx.compose.ui.test.IdlingResourceRegistry.&lt;init&gt;(IdlingResourceRegistry.jvm.kt:43)
+at androidx.compose.ui.test.IdlingResourceRegistry.&lt;init&gt;(IdlingResourceRegistry.jvm.kt:34)
+at androidx.compose.ui.test.AndroidComposeUiTestEnvironment.&lt;init&gt;(ComposeUiTest.android.kt:247)
+at androidx.compose.ui.test.junit4.AndroidComposeTestRule$special$$inlined$AndroidComposeUiTestEnvironment$1.&lt;init&gt;(ComposeUiTest.android.kt:212)
+at androidx.compose.ui.test.junit4.AndroidComposeTestRule.&lt;init&gt;(AndroidComposeTestRule.android.kt:405)
+at androidx.compose.ui.test.junit4.AndroidComposeTestRule.&lt;init&gt;(AndroidComposeTestRule.android.kt:245)
+at androidx.compose.ui.test.junit4.AndroidComposeTestRule_androidKt.createAndroidComposeRule(AndroidComposeTestRule.android.kt:124)
+at dev.herdroid.ui.SessionListsTest.&lt;init&gt;(SessionListsTest.kt:203)
+... 32 trimmed
+Caused by: java.lang.ClassNotFoundException: kotlinx.coroutines.JobKt
+... 41 more
+</failure>
+  </testcase>
+  <testcase name="darkListsKeepLabelsAndReplyActionsUsableAtLargeFont" classname="dev.herdroid.ui.SessionListsTest" time="0.002">
+    <failure>java.lang.NoClassDefFoundError: Failed resolution of: Lkotlinx/coroutines/JobKt;
+at androidx.compose.ui.test.IdlingResourceRegistry.&lt;init&gt;(IdlingResourceRegistry.jvm.kt:43)
+at androidx.compose.ui.test.IdlingResourceRegistry.&lt;init&gt;(IdlingResourceRegistry.jvm.kt:34)
+at androidx.compose.ui.test.AndroidComposeUiTestEnvironment.&lt;init&gt;(ComposeUiTest.android.kt:247)
+at androidx.compose.ui.test.junit4.AndroidComposeTestRule$special$$inlined$AndroidComposeUiTestEnvironment$1.&lt;init&gt;(ComposeUiTest.android.kt:212)
+at androidx.compose.ui.test.junit4.AndroidComposeTestRule.&lt;init&gt;(AndroidComposeTestRule.android.kt:405)
+at androidx.compose.ui.test.junit4.AndroidComposeTestRule.&lt;init&gt;(AndroidComposeTestRule.android.kt:245)
+at androidx.compose.ui.test.junit4.AndroidComposeTestRule_androidKt.createAndroidComposeRule(AndroidComposeTestRule.android.kt:124)
+at dev.herdroid.ui.SessionListsTest.&lt;init&gt;(SessionListsTest.kt:203)
+... 32 trimmed
+Caused by: java.lang.ClassNotFoundException: kotlinx.coroutines.JobKt
+... 41 more
+</failure>
+  </testcase>
+  <testcase name="lightListsKeepLabelsAndReplyActionsUsableAtLargeFont" classname="dev.herdroid.ui.SessionListsTest" time="0.002">
+    <failure>java.lang.NoClassDefFoundError: Failed resolution of: Lkotlinx/coroutines/JobKt;
+at androidx.compose.ui.test.IdlingResourceRegistry.&lt;init&gt;(IdlingResourceRegistry.jvm.kt:43)
+at androidx.compose.ui.test.IdlingResourceRegistry.&lt;init&gt;(IdlingResourceRegistry.jvm.kt:34)
+at androidx.compose.ui.test.AndroidComposeUiTestEnvironment.&lt;init&gt;(ComposeUiTest.android.kt:247)
+at androidx.compose.ui.test.junit4.AndroidComposeTestRule$special$$inlined$AndroidComposeUiTestEnvironment$1.&lt;init&gt;(ComposeUiTest.android.kt:212)
+at androidx.compose.ui.test.junit4.AndroidComposeTestRule.&lt;init&gt;(AndroidComposeTestRule.android.kt:405)
+at androidx.compose.ui.test.junit4.AndroidComposeTestRule.&lt;init&gt;(AndroidComposeTestRule.android.kt:245)
+at androidx.compose.ui.test.junit4.AndroidComposeTestRule_androidKt.createAndroidComposeRule(AndroidComposeTestRule.android.kt:124)
+at dev.herdroid.ui.SessionListsTest.&lt;init&gt;(SessionListsTest.kt:203)
+... 32 trimmed
+Caused by: java.lang.ClassNotFoundException: kotlinx.coroutines.JobKt
+... 41 more
+</failure>
+  </testcase>
+  <testcase name="emptyMachineActionsRemainReachableWithLargeTextAndShortViewport" classname="dev.herdroid.ui.SessionListsTest" time="0.002">
+    <failure>java.lang.NoClassDefFoundError: Failed resolution of: Lkotlinx/coroutines/JobKt;
+at androidx.compose.ui.test.IdlingResourceRegistry.&lt;init&gt;(IdlingResourceRegistry.jvm.kt:43)
+at androidx.compose.ui.test.IdlingResourceRegistry.&lt;init&gt;(IdlingResourceRegistry.jvm.kt:34)
+at androidx.compose.ui.test.AndroidComposeUiTestEnvironment.&lt;init&gt;(ComposeUiTest.android.kt:247)
+at androidx.compose.ui.test.junit4.AndroidComposeTestRule$special$$inlined$AndroidComposeUiTestEnvironment$1.&lt;init&gt;(ComposeUiTest.android.kt:212)
+at androidx.compose.ui.test.junit4.AndroidComposeTestRule.&lt;init&gt;(AndroidComposeTestRule.android.kt:405)
+at androidx.compose.ui.test.junit4.AndroidComposeTestRule.&lt;init&gt;(AndroidComposeTestRule.android.kt:245)
+at androidx.compose.ui.test.junit4.AndroidComposeTestRule_androidKt.createAndroidComposeRule(AndroidComposeTestRule.android.kt:124)
+at dev.herdroid.ui.SessionListsTest.&lt;init&gt;(SessionListsTest.kt:203)
+... 32 trimmed
+Caused by: java.lang.ClassNotFoundException: kotlinx.coroutines.JobKt
+... 41 more
+</failure>
+  </testcase>
+  <testcase name="failureKeepsInputsAndOnlyOneImportCanRunAtOnce" classname="dev.herdroid.ui.hosts.ImportKeyRetryTest" time="0.001">
+    <failure>java.lang.NoClassDefFoundError: Failed resolution of: Lkotlinx/coroutines/JobKt;
+at androidx.compose.ui.test.IdlingResourceRegistry.&lt;init&gt;(IdlingResourceRegistry.jvm.kt:43)
+at androidx.compose.ui.test.IdlingResourceRegistry.&lt;init&gt;(IdlingResourceRegistry.jvm.kt:34)
+at androidx.compose.ui.test.AndroidComposeUiTestEnvironment.&lt;init&gt;(ComposeUiTest.android.kt:247)
+at androidx.compose.ui.test.junit4.AndroidComposeTestRule$special$$inlined$AndroidComposeUiTestEnvironment$1.&lt;init&gt;(ComposeUiTest.android.kt:212)
+at androidx.compose.ui.test.junit4.AndroidComposeTestRule.&lt;init&gt;(AndroidComposeTestRule.android.kt:405)
+at androidx.compose.ui.test.junit4.AndroidComposeTestRule.&lt;init&gt;(AndroidComposeTestRule.android.kt:245)
+at androidx.compose.ui.test.junit4.AndroidComposeTestRule_androidKt.createAndroidComposeRule(AndroidComposeTestRule.android.kt:124)
+at androidx.compose.ui.test.junit4.AndroidComposeTestRule_androidKt.createComposeRule(AndroidComposeTestRule.android.kt:405)
+at dev.herdroid.ui.hosts.ImportKeyRetryTest.&lt;init&gt;(ImportKeyRetryTest.kt:15)
+... 32 trimmed
+Caused by: java.lang.ClassNotFoundException: kotlinx.coroutines.JobKt
+... 42 more
+</failure>
+  </testcase>
+  <testcase name="pastedDirectSshLinkPreservesTheSelectedRemoteDestination" classname="dev.herdroid.ui.hosts.RemoteAccessSetupTest" time="0.001">
+    <failure>java.lang.NoClassDefFoundError: Failed resolution of: Lkotlinx/coroutines/JobKt;
+at androidx.compose.ui.test.IdlingResourceRegistry.&lt;init&gt;(IdlingResourceRegistry.jvm.kt:43)
+at androidx.compose.ui.test.IdlingResourceRegistry.&lt;init&gt;(IdlingResourceRegistry.jvm.kt:34)
+at androidx.compose.ui.test.AndroidComposeUiTestEnvironment.&lt;init&gt;(ComposeUiTest.android.kt:247)
+at androidx.compose.ui.test.junit4.AndroidComposeTestRule$special$$inlined$AndroidComposeUiTestEnvironment$1.&lt;init&gt;(ComposeUiTest.android.kt:212)
+at androidx.compose.ui.test.junit4.AndroidComposeTestRule.&lt;init&gt;(AndroidComposeTestRule.android.kt:405)
+at androidx.compose.ui.test.junit4.AndroidComposeTestRule.&lt;init&gt;(AndroidComposeTestRule.android.kt:245)
+at androidx.compose.ui.test.junit4.AndroidComposeTestRule_androidKt.createAndroidComposeRule(AndroidComposeTestRule.android.kt:124)
+at androidx.compose.ui.test.junit4.AndroidComposeTestRule_androidKt.createComposeRule(AndroidComposeTestRule.android.kt:405)
+at dev.herdroid.ui.hosts.RemoteAccessSetupTest.&lt;init&gt;(RemoteAccessSetupTest.kt:22)
+... 32 trimmed
+Caused by: java.lang.ClassNotFoundException: kotlinx.coroutines.JobKt
+... 42 more
+</failure>
+  </testcase>
+  <testcase name="copiesThePublicKeyWithoutAShellCommand" classname="dev.herdroid.ui.hosts.RemoteAccessSetupTest" time="0.001">
+    <failure>java.lang.NoClassDefFoundError: Failed resolution of: Lkotlinx/coroutines/JobKt;
+at androidx.compose.ui.test.IdlingResourceRegistry.&lt;init&gt;(IdlingResourceRegistry.jvm.kt:43)
+at androidx.compose.ui.test.IdlingResourceRegistry.&lt;init&gt;(IdlingResourceRegistry.jvm.kt:34)
+at androidx.compose.ui.test.AndroidComposeUiTestEnvironment.&lt;init&gt;(ComposeUiTest.android.kt:247)
+at androidx.compose.ui.test.junit4.AndroidComposeTestRule$special$$inlined$AndroidComposeUiTestEnvironment$1.&lt;init&gt;(ComposeUiTest.android.kt:212)
+at androidx.compose.ui.test.junit4.AndroidComposeTestRule.&lt;init&gt;(AndroidComposeTestRule.android.kt:405)
+at androidx.compose.ui.test.junit4.AndroidComposeTestRule.&lt;init&gt;(AndroidComposeTestRule.android.kt:245)
+at androidx.compose.ui.test.junit4.AndroidComposeTestRule_androidKt.createAndroidComposeRule(AndroidComposeTestRule.android.kt:124)
+at androidx.compose.ui.test.junit4.AndroidComposeTestRule_androidKt.createComposeRule(AndroidComposeTestRule.android.kt:405)
+at dev.herdroid.ui.hosts.RemoteAccessSetupTest.&lt;init&gt;(RemoteAccessSetupTest.kt:22)
+... 32 trimmed
+Caused by: java.lang.ClassNotFoundException: kotlinx.coroutines.JobKt
+... 42 more
+</failure>
+  </testcase>
+  <testcase name="changingAgentShowsOnlyItsRemainingQuotaBesideStatus" classname="dev.herdroid.ui.terminal.PaneMetricsFunctionalTest" time="0.001">
+    <failure>java.lang.NoClassDefFoundError: Failed resolution of: Lkotlinx/coroutines/JobKt;
+at androidx.compose.ui.test.IdlingResourceRegistry.&lt;init&gt;(IdlingResourceRegistry.jvm.kt:43)
+at androidx.compose.ui.test.IdlingResourceRegistry.&lt;init&gt;(IdlingResourceRegistry.jvm.kt:34)
+at androidx.compose.ui.test.AndroidComposeUiTestEnvironment.&lt;init&gt;(ComposeUiTest.android.kt:247)
+at androidx.compose.ui.test.junit4.AndroidComposeTestRule$special$$inlined$AndroidComposeUiTestEnvironment$1.&lt;init&gt;(ComposeUiTest.android.kt:212)
+at androidx.compose.ui.test.junit4.AndroidComposeTestRule.&lt;init&gt;(AndroidComposeTestRule.android.kt:405)
+at androidx.compose.ui.test.junit4.AndroidComposeTestRule.&lt;init&gt;(AndroidComposeTestRule.android.kt:245)
+at androidx.compose.ui.test.junit4.AndroidComposeTestRule_androidKt.createAndroidComposeRule(AndroidComposeTestRule.android.kt:124)
+at androidx.compose.ui.test.junit4.AndroidComposeTestRule_androidKt.createComposeRule(AndroidComposeTestRule.android.kt:405)
+at dev.herdroid.ui.terminal.PaneMetricsFunctionalTest.&lt;init&gt;(PaneMetricsFunctionalTest.kt:15)
+... 32 trimmed
+Caused by: java.lang.ClassNotFoundException: kotlinx.coroutines.JobKt
+... 42 more
+</failure>
+  </testcase>
+</testsuite>

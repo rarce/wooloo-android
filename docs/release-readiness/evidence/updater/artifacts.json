@@ -1,0 +1,20 @@
+[
+  {
+    "artifact": "fixture-0.91.1.apk",
+    "size": 28210606,
+    "sha256": "a0c4691eee0c88ba59be86b1ac4bb6d3104db35380201011a5caca661a4f6df0",
+    "signer_sha256": "32f9b0ff53b226a83d45a80603f1c59788473a83cb472ec92251580901442226"
+  },
+  {
+    "artifact": "fixture-0.91.2.apk",
+    "size": 28210606,
+    "sha256": "892a99d551b0f5e7e1854796b249b6da8b1deca82b17cc6618f6b5dbfcc1e965",
+    "signer_sha256": "32f9b0ff53b226a83d45a80603f1c59788473a83cb472ec92251580901442226"
+  },
+  {
+    "artifact": "fixture-0.91.3.apk",
+    "size": 28210606,
+    "sha256": "9bddc523409be8065a6a445bb271800571af8fe6420e780be9ecdcf6e92f3a39",
+    "signer_sha256": "32f9b0ff53b226a83d45a80603f1c59788473a83cb472ec92251580901442226"
+  }
+]

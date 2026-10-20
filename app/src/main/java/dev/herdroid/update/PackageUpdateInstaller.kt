@@ -17,8 +17,14 @@ interface UpdateInstaller {
     /** Throws [IOException] unless [apk] is this app at [release]'s version, signed like the installed copy. */
     fun verify(apk: File, release: UpdateRelease)
 
-    /** Commits [apk] to a [PackageInstaller] session; [UpdateInstallReceiver] gets the outcome. */
-    fun install(apk: File)
+    /** Stages and fsyncs [apk], returning its session ID without committing. */
+    fun prepare(apk: File): Int
+    fun commit(sessionId: Int)
+    /** IDs of this app's own self-update sessions, including staging interrupted before persistence. */
+    fun ownedSessions(): Set<Int>
+    fun sessionExists(sessionId: Int): Boolean
+    fun abandon(sessionId: Int)
+    fun canRequestInstalls(): Boolean
 }
 
 class PackageUpdateInstaller(private val context: Context) : UpdateInstaller {
@@ -38,14 +44,14 @@ class PackageUpdateInstaller(private val context: Context) : UpdateInstaller {
         if (downloaded.none { it in installed }) throw IOException("The download isn't signed like this app")
     }
 
-    override fun install(apk: File) {
+    override fun prepare(apk: File): Int {
         val installer = context.packageManager.packageInstaller
         val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL).apply {
             setAppPackageName(context.packageName)
             setSize(apk.length())
             setInstallReason(PackageManager.INSTALL_REASON_USER)
-            // Once this app installed itself, Android 12+ updates it without asking again.
-            if (Build.VERSION.SDK_INT >= 31) setRequireUserAction(PackageInstaller.SessionParams.USER_ACTION_NOT_REQUIRED)
+            // Every update is approved by the user.
+            if (Build.VERSION.SDK_INT >= 31) setRequireUserAction(PackageInstaller.SessionParams.USER_ACTION_REQUIRED)
         }
         val sessionId = installer.createSession(params)
         try {
@@ -54,26 +60,47 @@ class PackageUpdateInstaller(private val context: Context) : UpdateInstaller {
                     apk.inputStream().use { it.copyTo(output) }
                     session.fsync(output)
                 }
-                // The installer fills in the status extras, so the intent must be mutable (and explicit).
-                val intent = Intent(context, UpdateInstallReceiver::class.java).setPackage(context.packageName)
-                val flags = PendingIntent.FLAG_UPDATE_CURRENT or
-                    (if (Build.VERSION.SDK_INT >= 31) PendingIntent.FLAG_MUTABLE else 0)
-                session.commit(PendingIntent.getBroadcast(context, sessionId, intent, flags).intentSender)
             }
+            return sessionId
         } catch (e: Exception) {
             runCatching { installer.abandonSession(sessionId) }
             throw e
         }
     }
 
-    private companion object {
+    override fun commit(sessionId: Int) {
+        val intent = Intent(context, UpdateInstallReceiver::class.java)
+            .setPackage(context.packageName)
+            .putExtra(EXTRA_SESSION_ID, sessionId)
+        val flags = PendingIntent.FLAG_UPDATE_CURRENT or
+            (if (Build.VERSION.SDK_INT >= 31) PendingIntent.FLAG_MUTABLE else 0)
+        context.packageManager.packageInstaller.openSession(sessionId).use { session ->
+            session.commit(PendingIntent.getBroadcast(context, sessionId, intent, flags).intentSender)
+        }
+    }
+
+    override fun ownedSessions(): Set<Int> = context.packageManager.packageInstaller.mySessions
+        .filter { it.appPackageName == context.packageName }
+        .map { it.sessionId }
+        .toSet()
+
+    override fun sessionExists(sessionId: Int) =
+        context.packageManager.packageInstaller.getSessionInfo(sessionId) != null
+
+    override fun abandon(sessionId: Int) = context.packageManager.packageInstaller.abandonSession(sessionId)
+
+    override fun canRequestInstalls() = context.packageManager.canRequestPackageInstalls()
+
+    companion object {
+        const val EXTRA_SESSION_ID = "dev.herdroid.update.SESSION_ID"
+
         @Suppress("DEPRECATION")
-        val SIGNATURE_FLAGS =
+        private val SIGNATURE_FLAGS =
             if (Build.VERSION.SDK_INT >= 28) PackageManager.GET_SIGNING_CERTIFICATES else PackageManager.GET_SIGNATURES
 
         /** SHA-256 of each signing certificate (including rotated-out ones), or null if unreported. */
         @Suppress("DEPRECATION")
-        fun PackageInfo.signers(): Set<String>? {
+        private fun PackageInfo.signers(): Set<String>? {
             val signatures = if (Build.VERSION.SDK_INT >= 28) {
                 signingInfo?.let { if (it.hasMultipleSigners()) it.apkContentsSigners else it.signingCertificateHistory }
             } else {

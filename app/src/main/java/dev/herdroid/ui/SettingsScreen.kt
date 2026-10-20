@@ -2,6 +2,7 @@ package dev.herdroid.ui
 
 import android.content.Intent
 import android.provider.Settings
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Row
@@ -13,6 +14,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -27,6 +30,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -45,6 +51,16 @@ import dev.herdroid.ui.theme.Mono
 @Composable
 fun SettingsScreen(onBack: () -> Unit) {
     val context = LocalContext.current
+    var document by remember { mutableStateOf<Pair<String, String>?>(null) }
+    document?.let { (title, path) ->
+        val text = remember(path) { context.assets.open(path).bufferedReader().use { it.readText() } }
+        AlertDialog(
+            onDismissRequest = { document = null },
+            title = { Text(title) },
+            text = { SelectionContainer { Text(text, Modifier.verticalScroll(rememberScrollState())) } },
+            confirmButton = { TextButton(onClick = { document = null }) { Text("Close") } },
+        )
+    }
     val prefs = context.app.preferences
     val fontSize by prefs.fontSize.collectAsState()
     val keepScreenOn by prefs.keepScreenOn.collectAsState()
@@ -124,6 +140,19 @@ fun SettingsScreen(onBack: () -> Unit) {
                 supportingContent = { Text("Choose how agent alerts reach you") },
             )
             UpdateSettings(context.app.updater)
+            listOf(
+                "Privacy" to "legal/privacy.txt",
+                "App license (MIT)" to "legal/LICENSE.txt",
+                "Atkinson font license" to "licenses/atkinson-hyperlegible-OFL.txt",
+                "Third-party inventory" to "legal/dependencies.txt",
+            ).forEach { (title, path) ->
+                ListItem(
+                    modifier = Modifier.clickable { document = title to path },
+                    headlineContent = { Text(title) },
+                    supportingContent = { Text("Read offline") },
+                )
+            }
+
             ListItem(
                 headlineContent = { Text("About") },
                 supportingContent = {

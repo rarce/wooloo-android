@@ -1,0 +1,294 @@
+[
+  {
+    "apk": "app/build/outputs/apk/release/app-release.apk",
+    "sha256": "79adcec4d0f7b84867f38c962764803b8201dc3c1e8d2e4bab5bac14976c03ca",
+    "native_libraries": [
+      {
+        "name": "lib/arm64-v8a/libandroidx.graphics.path.so",
+        "LOAD_align": [
+          16384,
+          16384,
+          16384
+        ],
+        "all_at_least_16KB": true
+      },
+      {
+        "name": "lib/arm64-v8a/libbarhopper_v3.so",
+        "LOAD_align": [
+          16384,
+          16384,
+          16384
+        ],
+        "all_at_least_16KB": true
+      },
+      {
+        "name": "lib/arm64-v8a/libimage_processing_util_jni.so",
+        "LOAD_align": [
+          16384,
+          16384,
+          16384
+        ],
+        "all_at_least_16KB": true
+      },
+      {
+        "name": "lib/arm64-v8a/libsurface_util_jni.so",
+        "LOAD_align": [
+          16384,
+          16384
+        ],
+        "all_at_least_16KB": true
+      },
+      {
+        "name": "lib/armeabi-v7a/libandroidx.graphics.path.so",
+        "LOAD_align": [
+          16384,
+          16384,
+          16384
+        ],
+        "all_at_least_16KB": true
+      },
+      {
+        "name": "lib/armeabi-v7a/libbarhopper_v3.so",
+        "LOAD_align": [
+          4096,
+          4096,
+          4096
+        ],
+        "all_at_least_16KB": false
+      },
+      {
+        "name": "lib/armeabi-v7a/libimage_processing_util_jni.so",
+        "LOAD_align": [
+          16384,
+          16384,
+          16384
+        ],
+        "all_at_least_16KB": true
+      },
+      {
+        "name": "lib/armeabi-v7a/libsurface_util_jni.so",
+        "LOAD_align": [
+          16384,
+          16384
+        ],
+        "all_at_least_16KB": true
+      },
+      {
+        "name": "lib/x86/libandroidx.graphics.path.so",
+        "LOAD_align": [
+          16384,
+          16384,
+          16384
+        ],
+        "all_at_least_16KB": true
+      },
+      {
+        "name": "lib/x86/libbarhopper_v3.so",
+        "LOAD_align": [
+          4096,
+          4096,
+          4096
+        ],
+        "all_at_least_16KB": false
+      },
+      {
+        "name": "lib/x86/libimage_processing_util_jni.so",
+        "LOAD_align": [
+          16384,
+          16384,
+          16384
+        ],
+        "all_at_least_16KB": true
+      },
+      {
+        "name": "lib/x86/libsurface_util_jni.so",
+        "LOAD_align": [
+          16384,
+          16384
+        ],
+        "all_at_least_16KB": true
+      },
+      {
+        "name": "lib/x86_64/libandroidx.graphics.path.so",
+        "LOAD_align": [
+          16384,
+          16384,
+          16384
+        ],
+        "all_at_least_16KB": true
+      },
+      {
+        "name": "lib/x86_64/libbarhopper_v3.so",
+        "LOAD_align": [
+          16384,
+          16384,
+          16384
+        ],
+        "all_at_least_16KB": true
+      },
+      {
+        "name": "lib/x86_64/libimage_processing_util_jni.so",
+        "LOAD_align": [
+          16384,
+          16384,
+          16384
+        ],
+        "all_at_least_16KB": true
+      },
+      {
+        "name": "lib/x86_64/libsurface_util_jni.so",
+        "LOAD_align": [
+          16384,
+          16384
+        ],
+        "all_at_least_16KB": true
+      }
+    ]
+  },
+  {
+    "apk": "app/build/outputs/apk/debug/app-debug.apk",
+    "sha256": "194763d91c1e4ea01e72477dda712d8cff00d246c68e7e46c41946aee28ae0b7",
+    "native_libraries": [
+      {
+        "name": "lib/arm64-v8a/libandroidx.graphics.path.so",
+        "LOAD_align": [
+          16384,
+          16384,
+          16384
+        ],
+        "all_at_least_16KB": true
+      },
+      {
+        "name": "lib/arm64-v8a/libbarhopper_v3.so",
+        "LOAD_align": [
+          16384,
+          16384,
+          16384
+        ],
+        "all_at_least_16KB": true
+      },
+      {
+        "name": "lib/arm64-v8a/libimage_processing_util_jni.so",
+        "LOAD_align": [
+          16384,
+          16384,
+          16384
+        ],
+        "all_at_least_16KB": true
+      },
+      {
+        "name": "lib/arm64-v8a/libsurface_util_jni.so",
+        "LOAD_align": [
+          16384,
+          16384
+        ],
+        "all_at_least_16KB": true
+      },
+      {
+        "name": "lib/armeabi-v7a/libandroidx.graphics.path.so",
+        "LOAD_align": [
+          16384,
+          16384,
+          16384
+        ],
+        "all_at_least_16KB": true
+      },
+      {
+        "name": "lib/armeabi-v7a/libbarhopper_v3.so",
+        "LOAD_align": [
+          4096,
+          4096,
+          4096
+        ],
+        "all_at_least_16KB": false
+      },
+      {
+        "name": "lib/armeabi-v7a/libimage_processing_util_jni.so",
+        "LOAD_align": [
+          16384,
+          16384,
+          16384
+        ],
+        "all_at_least_16KB": true
+      },
+      {
+        "name": "lib/armeabi-v7a/libsurface_util_jni.so",
+        "LOAD_align": [
+          16384,
+          16384
+        ],
+        "all_at_least_16KB": true
+      },
+      {
+        "name": "lib/x86/libandroidx.graphics.path.so",
+        "LOAD_align": [
+          16384,
+          16384,
+          16384
+        ],
+        "all_at_least_16KB": true
+      },
+      {
+        "name": "lib/x86/libbarhopper_v3.so",
+        "LOAD_align": [
+          4096,
+          4096,
+          4096
+        ],
+        "all_at_least_16KB": false
+      },
+      {
+        "name": "lib/x86/libimage_processing_util_jni.so",
+        "LOAD_align": [
+          16384,
+          16384,
+          16384
+        ],
+        "all_at_least_16KB": true
+      },
+      {
+        "name": "lib/x86/libsurface_util_jni.so",
+        "LOAD_align": [
+          16384,
+          16384
+        ],
+        "all_at_least_16KB": true
+      },
+      {
+        "name": "lib/x86_64/libandroidx.graphics.path.so",
+        "LOAD_align": [
+          16384,
+          16384,
+          16384
+        ],
+        "all_at_least_16KB": true
+      },
+      {
+        "name": "lib/x86_64/libbarhopper_v3.so",
+        "LOAD_align": [
+          16384,
+          16384,
+          16384
+        ],
+        "all_at_least_16KB": true
+      },
+      {
+        "name": "lib/x86_64/libimage_processing_util_jni.so",
+        "LOAD_align": [
+          16384,
+          16384,
+          16384
+        ],
+        "all_at_least_16KB": true
+      },
+      {
+        "name": "lib/x86_64/libsurface_util_jni.so",
+        "LOAD_align": [
+          16384,
+          16384
+        ],
+        "all_at_least_16KB": true
+      }
+    ]
+  }
+]

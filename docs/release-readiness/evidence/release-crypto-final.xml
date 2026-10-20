@@ -1,0 +1,9 @@
+<?xml version='1.0' encoding='UTF-8' ?>
+<testsuite name="dev.herdroid.ReleaseCryptoTest" tests="1" failures="0" errors="0" skipped="0" time="0.401" timestamp="2026-10-17T19:37:23" hostname="localhost">
+  <properties>
+    <property name="device" value="herdroid_release_readiness(AVD) - 16" />
+    <property name="flavor" value="" />
+    <property name="project" value=":app" />
+  </properties>
+  <testcase name="generatedAndImportedEd25519KeysSignAndVerify" classname="dev.herdroid.ReleaseCryptoTest" time="0.062" />
+</testsuite>

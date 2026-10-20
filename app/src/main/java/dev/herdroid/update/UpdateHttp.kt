@@ -17,11 +17,10 @@ import kotlin.coroutines.resumeWithException
 /** Fetches the update feed and downloads release APKs; cancelling the coroutine cancels the call. */
 class UpdateHttp(private val client: OkHttpClient = defaultClient) {
 
-    /** The published release, or null when there is none yet (the feed URL answers 404). */
-    suspend fun fetchFeed(url: String): UpdateRelease? {
+    /** The published release; unavailable feeds, including HTTP 404, fail the check. */
+    suspend fun fetchFeed(url: String): UpdateRelease {
         val request = Request.Builder().url(url).header("Accept", "application/json").build()
         val body = send(request) { response ->
-            if (response.code == 404) return@send null
             if (!response.isSuccessful) throw IOException("Update check failed (HTTP ${response.code})")
             val output = ByteArrayOutputStream()
             response.body?.byteStream()?.use { input ->
@@ -34,7 +33,7 @@ class UpdateHttp(private val client: OkHttpClient = defaultClient) {
                 }
             }
             output.toString(Charsets.UTF_8.name())
-        } ?: return null
+        }
         return UpdateFeed.parse(body)
     }
 

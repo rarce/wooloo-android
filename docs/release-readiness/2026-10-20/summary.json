@@ -1,0 +1,22 @@
+{
+  "tests": {
+    "tests": 219,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 7
+  },
+  "artifacts": {
+    "app/build/outputs/apk/debug/app-debug.apk": {
+      "bytes": 48736381,
+      "sha256": "1758c1820c00f8e08001406f67bcdea8fc4c73954c165a315539cf731794e34b"
+    },
+    "app/build/outputs/apk/release/app-release-unsigned.apk": {
+      "bytes": 28173748,
+      "sha256": "f5e8f940577fbdaa891e9f018f922eaa832000aefeba8b0c55896904add1e103"
+    }
+  },
+  "base": "09fa9af",
+  "appVersion": "0.92.0",
+  "versionCode": 92000,
+  "productionSigned": false
+}

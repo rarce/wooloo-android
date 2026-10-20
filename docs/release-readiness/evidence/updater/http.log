@@ -1,0 +1,9 @@
+127.0.0.1 - - [17/Oct/2026 16:04:47] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Oct/2026 16:09:27] code 404, message File not found
+127.0.0.1 - - [17/Oct/2026 16:09:27] "GET /update.json HTTP/1.1" 404 -
+127.0.0.1 - - [17/Oct/2026 16:10:39] "GET /update.json HTTP/1.1" 200 -
+127.0.0.1 - - [17/Oct/2026 16:11:18] "GET /fixture-0.91.2.apk HTTP/1.1" 200 -
+127.0.0.1 - - [17/Oct/2026 16:11:57] "GET /fixture-0.91.2.apk HTTP/1.1" 200 -
+127.0.0.1 - - [17/Oct/2026 16:12:31] "GET /fixture-0.91.2.apk HTTP/1.1" 200 -
+127.0.0.1 - - [17/Oct/2026 16:13:29] "GET /update.json HTTP/1.1" 200 -
+127.0.0.1 - - [17/Oct/2026 16:13:31] "GET /fixture-0.91.3.apk HTTP/1.1" 200 -

@@ -1,0 +1,35 @@
+name: Bug report
+description: Report a reproducible problem with sanitized information
+body:
+  - type: markdown
+    attributes:
+      value: "Do not include private keys, passwords, tokens, personal hostnames or terminal dumps. For sensitive security findings, read SECURITY.md first."
+  - type: input
+    id: version
+    attributes:
+      label: App version and installation channel
+    validations:
+      required: true
+  - type: input
+    id: android
+    attributes:
+      label: Android version and device model
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+    validations:
+      required: true
+  - type: textarea
+    id: behavior
+    attributes:
+      label: Expected and actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Sanitized logs or screenshots (optional)
+      description: Remove credentials, addresses, account identifiers and private terminal content.

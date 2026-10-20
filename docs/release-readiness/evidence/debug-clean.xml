@@ -1,0 +1,19 @@
+<?xml version='1.0' encoding='UTF-8' ?>
+<testsuite name="dev.herdroid.ReleaseCryptoTest" tests="11" failures="0" errors="0" skipped="0" time="21.501" timestamp="2026-10-17T18:45:11" hostname="localhost">
+  <properties>
+    <property name="device" value="herdroid_release_readiness(AVD) - 16" />
+    <property name="flavor" value="" />
+    <property name="project" value=":app" />
+  </properties>
+  <testcase name="generatedAndImportedEd25519KeysSignAndVerify" classname="dev.herdroid.ReleaseCryptoTest" time="0.122" />
+  <testcase name="keyboardOpensForDataInputAndClosesWhenReturningToMachines" classname="dev.herdroid.ui.KeyboardNavigationTest" time="2.972" />
+  <testcase name="darkListsRemainCompactAtDefaultFont" classname="dev.herdroid.ui.SessionListsTest" time="2.437" />
+  <testcase name="lightListsPreserveServerStatesOrderAndCompactAgentRows" classname="dev.herdroid.ui.SessionListsTest" time="2.394" />
+  <testcase name="darkListsKeepLabelsAndReplyActionsUsableAtLargeFont" classname="dev.herdroid.ui.SessionListsTest" time="2.228" />
+  <testcase name="lightListsKeepLabelsAndReplyActionsUsableAtLargeFont" classname="dev.herdroid.ui.SessionListsTest" time="2.167" />
+  <testcase name="emptyMachineActionsRemainReachableWithLargeTextAndShortViewport" classname="dev.herdroid.ui.SessionListsTest" time="1.234" />
+  <testcase name="failureKeepsInputsAndOnlyOneImportCanRunAtOnce" classname="dev.herdroid.ui.hosts.ImportKeyRetryTest" time="2.136" />
+  <testcase name="pastedDirectSshLinkPreservesTheSelectedRemoteDestination" classname="dev.herdroid.ui.hosts.RemoteAccessSetupTest" time="1.722" />
+  <testcase name="copiesThePublicKeyWithoutAShellCommand" classname="dev.herdroid.ui.hosts.RemoteAccessSetupTest" time="1.805" />
+  <testcase name="changingAgentShowsOnlyItsRemainingQuotaBesideStatus" classname="dev.herdroid.ui.terminal.PaneMetricsFunctionalTest" time="1.771" />
+</testsuite>

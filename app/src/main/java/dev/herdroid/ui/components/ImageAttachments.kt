@@ -4,7 +4,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Matrix
-import android.media.ExifInterface
+import androidx.exifinterface.media.ExifInterface
 import android.net.Uri
 import dev.herdroid.connection.HerdrConnection
 import kotlinx.coroutines.Dispatchers
@@ -115,7 +115,7 @@ object ImageAttachments {
     private fun fitsAsIs(file: File): Boolean {
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeFile(file.path, bounds)
-        return bounds.outWidth in 1..MAX_SIDE && bounds.outHeight in 1..MAX_SIDE && orientation(file) == 0
+        return bounds.outWidth in 1..MAX_SIDE && bounds.outHeight in 1..MAX_SIDE && orientation(file) == (0 to false)
     }
 
     private fun shrink(file: File, target: File) {
@@ -128,9 +128,11 @@ object ImageAttachments {
             BitmapFactory.Options().apply { inSampleSize = sampleSize(longest, MAX_SIDE) },
         ) ?: error("Couldn't decode the image")
         val scale = MAX_SIDE.toFloat() / max(decoded.width, decoded.height)
+        val (rotation, flipped) = orientation(file)
         val matrix = Matrix().apply {
             if (scale < 1f) postScale(scale, scale)
-            postRotate(orientation(file).toFloat())
+            if (flipped) postScale(-1f, 1f)
+            postRotate(rotation.toFloat())
         }
         var transformed: Bitmap? = null
         try {
@@ -145,15 +147,10 @@ object ImageAttachments {
         }
     }
 
-    /** Degrees the image must be rotated to display upright, from its EXIF data. */
-    private fun orientation(file: File): Int = runCatching {
-        when (ExifInterface(file.path).getAttributeInt(ExifInterface.TAG_ORIENTATION, 0)) {
-            ExifInterface.ORIENTATION_ROTATE_90 -> 90
-            ExifInterface.ORIENTATION_ROTATE_180 -> 180
-            ExifInterface.ORIENTATION_ROTATE_270 -> 270
-            else -> 0
-        }
-    }.getOrDefault(0)
+    /** EXIF describes a horizontal reflection followed by clockwise rotation. */
+    internal fun orientation(file: File): Pair<Int, Boolean> = runCatching {
+        ExifInterface(file).let { it.rotationDegrees to it.isFlipped }
+    }.getOrDefault(0 to false)
 
     private fun sampleSize(longest: Int, target: Int): Int {
         var sample = 1

@@ -49,7 +49,8 @@ fun UpdateSettings(updater: AppUpdater) {
     val action: (() -> Unit)? = when (val s = state) {
         is UpdateState.Available -> { { updater.startInstall(s.release) } }
         is UpdateState.Failed -> s.release?.let { release -> { updater.startInstall(release) } } ?: updater::checkNow
-        is UpdateState.Installing -> if (s.confirm != null) updater::continueInstall else null
+        is UpdateState.Installing -> if (s.confirm != null || s.recovered) updater::continueInstall else null
+        is UpdateState.NeedsInstallPermission -> updater::continueInstall
         is UpdateState.Checking, is UpdateState.Downloading -> null
         UpdateState.Idle, UpdateState.UpToDate -> updater::checkNow
     }
@@ -58,6 +59,7 @@ fun UpdateSettings(updater: AppUpdater) {
         headlineContent = {
             Text(
                 when (val s = state) {
+                    is UpdateState.NeedsInstallPermission -> "Allow app updates"
                     is UpdateState.Available -> "Install ${s.release.versionName}"
                     is UpdateState.Failed -> if (s.release != null) "Retry update" else "Check for updates"
                     else -> "Check for updates"
@@ -71,8 +73,9 @@ fun UpdateSettings(updater: AppUpdater) {
                 UpdateState.UpToDate -> Text("You're on the latest version")
                 is UpdateState.Available -> Text("Version ${s.release.versionName} is available")
                 is UpdateState.Downloading -> DownloadProgress(s)
+                is UpdateState.NeedsInstallPermission -> Text("Allow wooloo to install updates in Android Settings, then return here")
                 is UpdateState.Installing ->
-                    Text(if (s.confirm != null) "Tap to finish installing ${s.release.versionName}" else "Installing…")
+                    Text(if (s.recovered) "Tap to restart installation confirmation" else if (s.confirm != null) "Tap to finish installing ${s.release.versionName}" else "Installing…")
                 is UpdateState.Failed -> Text(s.message, color = MaterialTheme.colorScheme.error)
             }
         },
@@ -100,8 +103,17 @@ fun UpdatePrompt(updater: AppUpdater) {
         },
         confirmButton = {
             val working = state is UpdateState.Downloading || state is UpdateState.Installing
-            Button(enabled = !working, onClick = { updater.startInstall(release) }) {
-                Text(if (state is UpdateState.Failed) "Retry" else "Install")
+            Button(enabled = !working || (state as? UpdateState.Installing)?.let { it.confirm != null || it.recovered } == true,
+                onClick = {
+                    if (state is UpdateState.NeedsInstallPermission || state is UpdateState.Installing) updater.continueInstall()
+                    else updater.startInstall(release)
+                }) {
+                Text(when (state) {
+                    is UpdateState.NeedsInstallPermission -> "Allow updates"
+                    is UpdateState.Installing -> "Continue"
+                    is UpdateState.Failed -> "Retry"
+                    else -> "Install"
+                })
             }
         },
         dismissButton = { TextButton(onClick = updater::dismissPrompt) { Text("Later") } },

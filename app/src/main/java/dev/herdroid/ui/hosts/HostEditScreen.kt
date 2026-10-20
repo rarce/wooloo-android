@@ -34,6 +34,7 @@ import androidx.compose.material.icons.outlined.ExpandLess
 import androidx.compose.material.icons.outlined.ExpandMore
 import androidx.compose.material.icons.outlined.FileDownload
 import androidx.compose.material.icons.outlined.Share
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -122,12 +123,13 @@ fun HostEditScreen(
     var port by rememberSaveable { mutableStateOf(initial.port.toString()) }
     var username by rememberSaveable { mutableStateOf(initial.username) }
     var accessClientId by rememberSaveable { mutableStateOf(initial.accessClientId.orEmpty()) }
-    var accessSecret by rememberSaveable { mutableStateOf("") }
+    // Credential drafts stay in memory; recreation must never serialize them into saved state.
+    var accessSecret by remember(hostId, link) { mutableStateOf("") }
     // Joined with newlines: a plain String is always saveable.
     var pinnedKeys by rememberSaveable { mutableStateOf(initial.hostKeyFingerprints.joinToString("\n")) }
     var auth by rememberSaveable { mutableStateOf(initial.auth) }
     var keyId by rememberSaveable { mutableStateOf(existing?.keyId ?: keys.lastOrNull()?.id) }
-    var password by rememberSaveable { mutableStateOf("") }
+    var password by remember(hostId, link) { mutableStateOf("") }
     var session by rememberSaveable { mutableStateOf(initial.session) }
     var herdrPath by rememberSaveable { mutableStateOf(initial.herdrPath.orEmpty()) }
     var notifyBlocked by rememberSaveable { mutableStateOf(initial.notifyWhenBlocked) }
@@ -189,7 +191,9 @@ fun HostEditScreen(
     val portError = !tunnel && (portValue == null || portValue !in 1..65535)
     val keyError = auth == AuthMethod.KEY && keys.none { it.id == keyId }
 
-    fun save(connect: Boolean) {
+    var pendingTrust by remember(hostId, link) { mutableStateOf<HostSaveReview?>(null) }
+
+    fun save(connect: Boolean, approved: HostSaveReview? = null) {
         if (edits.busy) return
         splitTarget()
         // Validate the normalized values now, rather than values from the previous composition.
@@ -228,6 +232,12 @@ fun HostEditScreen(
         )
         val savedPassword = password
         val savedAccessSecret = accessSecret
+        val review = HostSaveReview(profile, savedPassword, savedAccessSecret, connect)
+        if (review.requiresConfirmation(existing) && review != approved) {
+            pendingTrust = review
+            return
+        }
+        pendingTrust = null
         val replacements = buildMap {
             if (profile.auth == AuthMethod.PASSWORD && savedPassword.isNotEmpty()) {
                 put(SecretStore.passwordKey(profile.id), savedPassword)
@@ -246,6 +256,32 @@ fun HostEditScreen(
             app.connections.profileChanged(profile.id)
             onDone(profile.id, connect)
         })
+    }
+
+    pendingTrust?.let { review ->
+        AlertDialog(
+            onDismissRequest = { pendingTrust = null },
+            title = { Text("Trust changed connection?") },
+            text = {
+                Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Saving changes where this machine sends credentials and which SSH keys it trusts. Only continue if you trust these details.")
+                    Text("Previous: ${existing?.transport} ${existing?.target}")
+                    Text("New: ${review.profile.transport} ${review.profile.target}")
+                    Text("Previous trusted SSH keys:\n${existing?.hostKeyFingerprints?.joinToString("\n").orEmpty().ifEmpty { "No keys pinned by this profile; normal host verification applies" }}")
+                    Text("New trusted SSH keys:\n${review.profile.hostKeyFingerprints.joinToString("\n").ifEmpty { "No keys pinned by this profile; normal host verification applies" }}")
+                    Text(review.credentialsDescription(keys.firstOrNull { it.id == review.profile.keyId }?.let { "${it.name} (${it.fingerprint})" }))
+                    if (review.profile.accessClientId != null) {
+                        Text("Cloudflare Access client ID: ${review.profile.accessClientId}\nThe Access secret is sent to this hostname before SSH host verification.")
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { save(review.connect, approved = review) }) {
+                    Text(if (review.connect) "Trust & connect" else "Trust & save")
+                }
+            },
+            dismissButton = { TextButton(onClick = { pendingTrust = null }) { Text("Cancel") } },
+        )
     }
 
     Scaffold(

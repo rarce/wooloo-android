@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="dev.herdroid.ssh.ChannelCleanupTest" tests="6" skipped="0" failures="0" errors="0" timestamp="2026-10-17T18:51:11.905Z" hostname="Mac" time="0.554">
+  <properties/>
+  <testcase name="cancellationDuringRealSshjOpenForgetsTheOwnedChannel" classname="dev.herdroid.ssh.ChannelCleanupTest" time="0.016"/>
+  <testcase name="cancellationClosesSocketReadThatIgnoresThreadInterruption" classname="dev.herdroid.ssh.ChannelCleanupTest" time="0.264"/>
+  <testcase name="observerIgnoringStdinEndsWithoutDisconnectingSharedTransport" classname="dev.herdroid.ssh.ChannelCleanupTest" time="0.009"/>
+  <testcase name="interruptibleChannelCancellationKeepsTheSharedTransport" classname="dev.herdroid.ssh.ChannelCleanupTest" time="0.002"/>
+  <testcase name="realSshjCloseWithoutPeerAcknowledgementIsBoundedAndForgetsChannel" classname="dev.herdroid.ssh.ChannelCleanupTest" time="0.258"/>
+  <testcase name="bridgeWaitingForStdinEofClosesWithoutAbortingSharedTransport" classname="dev.herdroid.ssh.ChannelCleanupTest" time="0.005"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

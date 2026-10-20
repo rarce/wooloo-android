@@ -12,6 +12,18 @@ import java.io.IOException
 import java.util.concurrent.TimeUnit
 
 class QuotaHttpTest {
+    @Test fun redirectsNeverForwardUsageCredentials(): Unit = runBlocking {
+        MockWebServer().use { server ->
+            server.start()
+            server.enqueue(MockResponse().setResponseCode(302).setHeader("Location", server.url("/other")))
+            server.enqueue(MockResponse().setBody("unexpected"))
+            val result = QuotaHttp.Default.get(server.url("/usage").toString(), mapOf("Authorization" to "Bearer fixture"))
+            assertEquals(302, result.first)
+            assertEquals(1, server.requestCount)
+            assertEquals("/usage", server.takeRequest().path)
+        }
+    }
+
     @Test(timeout = 10_000) fun cancelledHttpCallDoesNotWaitForServerResponse(): Unit = runBlocking {
         MockWebServer().use { server ->
             server.enqueue(MockResponse().setSocketPolicy(SocketPolicy.NO_RESPONSE))

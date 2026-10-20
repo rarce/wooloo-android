@@ -35,6 +35,16 @@ class UpdateFeedTest {
         ).forEach { text -> assertThrows(text, IllegalArgumentException::class.java) { UpdateFeed.parse(text) } }
     }
 
+    @Test fun parsesFeedGeneratedByReleaseMetadataScript() {
+        val text = checkNotNull(javaClass.getResource("/update/generated-feed.json")).readText(Charsets.UTF_8)
+        val release = UpdateFeed.parse(text)
+        assertEquals(1_002_003L, release.versionCode)
+        assertEquals("1.2.3", release.versionName)
+        assertEquals(3L, release.size)
+        assertEquals("Mejoras 🐑\n更新", release.notes)
+        assertEquals("https://example.com/app.apk", release.url)
+    }
+
     @Test fun rejectsMalformedJson() {
         assertThrows(IllegalArgumentException::class.java) { UpdateFeed.parse("""{"versionCode":1}""") }
     }

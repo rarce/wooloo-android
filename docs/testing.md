@@ -38,6 +38,14 @@ Tests for real SSH/herdr and Cloudflare endpoints are opt-in; configure the vari
 in `CLAUDE.md` to include them. Screenshot generation is also opt-in. Their skipped
 status must not be interpreted as a successful live backend test.
 
+For the minified crypto smoke suite use `./gradlew connectedReleaseAndroidTest -PreleaseSmoke`.
+It selects only `ReleaseCryptoTest` in `app/src/releaseSmokeTest/java`. Debug device tests include
+that shared crypto test plus the Compose UI suite in `app/src/androidTest/java`. The smoke build
+adds test entry-point keep rules and debug signing; it is not the production-signed candidate.
+Trying to run all Compose tests against that target exposed removed AndroidX/coroutine/Compose
+test entry points. Expanding keep rules to the entire test framework would make the crypto
+optimization check less representative; the suites therefore have explicit separate scopes.
+
 ## Local validation, 2026-10-17
 
 Pixel 9 AVD with the installed Android 16 / API 36.1 ARM64 system image:

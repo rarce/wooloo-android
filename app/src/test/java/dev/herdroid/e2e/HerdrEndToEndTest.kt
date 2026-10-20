@@ -142,7 +142,9 @@ class HerdrEndToEndTest {
             stream.resize(60, 20)
             stream.input("\r")
             val resized = withTimeout(10_000) {
-                stream.events.first { it is TerminalEvent.Frame && it.width == 60 } as TerminalEvent.Frame
+                stream.events.first { it is TerminalEvent.Closed || it is TerminalEvent.Frame && it.width == 60 }.also {
+                    assertTrue("controller closed before resize: $it", it is TerminalEvent.Frame)
+                } as TerminalEvent.Frame
             }
             assertEquals(20, resized.height)
             stream.close()

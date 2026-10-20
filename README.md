@@ -1,4 +1,4 @@
-# wooloo mobile
+# wooloo-mobile
 
 The Android companion to [wooloo](https://github.com/rarce/wooloo), built with Kotlin + Jetpack Compose for [herdr](https://github.com/herdrdev/herdr), the terminal
 multiplexer for coding agents. wooloo mobile connects over SSH and uses herdr's own protocols to show your agents and
@@ -7,6 +7,34 @@ workspaces, let you reply to them, and drive any pane from your phone.
 | Your spaces | Inside a space | Live pane | Connection states |
 | --- | --- | --- | --- |
 | ![spaces](docs/screenshots/session.png) | ![space](docs/screenshots/space.png) | ![terminal](docs/screenshots/terminal.png) | ![banners](docs/screenshots/banners.png) |
+
+## Install and first connection
+
+Requires Android 8 or newer and a reachable SSH account with herdr installed.
+Open [latest release](https://github.com/rarce/herdroid/releases/latest) and choose its
+`wooloo-mobile-X.Y.Z.apk`. If no release is available, distribution is not ready;
+do not use a debug or smoke-test APK as a production release. Compare the published
+SHA-256 and signer fingerprint, allow installation for your browser when Android asks,
+and open the app. In-app updates need a separate installation permission for wooloo mobile.
+See [update and recovery instructions](docs/updates.md), including transition from debug installs.
+
+Generate a phone key and authorize its **public** key as described below. Add a machine
+manually or import its QR, verify the server fingerprint through a trusted channel,
+select the authorized key, then Connect → space → agent → terminal. A QR does not grant
+network access or authorize the key. Keep another working server login for recovery.
+
+## Privacy, license and support
+
+Read the [privacy policy](app/src/main/assets/legal/privacy.txt), also available offline
+in Settings. Quotas are experimental and require per-identity consent to read remote
+agent tokens and query providers from the phone. Disabling them does not disable SSH.
+The project code is [MIT licensed](LICENSE); dependencies retain their own licenses (see the [resolved inventory](docs/dependencies.md)).
+The launcher uses the readable name **wooloo mobile**. Provider names identify
+interoperability and do not imply endorsement.
+
+Report sanitized bugs through [GitHub Issues](https://github.com/rarce/herdroid/issues).
+Read [security reporting](SECURITY.md) before reporting a vulnerability. The
+[release checklist](todo.md) tracks production signing, public availability and remaining validation.
 
 ## How it talks to herdr
 
@@ -37,7 +65,9 @@ it can add that cleanup time to a request deadline. A peer that never acknowledg
 causes a transport reset. Cancelling an interruptible subscription normally preserves the shared transport.
 
 Requires a herdr server with `terminal session control` and `remote-api-bridge`. Tested end-to-end against
-**herdr 0.9.3**.
+**herdr 0.9.3** historically, and **herdr 0.9.5 / protocol 22** against an isolated
+real SSH fixture on 2026-10-17. See [live validation](docs/release-readiness/live-validation.md)
+for executed checks and remaining release gates.
 
 ## UX highlights
 
@@ -73,13 +103,17 @@ Requires a herdr server with `terminal session control` and `remote-api-bridge`.
 - **Keys and security.** Generate an Ed25519 key on the phone (with **Copy public key** and sharing) or
   import OpenSSH/PEM/PKCS#8 keys. Private keys and saved passwords are encrypted with the Android Keystore. Host
   keys are trust-on-first-use, with a loud warning if a key changes.
+  Editing an existing machine's destination or trusted keys requires an explicit review before saving or
+  connecting, including any saved password or Cloudflare Access secret that will be reused. Unsaved password
+  and token drafts are cleared when Android recreates the editor; saved encrypted credentials are preserved.
 - **Direct SSH, Cloudflare and QR import.** In wooloo, select the machine and open **Remote Access**.
   Its direct SSH QR carries that server's address and port; your phone must be able to reach them.
   Cloudflare Tunnel is an option for the local Mac. Use **Scan QR** in the mobile machine list to scan,
   choose a QR image, or paste the copied machine link. The bundled reader works offline and camera permission
   is requested only when opening the scanner. A compatible `herdroid://add-host?…` link opens the host editor
-  prefilled with the transport, host, SSH port, user, session, herdr path and host key fingerprints, which are
-  trusted without another prompt. Review the details and fingerprints, choose an authorized SSH key or password
+  prefilled with the transport, host, SSH port, user, session, herdr path and host key fingerprints. Imported
+  fingerprints pin the server key; changing a saved machine's destination or pins first requires a trust review.
+  Review the details and fingerprints, choose an authorized SSH key or password
   and tap **Connect**. The QR carries connection details, not SSH credentials; a link never connects by itself.
   Quick tunnel hostnames change on every restart, so scanning a new code updates the matching machine (same
   name, user and session) instead of adding a duplicate.
@@ -138,6 +172,12 @@ HERDROID_CF_TUNNEL_HOST=name.trycloudflare.com ./gradlew testDebugUnitTest --tes
 ```
 
 Requires JDK 17+ and Android SDK 36. minSdk 26.
+
+The release smoke suite selects only `ReleaseCryptoTest` from `app/src/releaseSmokeTest/`.
+The debug device suite includes that shared crypto test and the Compose UI tests in
+`app/src/androidTest/`. This keeps the minified crypto check focused without preserving the
+entire Compose test framework's target ABI in the release app. Device UI checks against the final
+signed APK remain a separate release requirement.
 
 ## Layout
 

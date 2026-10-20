@@ -4,6 +4,9 @@
 # AndroidX Test is compiled separately and calls stdlib entry points R8 may
 # otherwise inline out of the target APK. These rules apply only to smoke builds.
 -keep class kotlin.** { *; }
+# AndroidX Test's ViewCapture calls this target dependency from its separate APK.
+# Keep that entry point in smoke builds, where application code alone does not reach it.
+-keep class androidx.concurrent.futures.SuspendToFutureAdapter** { *; }
 -keep class dev.herdroid.WoolooMobileApp { public *; }
 -keep class dev.herdroid.WoolooMobileAppKt { public *; }
 -keep class dev.herdroid.data.SshKeyManager { public *; }

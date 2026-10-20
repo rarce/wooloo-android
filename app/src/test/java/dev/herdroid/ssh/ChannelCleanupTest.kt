@@ -5,6 +5,8 @@ import net.schmizz.sshj.DefaultConfig
 import net.schmizz.sshj.connection.Connection
 import net.schmizz.sshj.connection.channel.Channel
 import net.schmizz.sshj.connection.channel.direct.SessionChannel
+import net.schmizz.sshj.common.Message
+import net.schmizz.sshj.common.SSHPacket
 import net.schmizz.sshj.transport.Transport
 import org.junit.Assert.*
 import org.junit.Test
@@ -17,16 +19,23 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicBoolean
 
 class ChannelCleanupTest {
     /** Real sshj channel implementation with a peer that never acknowledges open/close. */
     private class Peer {
         val attached = ConcurrentHashMap.newKeySet<Channel>()
         val packetSent = CountDownLatch(1)
-        private val transport = proxy<Transport> { name, _ -> when (name) {
+        var onPacket: (Message, SSHPacket) -> Unit = { _, _ -> }
+        private val transport = proxy<Transport> { name, args -> when (name) {
             "getConfig" -> DefaultConfig()
             "getTimeoutMs" -> 30_000
-            "write" -> { packetSent.countDown(); 0L }
+            "write" -> {
+                packetSent.countDown()
+                val packet = SSHPacket(args!![0] as SSHPacket)
+                onPacket(packet.readMessageID(), packet)
+                0L
+            }
             else -> error("Unexpected transport call: $name")
         } }
         val connection = proxy<Connection> { name, args -> when (name) {
@@ -39,6 +48,50 @@ class ChannelCleanupTest {
             "forget" -> { attached.remove(args!![0] as Channel); null }
             else -> error("Unexpected connection call: $name")
         } }
+    }
+
+    @Test(timeout = 5000)
+    fun bridgeWaitingForStdinEofClosesWithoutAbortingSharedTransport(): Unit = runBlocking {
+        val peer = Peer()
+        val session = OpenSession(peer.connection)
+        val inputEnded = AtomicBoolean()
+        val acknowledged = AtomicBoolean()
+        peer.onPacket = { message, _ ->
+            if (message == Message.CHANNEL_EOF) inputEnded.set(true)
+            if (message == Message.CHANNEL_CLOSE && inputEnded.get() && acknowledged.compareAndSet(false, true)) {
+                // A bridge waiting for stdin only exits and acknowledges close after EOF.
+                launch(Dispatchers.IO) { session.handle(Message.CHANNEL_CLOSE, SSHPacket()) }
+            }
+        }
+        val aborted = AtomicInteger()
+        ExecChannel(session, session) { aborted.incrementAndGet() }.closeBounded()
+        assertTrue(inputEnded.get())
+        assertEquals("A cooperative bridge must not disconnect other channels", 0, aborted.get())
+        assertTrue(peer.attached.isEmpty())
+    }
+
+    @Test(timeout = 5000)
+    fun observerIgnoringStdinEndsWithoutDisconnectingSharedTransport(): Unit = runBlocking {
+        val peer = Peer()
+        val session = OpenSession(peer.connection)
+        val terminated = AtomicBoolean()
+        val acknowledged = AtomicBoolean()
+        peer.onPacket = { message, packet ->
+            if (message == Message.CHANNEL_REQUEST) {
+                packet.readUInt32AsInt()
+                val request = packet.readString()
+                packet.readBoolean()
+                if (request == "signal" && packet.readString() == "TERM") terminated.set(true)
+            }
+            if (message == Message.CHANNEL_CLOSE && terminated.get() && acknowledged.compareAndSet(false, true)) {
+                launch(Dispatchers.IO) { session.handle(Message.CHANNEL_CLOSE, SSHPacket()) }
+            }
+        }
+        val aborted = AtomicInteger()
+        ExecChannel(session, session) { aborted.incrementAndGet() }.closeBounded()
+        assertTrue(terminated.get())
+        assertEquals("Stopping this observer must keep the shared transport", 0, aborted.get())
+        assertTrue(peer.attached.isEmpty())
     }
     private class OpenSession(connection: Connection) : SessionChannel(connection) {
         init { init(2, 2L * 1024 * 1024, 32L * 1024); openEvent.set() }

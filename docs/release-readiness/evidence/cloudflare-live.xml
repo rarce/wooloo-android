@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="dev.herdroid.ssh.CloudflareTunnelSocketTest" tests="2" skipped="0" failures="0" errors="0" timestamp="2026-10-17T18:43:26.354Z" hostname="Mac" time="1.571">
+  <properties/>
+  <testcase name="liveTunnelSpeaksSsh" classname="dev.herdroid.ssh.CloudflareTunnelSocketTest" time="0.917"/>
+  <testcase name="liveTunnelCarriesSshj" classname="dev.herdroid.ssh.CloudflareTunnelSocketTest" time="0.654"/>
+  <system-out><![CDATA[tunnel host key ssh-ed25519 SHA256:U8L4itRvZOuPeLj+Y+7wCvDukapftwZD3yVd9X5CrNs
+]]></system-out>
+  <system-err><![CDATA[SLF4J(W): No SLF4J providers were found.
+SLF4J(W): Defaulting to no-operation (NOP) logger implementation
+SLF4J(W): See https://www.slf4j.org/codes.html#noProviders for further details.
+]]></system-err>
+</testsuite>

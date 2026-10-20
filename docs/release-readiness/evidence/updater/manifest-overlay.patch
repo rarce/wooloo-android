@@ -1,0 +1,13 @@
+diff --git a/app/src/main/AndroidManifest.xml b/app/src/main/AndroidManifest.xml
+index 242cede..2e79d23 100644
+--- a/app/src/main/AndroidManifest.xml
++++ b/app/src/main/AndroidManifest.xml
+@@ -15,7 +15,7 @@
+     <!-- In-app updates from GitHub releases (dev.herdroid.update.AppUpdater). -->
+     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+ 
+-    <application
++    <application android:networkSecurityConfig="@xml/local_fixture_network"
+         android:name=".WoolooMobileApp"
+         android:allowBackup="false"
+         android:dataExtractionRules="@xml/data_extraction_rules"

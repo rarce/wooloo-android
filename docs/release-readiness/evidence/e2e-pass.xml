@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="dev.herdroid.e2e.HerdrEndToEndTest" tests="1" skipped="0" failures="0" errors="0" timestamp="2026-10-17T18:51:09.649Z" hostname="Mac" time="2.105">
+  <properties/>
+  <testcase name="fullRoundTrip" classname="dev.herdroid.e2e.HerdrEndToEndTest" time="2.105"/>
+  <system-out><![CDATA[herdr 0.9.5 protocol 22: [~] panes=[w1:p1]
+event: {"data":{"tab":{"agent_status":"unknown","focused":false,"label":"e2e-tab","number":8,"pane_count":1,"tab_id":"w1:t8","workspace_id":"w1"},"type":"tab_created"},"event":"tab_created"}
+--- emulator screen ---
+
+░▒▓ ]]>&#xf0035;<![CDATA[  ~   15:39  ❯ printf '%s \345\255\227\n' herdroid-e2e-85208
+herdroid-e2e-85208 字
+
+░▒▓ ]]>&#xf0035;<![CDATA[  ~   15:39  ❯ printf '%s \345\255\227\n' herdroid-e2e-10625
+herdroid-e2e-10625 字
+
+░▒▓ ]]>&#xf0035;<![CDATA[  ~   15:43  ❯ printf '%s \345\255\227\n' herdroid-e2e-63125
+herdroid-e2e-63125 字
+
+░▒▓ ]]>&#xf0035;<![CDATA[  ~   15:43  ❯ printf '%s \345\255\227\n' herdroid-e2e-26916
+herdroid-e2e-26916 字
+
+░▒▓ ]]>&#xf0035;<![CDATA[  ~   15:44  ❯ printf '%s \345\255\227\n' herdroid-e2e-59041
+herdroid-e2e-59041 字
+
+░▒▓ ]]>&#xf0035;<![CDATA[  ~   15:44  ❯
+
+░▒▓ ]]>&#xf0035;<![CDATA[  ~   15:47  ❯ printf '%s \345\255\227\n' herdroid-e2e-20916
+herdroid-e2e-20916 字
+
+░▒▓ ]]>&#xf0035;<![CDATA[  ~   15:47  ❯ printf '%s \345\255\227\n' herdroid-e2e-26500
+herdroid-e2e-26500 字
+-----------------------
+second controller: terminal attach failed: terminal term_65e0d9a1de4031 already has an attached client; retry with --takeover
+]]></system-out>
+  <system-err><![CDATA[SLF4J(W): No SLF4J providers were found.
+SLF4J(W): Defaulting to no-operation (NOP) logger implementation
+SLF4J(W): See https://www.slf4j.org/codes.html#noProviders for further details.
+]]></system-err>
+</testsuite>

@@ -1,0 +1,9 @@
+# Release safeguards review — 17 October 2026
+
+The release workflow now authorizes source membership before running repository scripts, builds and signs the authorized SHA, and refuses to publish if the remote tag moved. Its build job runs both coverage gates, lint, tests and debug/release builds with the requested published version. Manual dispatch is an artifact-only rehearsal, with no signing or publishing job. Mapping/report artifacts are retained for 90 days and still require durable owner custody.
+
+Version validation rejects leading zeros, zero code, minor/patch greater than 999 and overflow. Python metadata generation verifies APK identity/version, size and SHA-256, HTTPS, and the complete feed's 64 KiB UTF-8 limit. A shared generated fixture is checked by Python and parsed by the Kotlin client.
+
+Validation passed: Python tests and boundary subcases, the canonical Gradle maximum `2147.483.647`, eight rejected Gradle versions, complete JVM/coverage/lint/debug/release checks with `-PappVersion=0.1.0`, and the four focused feed parser tests including the contract fixture. Independent static adversarial review found no remaining actionable issue after moving the ancestry check ahead of repository code. `git diff --check` passed.
+
+This is local validation. No GitHub workflow, release, production signing or device update ran for this block. Read-only GitHub checks found `rarce/herdroid` private, no listed secrets or environments, and ruleset API access rejected with HTTP 403 because of the plan/private-repository constraint. Earlier PR checks failed before execution due to billing/spending limits. The owner must resolve these external requirements and configure branch/tag/workflow/environment protection before provisioning production signing. An environment name in YAML does not itself enforce approval.

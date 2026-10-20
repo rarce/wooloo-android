@@ -1,0 +1,8 @@
+Disposable Local Update [79,337][575,400] false android.widget.TextView
+roberto@10.0.2.2:22346 / herdroid-release-fixture [79,408][824,456] false android.widget.TextView
+Last connected 3 min ago [79,464][470,512] false android.widget.TextView
+Machine actions for Disposable Local Update [933,394][996,457] false android.view.View
+Machines [43,186][276,255] false android.widget.TextView
+Scan Wooloo QR [723,190][786,253] false android.view.View
+SSH keys [849,190][912,253] false android.view.View
+Settings [975,190][1038,253] false android.view.View
