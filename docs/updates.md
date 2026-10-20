@@ -6,12 +6,12 @@ wooloo (macOS) does with Sparkle.
 ## How it works
 
 - **Feed.** Every release carries `update.json` next to the APK. Installed copies read
-  `https://github.com/rarce/herdroid/releases/latest/download/update.json` (`UPDATE_FEED_URL`,
+  `https://github.com/rarce/wooloo-android/releases/latest/download/update.json` (`UPDATE_FEED_URL`,
   overridable with `-PupdateFeedUrl=…`):
 
   ```json
   {"versionCode": 1001, "versionName": "0.1.1",
-   "url": "https://github.com/rarce/herdroid/releases/download/v0.1.1/wooloo-mobile-0.1.1.apk",
+   "url": "https://github.com/rarce/wooloo-android/releases/download/v0.1.1/wooloo-mobile-0.1.1.apk",
    "sha256": "…", "size": 28194108, "notes": "…"}
   ```
 
@@ -69,9 +69,8 @@ a general process-recreation recovery mechanism, so the app does not rely on it.
 
 The code and workflow are in place; these steps are still needed before the first release:
 
-- [ ] **Make `rarce/herdroid` public.** Release assets of a private repo can't be downloaded without
-      credentials, so until then every check fails (including HTTP 404). A failed check never
-      claims the app is current or advances the last successful check time.
+- [x] **Make `rarce/wooloo-android` public** (done 2026-10-20; formerly `rarce/herdroid`, which GitHub
+      redirects). Release assets of a private repo can't be downloaded without credentials.
 - [ ] **Create the release keystore** (once, keep a backup outside the repo):
 
       keytool -genkeypair -keystore wooloo-mobile-release.jks -alias wooloo-mobile \

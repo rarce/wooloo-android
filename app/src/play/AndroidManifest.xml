@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Applied by `-Pplay`: Google Play updates the app, so it never installs packages itself. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" tools:node="remove" />
+
+    <application>
+        <receiver android:name="dev.herdroid.update.UpdateInstallReceiver" tools:node="remove" />
+        <receiver android:name="dev.herdroid.update.PackageReplacedReceiver" tools:node="remove" />
+    </application>
+</manifest>

@@ -26,4 +26,4 @@ complete third-party notices/security review. Accessibility, third-party quota e
 availability and mobile-network reliability must not be described as fully validated.
 
 [Privacy](../../app/src/main/assets/legal/privacy.txt) · [License](../../LICENSE) ·
-[Sanitized bug reports](https://github.com/rarce/herdroid/issues)
+[Sanitized bug reports](https://github.com/rarce/wooloo-android/issues)

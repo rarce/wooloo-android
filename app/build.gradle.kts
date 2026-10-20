@@ -8,6 +8,8 @@ plugins {
 
 android {
     val releaseSmoke = providers.gradleProperty("releaseSmoke").isPresent
+    // `-Pplay` builds the Google Play app: its own package, and no self-updates (Play forbids them).
+    val play = providers.gradleProperty("play").isPresent
     // `-PappVersion=X.Y.Z` (the release tag) marks a published build; the version code grows with it.
     val publishedVersion = providers.gradleProperty("appVersion").orNull
     val appVersion = publishedVersion ?: "0.1.0"
@@ -31,7 +33,7 @@ android {
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "dev.herdroid"
+        applicationId = if (play) "dev.wooloo.mobile" else "dev.herdroid"
         minSdk = 26
         targetSdk = 36
         versionCode = releaseVersionCode.toInt()
@@ -40,9 +42,15 @@ android {
         vectorDrawables { useSupportLibrary = true }
         // `-PupdateFeedUrl=https://…` points a build at another feed, to try updates before publishing.
         val updateFeedUrl = providers.gradleProperty("updateFeedUrl")
-            .getOrElse("https://github.com/rarce/herdroid/releases/latest/download/update.json")
+            .getOrElse("https://github.com/rarce/wooloo-android/releases/latest/download/update.json")
         buildConfigField("String", "UPDATE_FEED_URL", "\"$updateFeedUrl\"")
         buildConfigField("boolean", "UPDATES", "false")
+        buildConfigField("boolean", "PLAY", play.toString())
+    }
+
+    // Drops REQUEST_INSTALL_PACKAGES and the update receivers from the Play app's manifest.
+    if (play) {
+        listOf("debug", "release").forEach { sourceSets.getByName(it).manifest.srcFile("src/play/AndroidManifest.xml") }
     }
 
     buildTypes {
@@ -50,7 +58,7 @@ android {
             if (releaseSmoke) {
                 signingConfig = signingConfigs.getByName("debug")
                 proguardFiles("release-smoke-rules.pro")
-            } else if (publishedVersion != null) {
+            } else if (publishedVersion != null && !play) {
                 // Only published releases (signed by .github/workflows/release.yml) update themselves:
                 // any other build would offer a release that Android can't install over it.
                 buildConfigField("boolean", "UPDATES", "true")

@@ -22,6 +22,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import dev.herdroid.BuildConfig
 import dev.herdroid.R
 import dev.herdroid.update.AppUpdater
 import dev.herdroid.update.UpdateRelease
@@ -33,7 +34,10 @@ fun UpdateSettings(updater: AppUpdater) {
     if (!updater.enabled) {
         ListItem(
             headlineContent = { Text("Updates") },
-            supportingContent = { Text("This build doesn't update itself. Release builds update from GitHub.") },
+            supportingContent = {
+                Text(if (BuildConfig.PLAY) "Google Play keeps this app up to date."
+                else "This build doesn't update itself. Release builds update from GitHub.")
+            },
         )
         return
     }

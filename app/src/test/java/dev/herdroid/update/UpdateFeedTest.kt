@@ -9,7 +9,7 @@ class UpdateFeedTest {
 
     private fun feed(
         versionCode: Long = 1_002_003,
-        url: String = "https://github.com/rarce/herdroid/releases/download/v1.2.3/wooloo-mobile-1.2.3.apk",
+        url: String = "https://github.com/rarce/wooloo-android/releases/download/v1.2.3/wooloo-mobile-1.2.3.apk",
         sha256: String = sha,
         size: Long = 1234,
     ) = """{"versionCode":$versionCode,"versionName":"1.2.3","url":"$url","sha256":"$sha256","size":$size,

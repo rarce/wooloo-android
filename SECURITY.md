@@ -1,6 +1,6 @@
 # Security reports
 
-Use [GitHub Issues](https://github.com/rarce/herdroid/issues) for sanitized reports.
+Use [GitHub Issues](https://github.com/rarce/wooloo-android/issues) for sanitized reports.
 Do not include passwords, tokens, private keys, terminal content, personal hostnames
 or exploit instructions in a public issue. For a sensitive vulnerability, open only
 a minimal request for a private reporting channel, without disclosing the vulnerability.

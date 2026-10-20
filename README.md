@@ -11,7 +11,7 @@ workspaces, let you reply to them, and drive any pane from your phone.
 ## Install and first connection
 
 Requires Android 8 or newer and a reachable SSH account with herdr installed.
-Open [latest release](https://github.com/rarce/herdroid/releases/latest) and choose its
+Open [latest release](https://github.com/rarce/wooloo-android/releases/latest) and choose its
 `wooloo-mobile-X.Y.Z.apk`. If no release is available, distribution is not ready;
 do not use a debug or smoke-test APK as a production release. Compare the published
 SHA-256 and signer fingerprint, allow installation for your browser when Android asks,
@@ -36,7 +36,7 @@ restrictions on the current Claude quota integration.
 The launcher uses the readable name **wooloo mobile**. Provider names identify
 interoperability and do not imply endorsement.
 
-Report sanitized bugs through [GitHub Issues](https://github.com/rarce/herdroid/issues).
+Report sanitized bugs through [GitHub Issues](https://github.com/rarce/wooloo-android/issues).
 Read [security reporting](SECURITY.md) before reporting a vulnerability. The
 [release checklist](todo.md) tracks production signing, public availability and remaining validation.
 
