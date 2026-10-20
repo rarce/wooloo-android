@@ -1,0 +1,5 @@
+<resources>
+    <item name="read_terminal_text" type="id" />
+    <string name="read_terminal_text">Read terminal text</string>
+    <string name="terminal_empty">No terminal text yet.</string>
+</resources>

@@ -1,0 +1,21 @@
+{
+  "source": "803c669",
+  "date": "2026-10-20",
+  "device": "wooloo_review_20261020",
+  "serial": "emulator-5556",
+  "androidApi": 36,
+  "androidImage": "Android 16 / 36.1 ARM64 Google APIs",
+  "screen": "1080x2424, 420 dpi",
+  "pageSize": 4096,
+  "herdr": "0.9.5",
+  "herdrSession": "wooloo-review-20261020",
+  "ssh": "127.0.0.1:22349 (emulator 10.0.2.2)",
+  "apk": "debug / versionName 0.1.0 / updates disabled",
+  "apkSha256": "804e0e7f20f22bb1cd73d8b0c6dd1e255d90de20d8720b59848b7a0e2bbff5b5",
+  "instrumentation": {
+    "tests": "11",
+    "failures": "0",
+    "errors": "0",
+    "skipped": "0"
+  }
+}

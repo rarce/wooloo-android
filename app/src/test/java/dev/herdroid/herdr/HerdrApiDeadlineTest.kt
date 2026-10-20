@@ -13,6 +13,19 @@ import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.TimeUnit
 
 class HerdrApiDeadlineTest {
+    @Test
+    fun readPaneUsesProtocolSourceAndReturnsText(): Unit = runBlocking {
+        val channel = FakeChannel("""{"result":{"read":{"text":"hello\nworld"}}}""".byteInputStream())
+        val api = HerdrApi({ channel }, "default", null)
+        assertEquals("hello\nworld", api.readPane("pane-1"))
+        val request = herdrJson.parseToJsonElement(channel.stdin.toString())
+        val expected = herdrJson.parseToJsonElement(
+            """{"id":"herdroid_1","method":"pane.read","params":{"pane_id":"pane-1","source":"recent_unwrapped","lines":400}}"""
+        )
+        assertEquals(expected, request)
+        assertTrue(channel.closed)
+    }
+
     private class Stalled : InputStream() {
         val entered = CountDownLatch(1)
         override fun read(): Int {

@@ -38,6 +38,11 @@ las casillas corregidas indican el estado actual. Integración local no equivale
 
 ## Ejecución secuencial de los cinco frentes
 
+Seguimiento del 20/10 posterior al commit `803c669`: corregidos E1–E4 de la revisión
+en emulador (recuperación de terminal, lectura accesible, cabecera al 200% y solicitud
+de notificaciones). Historial `pane.read` ajustado al protocolo real.
+[Implementación y evidencia](docs/review-2026-10-20/fixes/README.md).
+
 Solicitada con subagentes GPT-6.1 Sol, razonamiento low. Se implementa y revisa cada bloque antes del siguiente; las correcciones en ramas todavía requieren integración en el candidato de publicación.
 
 1. **Seguridad de credenciales: implementación y revisión completadas**, commit `31f0ead`, rama `fix/qr-credential-trust` (pendiente de integrar). R5 exige revisar destino/confianza antes de guardar o conectar y R9 evita guardar borradores sensibles en el estado restaurable. 197 pruebas JVM: 190 aprobadas y 7 opt-in omitidas; 11 Android aprobadas; lint, cobertura y builds debug/release correctos. Revisión independiente sin hallazgos; cancelación comprobada también en emulador. Evidencia: `docs/review-2026-10-17/security/README.md` de esa rama.

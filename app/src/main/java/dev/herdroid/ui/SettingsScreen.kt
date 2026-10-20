@@ -137,7 +137,7 @@ fun SettingsScreen(onBack: () -> Unit) {
                     )
                 },
                 headlineContent = { Text("Notifications") },
-                supportingContent = { Text("Choose how agent alerts reach you") },
+                supportingContent = { Text("Enable or disable agent alerts in Android settings") },
             )
             UpdateSettings(context.app.updater)
             listOf(

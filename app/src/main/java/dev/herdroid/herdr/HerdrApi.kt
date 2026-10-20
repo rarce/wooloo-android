@@ -202,7 +202,7 @@ class HerdrApi internal constructor(
             putJsonArray("keys") { keys.forEach { add(JsonPrimitive(it)) } }
         })
 
-    suspend fun readPane(paneId: String, source: String = "recent-unwrapped", lines: Int = 400): String {
+    suspend fun readPane(paneId: String, source: String = "recent_unwrapped", lines: Int = 400): String {
         val result = request("pane.read", buildJsonObject {
             put("pane_id", paneId); put("source", source); put("lines", lines)
         })

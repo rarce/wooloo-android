@@ -37,7 +37,11 @@ sealed interface TerminalEvent {
         val bytes: ByteArray,
     ) : TerminalEvent
 
-    data class Closed(val reason: String?) : TerminalEvent {
+    data class Closed(
+        val reason: String?,
+        /** The exec channel ended without an explicit terminal.closed record. Retry after SSH recovery. */
+        val interrupted: Boolean = false,
+    ) : TerminalEvent {
         /** Another client owns this terminal; reconnecting with takeover would steal it. */
         val needsTakeover: Boolean get() = reason?.contains("--takeover") == true
         val wasTakenOver: Boolean get() = reason?.contains("taken over") == true
@@ -59,9 +63,10 @@ class TerminalStream private constructor(
     // Single consumer; buffered so the first full frame is never lost before collection starts.
     private val _events = Channel<TerminalEvent>(capacity = 8)
     @Volatile private var closedReason: String? = null
+    @Volatile private var explicitClose = false
     val events: Flow<TerminalEvent> = flow {
         for (event in _events) emit(event)
-        emit(TerminalEvent.Closed(closedReason))
+        emit(TerminalEvent.Closed(closedReason, interrupted = !explicitClose))
     }
 
     private val outbox = Channel<String>(capacity = 64)
@@ -81,6 +86,7 @@ class TerminalStream private constructor(
                     if (line.isBlank()) continue
                     val event = parse(line) ?: continue
                     if (event is TerminalEvent.Closed) {
+                        explicitClose = true
                         closedReason = event.reason
                         break
                     }

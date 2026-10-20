@@ -1,5 +1,6 @@
 package dev.herdroid.ui.terminal
 
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.padding
@@ -7,6 +8,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
@@ -62,18 +65,20 @@ internal fun PaneMetrics(connection: HerdrConnection, agent: String?) {
 
 @Composable
 internal fun PaneMetricsContent(stats: HostStats?, quotaText: String?) {
-    Column(Modifier.widthIn(max = 150.dp).padding(horizontal = 6.dp)) {
+    val expanded = LocalDensity.current.fontScale > 1.3f || LocalConfiguration.current.screenWidthDp < 360
+    Column((if (expanded) Modifier.fillMaxWidth() else Modifier.widthIn(max = 150.dp)).padding(horizontal = 6.dp)) {
         Text(
             "CPU ${metricPercent(stats?.cpuUsage)} · RAM ${metricPercent(stats?.memoryFraction)}",
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 1,
+            maxLines = if (expanded) Int.MAX_VALUE else 1,
+            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
         )
         if (quotaText != null) Text(
             quotaText,
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 1,
+            maxLines = if (expanded) Int.MAX_VALUE else 1,
             overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
         )
     }

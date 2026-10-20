@@ -26,11 +26,13 @@ class TerminalViewInputTest {
     private lateinit var view: TerminalView
     private lateinit var otherEditor: EditText
     private val output = mutableListOf<String>()
+    private var reads = 0
 
     @Before fun setUp() {
         val activity = activityController.setup().get()
         view = TerminalView(activity, TerminalModel(), ModifierState())
         view.listener = object : TerminalViewListener {
+            override fun onReadScreen() { reads++ }
             override fun onInput(data: String) { output.add(data) }
             override fun onGridSizeChanged(cols: Int, rows: Int, cellWidthPx: Int, cellHeightPx: Int) {}
             override fun onScroll(up: Boolean, lines: Int, column: Int, row: Int) {}
@@ -49,6 +51,18 @@ class TerminalViewInputTest {
     }
 
     @After fun tearDown() { activityController.pause().stop().destroy(); shadowOf(Looper.getMainLooper()).idle() }
+
+    @Test fun accessibleScreenContainsOutputAndOffersReadActionWithoutSendingInput() {
+        view.model.applyFrame(80, 24, true, "review output\r\n$ ".toByteArray())
+        val node = view.createAccessibilityNodeInfo()
+        assertTrue(node.text.toString().contains("review output"))
+        assertTrue(node.actionList.any { it.id == dev.herdroid.R.id.read_terminal_text })
+        assertTrue(view.performAccessibilityAction(dev.herdroid.R.id.read_terminal_text, null))
+        assertEquals(1, reads)
+        assertTrue(output.isEmpty())
+        view.model.applyFrame(80, 24, true, "updated output".toByteArray())
+        assertTrue(view.createAccessibilityNodeInfo().text.toString().contains("updated output"))
+    }
 
     @Test fun editorAllowsDictationAndExposesTextAndCursor() {
         val info = EditorInfo()

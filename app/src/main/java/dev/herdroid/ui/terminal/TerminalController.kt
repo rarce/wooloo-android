@@ -11,6 +11,7 @@ import dev.herdroid.terminal.ModifierState
 import dev.herdroid.terminal.TerminalModel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
@@ -23,21 +24,36 @@ sealed interface PaneState {
     data object Opening : PaneState
     data object Live : PaneState
     /** Another client controls this pane; we can take it over. */
-    data class Busy(val reason: String) : PaneState
+    data class Busy(val reason: String, val afterReconnect: Boolean = false) : PaneState
     /** We were in control and someone else took over. */
     data object TakenOver : PaneState
     data object Offline : PaneState
-    data class Closed(val reason: String?) : PaneState
+    data class Closed(val reason: String?, val interrupted: Boolean = false) : PaneState
 }
 
 /**
  * Owns one pane's live terminal stream for the terminal screen: opens it once the view knows
  * its grid size, keeps the remote size in sync, and reopens it after reconnects.
  */
-class TerminalController(
-    private val connection: HerdrConnection,
+internal interface TerminalConnection {
+    val status: StateFlow<ConnectionStatus>
+    val isLive: Boolean
+    suspend fun openTerminal(paneId: String, cols: Int, rows: Int, takeover: Boolean,
+                             readOnly: Boolean, scope: CoroutineScope): TerminalStream
+}
+
+class TerminalController internal constructor(
+    private val connection: TerminalConnection,
     val paneId: String,
 ) {
+    constructor(connection: HerdrConnection, paneId: String) : this(object : TerminalConnection {
+        override val status get() = connection.status
+        override val isLive get() = connection.isLive
+        override suspend fun openTerminal(paneId: String, cols: Int, rows: Int, takeover: Boolean,
+                                          readOnly: Boolean, scope: CoroutineScope) =
+            connection.openTerminal(paneId, cols, rows, takeover, readOnly, scope)
+    }, paneId)
+
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     val model = TerminalModel()
     val modifiers = ModifierState()
@@ -47,6 +63,7 @@ class TerminalController(
     var readOnly by mutableStateOf(false)
         private set
 
+    private var recovering = false
     private var stream: TerminalStream? = null
     private var streamJob: Job? = null
     @Volatile private var generation = 0L
@@ -60,9 +77,10 @@ class TerminalController(
         scope.launch {
             connection.status.collect { status ->
                 when (status) {
-                    ConnectionStatus.Connected -> if (state == PaneState.Offline) open()
+                    ConnectionStatus.Connected -> if (state == PaneState.Offline) open(recovery = true)
                     is ConnectionStatus.Reconnecting, is ConnectionStatus.Failed -> {
-                        if (state == PaneState.Live || state == PaneState.Opening) {
+                        if (state == PaneState.Live || state == PaneState.Opening ||
+                            (state as? PaneState.Closed)?.interrupted == true) {
                             closeStream()
                             state = PaneState.Offline
                         }
@@ -91,10 +109,11 @@ class TerminalController(
         }
     }
 
-    fun open(takeover: Boolean = false, observeOnly: Boolean = readOnly) {
+    fun open(takeover: Boolean = false, observeOnly: Boolean = readOnly, recovery: Boolean = false) {
+        readOnly = observeOnly
         if (cols == 0) return
         closeStream()
-        readOnly = observeOnly
+        recovering = recovery
         if (!connection.isLive) {
             state = PaneState.Offline
             return
@@ -107,7 +126,7 @@ class TerminalController(
             }.getOrElse { error ->
                 if (error is CancellationException) throw error
                 if (generation != openingGeneration) return@launch
-                state = if (connection.isLive) PaneState.Closed(error.message) else PaneState.Offline
+                state = if (connection.isLive) PaneState.Closed(error.message, interrupted = true) else PaneState.Offline
                 return@launch
             }
             if (generation != openingGeneration) {
@@ -121,7 +140,10 @@ class TerminalController(
                         is TerminalEvent.Frame -> {
                             if (!applyFrame(openingGeneration, event)) return@collect
                             if (state != PaneState.Live) scope.launch {
-                                if (generation == openingGeneration) state = PaneState.Live
+                                if (generation == openingGeneration) {
+                                    recovering = false
+                                    state = PaneState.Live
+                                }
                             }
                         }
                         is TerminalEvent.Closed -> scope.launch {
@@ -136,10 +158,10 @@ class TerminalController(
     private fun onClosed(event: TerminalEvent.Closed) {
         stream = null
         state = when {
-            event.needsTakeover -> PaneState.Busy(event.reason.orEmpty())
+            event.needsTakeover -> PaneState.Busy(event.reason.orEmpty(), afterReconnect = recovering)
             event.wasTakenOver -> PaneState.TakenOver
-            !connection.isLive -> PaneState.Offline
-            else -> PaneState.Closed(event.reason)
+            event.interrupted && !connection.isLive -> PaneState.Offline
+            else -> PaneState.Closed(event.reason, interrupted = event.interrupted)
         }
     }
 

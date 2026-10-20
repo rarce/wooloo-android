@@ -2,6 +2,9 @@ package dev.herdroid.terminal
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.os.Bundle
+import android.view.accessibility.AccessibilityNodeInfo
+import dev.herdroid.R
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.RectF
@@ -57,6 +60,7 @@ interface TerminalViewListener {
     fun onScroll(up: Boolean, lines: Int, column: Int, row: Int)
     fun onTap(column: Int, row: Int)
     fun onLongPress(column: Int, row: Int)
+    fun onReadScreen() {}
     fun onFontSizeChanged(sp: Float)
 }
 
@@ -143,6 +147,7 @@ class TerminalView(
     }
 
     init {
+        importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_YES
         isFocusable = true
         isFocusableInTouchMode = true
         setFontSize(fontSizeSp, notify = false)
@@ -196,6 +201,24 @@ class TerminalView(
         inputConnection?.closeConnection()
         hardwareModifiers = 0
         super.onDetachedFromWindow()
+    }
+
+    override fun onInitializeAccessibilityNodeInfo(info: AccessibilityNodeInfo) {
+        super.onInitializeAccessibilityNodeInfo(info)
+        info.className = "android.widget.TextView"
+        // No per-frame announcements: services read the current screen when they query/focus it.
+        info.text = model.screenText().trimEnd().take(16_384).ifBlank { context.getString(R.string.terminal_empty) }
+        info.addAction(AccessibilityNodeInfo.AccessibilityAction(
+            R.id.read_terminal_text, context.getString(R.string.read_terminal_text),
+        ))
+    }
+
+    override fun performAccessibilityAction(action: Int, arguments: Bundle?): Boolean {
+        if (action == R.id.read_terminal_text && listener != null) {
+            listener?.onReadScreen()
+            return true
+        }
+        return super.performAccessibilityAction(action, arguments)
     }
 
     // ---- Rendering --------------------------------------------------------------------

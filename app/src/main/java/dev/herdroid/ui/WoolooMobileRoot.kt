@@ -1,9 +1,5 @@
 package dev.herdroid.ui
 
-import android.Manifest
-import android.os.Build
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
@@ -91,13 +87,6 @@ fun WoolooMobileRoot(openRequests: MutableStateFlow<OpenRequest?>, hostLinks: Mu
         }
         val existing = link.findExisting(context.app.hosts.hosts.value)
         nav.navigate(Routes.edit(existing?.id, raw)) { popUpTo(Routes.HOSTS) }
-    }
-
-    val notificationPermission = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { }
-    LaunchedEffect(Unit) {
-        if (Build.VERSION.SDK_INT >= 33) notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
     }
 
     // Notification tap: jump straight to the agent's pane.

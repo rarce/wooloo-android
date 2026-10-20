@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -79,6 +80,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.customActions
@@ -184,6 +187,7 @@ private fun TerminalScreenContent(
 
     var terminalView by remember { mutableStateOf<TerminalView?>(null) }
     var composer by remember { mutableStateOf(false) }
+    var readingTerminal by remember(controller) { mutableStateOf(false) }
     var menu by remember { mutableStateOf(false) }
     var longPress by remember { mutableStateOf<Pair<Int, Int>?>(null) }
     var renaming by remember { mutableStateOf(false) }
@@ -191,7 +195,7 @@ private fun TerminalScreenContent(
     val lifecycleState by LocalLifecycleOwner.current.lifecycle.currentStateFlow.collectAsState()
     val retainInputFocus = lifecycleState == Lifecycle.State.RESUMED &&
         controller.state is PaneState.Live && !controller.readOnly &&
-        !composer && !menu && longPress == null && !renaming && !closing && prompt == null
+        !composer && !readingTerminal && !menu && longPress == null && !renaming && !closing && prompt == null
 
     // Keep the screen awake while watching a pane, if enabled.
     DisposableEffect(keepScreenOn) {
@@ -271,6 +275,7 @@ private fun TerminalScreenContent(
                     clipboard.setText(AnnotatedString(controller.model.screenText()))
                     Toast.makeText(context, "Screen copied", Toast.LENGTH_SHORT).show()
                 },
+                onRead = { readingTerminal = true },
                 onZoom = { act("Zoom") { zoomPane(paneId) } },
                 onSplit = { dir ->
                     scope.launch {
@@ -319,6 +324,7 @@ private fun TerminalScreenContent(
                                 val link = controller.model.linkAt(column, row)
                                 if (link != null) longPress = column to row else controller.tap(column, row)
                             }
+                            override fun onReadScreen() { readingTerminal = true }
                             override fun onLongPress(column: Int, row: Int) { longPress = column to row }
                             override fun onFontSizeChanged(sp: Float) = app.preferences.setFontSize(sp)
                         }
@@ -372,6 +378,14 @@ private fun TerminalScreenContent(
     }
 
     ConnectionPrompts(connection, prompt)
+
+    if (readingTerminal) {
+        TerminalTextDialog(
+            model = controller.model,
+            loadHistory = { connection.action { readPane(paneId) } },
+            onDismiss = { readingTerminal = false },
+        )
+    }
 
     if (composer) {
         val isAgent = agent != null
@@ -488,72 +502,86 @@ internal fun TerminalTopBar(
     onReconnect: () -> Unit,
     onSwipeAgent: ((Int) -> Unit)? = null,
     metrics: @Composable () -> Unit = {},
+    onRead: () -> Unit = {},
 ) {
-    Row(
-        Modifier.fillMaxWidth().height(56.dp).padding(end = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, "Back") }
-        // Swipe the title sideways to move between this space's agents.
-        Column(
-            Modifier
-                .weight(1f)
-                .then(
-                    if (onSwipeAgent == null) Modifier
-                    else Modifier
-                        .pointerInput(onSwipeAgent) {
-                            var dragged = 0f
-                            detectHorizontalDragGestures(
-                                onDragStart = { dragged = 0f },
-                                onDragEnd = {
-                                    if (dragged <= -SWIPE_PX) onSwipeAgent(1) else if (dragged >= SWIPE_PX) onSwipeAgent(-1)
-                                },
-                            ) { _, delta -> dragged += delta }
-                        }
-                        .semantics {
-                            customActions = listOf(
-                                CustomAccessibilityAction("Next agent in this space") { onSwipeAgent(1); true },
-                                CustomAccessibilityAction("Previous agent in this space") { onSwipeAgent(-1); true },
-                            )
-                        }
-                ),
+    val expanded = LocalDensity.current.fontScale > 1.3f || LocalConfiguration.current.screenWidthDp < 360
+    Column(Modifier.fillMaxWidth()) {
+        Row(
+            Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(end = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(
-                agentName ?: pane?.displayTitle ?: "Terminal",
-                style = MaterialTheme.typography.titleMedium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                pane?.let { breadcrumb(snapshot?.workspace(it.workspaceId), snapshot?.tab(it.tabId), it.shortCwd) }.orEmpty(),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
-        metrics()
-        if (agentStatus != null && agentLabel != null) StatusPill(agentStatus, agentLabel)
-        if (readOnly) {
-            Icon(Icons.Outlined.Visibility, "Watching", Modifier.padding(horizontal = 6.dp), tint = MaterialTheme.colorScheme.tertiary)
-        }
-        Box {
-            IconButton(onClick = { onMenu(true) }) { Icon(Icons.Outlined.MoreVert, "Pane actions") }
-            DropdownMenu(expanded = menu, onDismissRequest = { onMenu(false) }) {
-                Row(Modifier.padding(horizontal = 8.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    IconButton(onClick = { onFont(-1f) }) { Icon(Icons.Outlined.TextDecrease, "Smaller text") }
-                    IconButton(onClick = { onFont(1f) }) { Icon(Icons.Outlined.TextIncrease, "Larger text") }
+            IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, "Back") }
+            // Swipe the title sideways to move between this space's agents.
+            Column(
+                Modifier
+                    .weight(1f)
+                    .padding(vertical = 4.dp)
+                    .then(
+                        if (onSwipeAgent == null) Modifier
+                        else Modifier
+                            .pointerInput(onSwipeAgent) {
+                                var dragged = 0f
+                                detectHorizontalDragGestures(
+                                    onDragStart = { dragged = 0f },
+                                    onDragEnd = {
+                                        if (dragged <= -SWIPE_PX) onSwipeAgent(1) else if (dragged >= SWIPE_PX) onSwipeAgent(-1)
+                                    },
+                                ) { _, delta -> dragged += delta }
+                            }
+                            .semantics {
+                                customActions = listOf(
+                                    CustomAccessibilityAction("Next agent in this space") { onSwipeAgent(1); true },
+                                    CustomAccessibilityAction("Previous agent in this space") { onSwipeAgent(-1); true },
+                                )
+                            }
+                    ),
+            ) {
+                Text(
+                    agentName ?: pane?.displayTitle ?: "Terminal",
+                    style = MaterialTheme.typography.titleMedium,
+                    maxLines = if (expanded) 2 else 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    pane?.let { breadcrumb(snapshot?.workspace(it.workspaceId), snapshot?.tab(it.tabId), it.shortCwd) }.orEmpty(),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = if (expanded) 2 else 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            if (!expanded) {
+                metrics()
+                if (agentStatus != null && agentLabel != null) StatusPill(agentStatus, agentLabel)
+            }
+            if (readOnly) {
+                Icon(Icons.Outlined.Visibility, "Watching", Modifier.padding(horizontal = 6.dp), tint = MaterialTheme.colorScheme.tertiary)
+            }
+            Box {
+                IconButton(onClick = { onMenu(true) }) { Icon(Icons.Outlined.MoreVert, "Pane actions") }
+                DropdownMenu(expanded = menu, onDismissRequest = { onMenu(false) }) {
+                    Row(Modifier.padding(horizontal = 8.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        IconButton(onClick = { onFont(-1f) }) { Icon(Icons.Outlined.TextDecrease, "Smaller text") }
+                        IconButton(onClick = { onFont(1f) }) { Icon(Icons.Outlined.TextIncrease, "Larger text") }
+                    }
+                    HorizontalDivider()
+                    MenuItem(Icons.Outlined.Terminal, "Read terminal text") { onMenu(false); onRead() }
+                    MenuItem(Icons.Outlined.ContentCopy, "Copy screen") { onMenu(false); onCopy() }
+                    MenuItem(if (readOnly) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility,
+                        if (readOnly) "Take control" else "Watch only") { onMenu(false); onToggleReadOnly() }
+                    MenuItem(Icons.Outlined.CropFree, "Toggle zoom") { onMenu(false); onZoom() }
+                    MenuItem(Icons.Outlined.ViewColumn, "Split right") { onMenu(false); onSplit("right") }
+                    MenuItem(Icons.Outlined.ViewAgenda, "Split down") { onMenu(false); onSplit("down") }
+                    MenuItem(Icons.Outlined.Edit, "Rename pane") { onMenu(false); onRename() }
+                    MenuItem(Icons.Outlined.Refresh, "Reconnect pane") { onMenu(false); onReconnect() }
+                    MenuItem(Icons.Outlined.Close, "Close pane") { onMenu(false); onClosePane() }
                 }
-                HorizontalDivider()
-                MenuItem(Icons.Outlined.ContentCopy, "Copy screen") { onMenu(false); onCopy() }
-                MenuItem(if (readOnly) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility,
-                    if (readOnly) "Take control" else "Watch only") { onMenu(false); onToggleReadOnly() }
-                MenuItem(Icons.Outlined.CropFree, "Toggle zoom") { onMenu(false); onZoom() }
-                MenuItem(Icons.Outlined.ViewColumn, "Split right") { onMenu(false); onSplit("right") }
-                MenuItem(Icons.Outlined.ViewAgenda, "Split down") { onMenu(false); onSplit("down") }
-                MenuItem(Icons.Outlined.Edit, "Rename pane") { onMenu(false); onRename() }
-                MenuItem(Icons.Outlined.Refresh, "Reconnect pane") { onMenu(false); onReconnect() }
-                MenuItem(Icons.Outlined.Close, "Close pane") { onMenu(false); onClosePane() }
+            }
+        }
+        if (expanded) {
+            Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)) {
+                metrics()
+                if (agentStatus != null && agentLabel != null) StatusPill(agentStatus, agentLabel)
             }
         }
     }
@@ -681,7 +709,12 @@ private fun PaneOverlay(
             Surface(shape = RoundedCornerShape(24.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh, modifier = Modifier.padding(24.dp)) {
                 Column(Modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     val (title, body) = when (state) {
-                        is PaneState.Busy -> "Pane in use" to "Another client is controlling this pane (probably herdr on your computer). Take control here, or just watch."
+                        is PaneState.Busy -> if (state.afterReconnect) {
+                            "Confirm control after reconnecting" to
+                                "The previous connection may still hold this pane, or another client may control it. Take control here only if you want to replace that controller, or watch without changing it."
+                        } else {
+                            "Pane in use" to "Another client is controlling this pane. Take control here, or just watch."
+                        }
                         PaneState.TakenOver -> "Control moved" to "Another client took control of this pane."
                         PaneState.Offline -> "Offline" to "Waiting for the connection to come back…"
                         is PaneState.Closed -> "Stream ended" to (state.reason ?: "The pane stream closed.")

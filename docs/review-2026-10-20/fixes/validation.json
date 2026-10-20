@@ -1,0 +1,42 @@
+{
+  "base_commit": "803c669",
+  "source": "uncommitted fixes",
+  "emulator": "emulator-5556 / wooloo_review_20261020 / Android 16 API 36",
+  "jvm": {
+    "tests": 228,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 7
+  },
+  "artifacts": [
+    {
+      "file": "app/build/outputs/apk/release/app-release-unsigned.apk",
+      "sha256": "140e47a08b7a638079c8e875d15e76b608934d9d5819381a31368f1598697e0f"
+    },
+    {
+      "file": "app/build/outputs/apk/debug/app-debug.apk",
+      "sha256": "43644dfe9415e30c7fe8df0122986aa367a54d4e160b67e8661807433e562150"
+    },
+    {
+      "file": "app/build/outputs/apk/androidTest/release/app-release-androidTest.apk",
+      "sha256": "fc41f8b775f8f13848f3dd863e4943cae4140370ffe4cba2fed6b0450a8e119d"
+    },
+    {
+      "file": "app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk",
+      "sha256": "2ca1910477409309da5a6efda3d2dbb8c659cf95cc14a0b129eebd6494205f6b"
+    }
+  ],
+  "checks": [
+    "jacocoDebugCoverageVerification",
+    "paneMetricsCoverageVerification",
+    "lintDebug",
+    "assembleDebug",
+    "assembleRelease"
+  ],
+  "android": {
+    "tests": 11,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  }
+}
