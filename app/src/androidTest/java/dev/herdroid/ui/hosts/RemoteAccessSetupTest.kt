@@ -6,6 +6,7 @@ import android.content.Context
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.rule.GrantPermissionRule
@@ -41,7 +42,8 @@ class RemoteAccessSetupTest {
         val accepted = AtomicReference<String?>()
         val raw = "herdroid://add-host?transport=ssh&host=devbox.example&port=2222&user=dev&session=mobile-test&herdr=%2Fopt%2Fbin%2Fherdr"
         compose.setContent { WoolooMobileTheme { ScanQrScreen(onBack = {}, onScanned = accepted::set) } }
-        compose.onNodeWithText("Paste link").performClick()
+        // On a small screen the camera box pushes the button below the fold.
+        compose.onNodeWithText("Paste link").performScrollTo().performClick()
         compose.onNodeWithText("Link from Remote Access").performTextInput(raw)
         compose.onNodeWithText("Continue").performClick()
         compose.runOnIdle {
