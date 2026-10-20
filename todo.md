@@ -28,7 +28,7 @@ Las validaciones debug o con firma temporal no acreditan el candidato de producc
 - [ ] Identificar o crear la firma definitiva, registrar huella SHA-256 y custodiar copia cifrada con responsables y recuperación. No reemplazar firmas de instalaciones públicas existentes.
 - [ ] Configurar/verificar secretos de firma en GitHub sin exponer valores; restringir tags `v*`, rama/SHA y acceso al entorno de publicación.
 - [ ] Acreditar GitHub Actions verde sobre el SHA candidato. El bloqueo histórico de facturación no se considera resuelto por los checks locales.
-- [ ] Revisar historial/artefactos antes de abrir el repositorio y comprobar acceso anónimo al feed y assets. Última consulta registrada (20/10): repositorio privado; no se ha cambiado su visibilidad.
+- [ ] Comprobar acceso anónimo al feed y assets. El repositorio es público desde el 20/10 (`rarce/wooloo-android`), con secret scanning, push protection, alertas y actualizaciones de seguridad de Dependabot y un ruleset en `main` (PR con squash, historial lineal, check «Tests, lint and release»).
 - [ ] Verificar certificado definitivo del APK publicado y repetir gates con su versión real; nunca distribuir el APK firmado con `releaseSmoke`.
 - [ ] Ejecutar ensayo aislado con la firma prevista y después validar el feed definitivo público. El ensayo local existente no acredita ese canal.
 - [ ] Consultar aplicabilidad de verificación de desarrollador/registro del paquete para países y canales elegidos con fuentes oficiales vigentes.
@@ -54,7 +54,7 @@ Las validaciones debug o con firma temporal no acreditan el candidato de producc
 - [ ] Verificar desinstalación/reinstalación y limpieza/recuperación con almacenamiento real del teléfono y comportamientos del fabricante.
 - [ ] Publicar la política de privacidad para acceso anónimo cuando el canal sea público.
 - [ ] Confirmar derechos de nombre/icono/materiales y describir relación con herdr/proveedores sin sugerir afiliación.
-- [ ] Habilitar y probar un canal privado de seguridad; GitHub Issues queda para reportes sanitizados.
+- [ ] Probar el canal privado de seguridad: private vulnerability reporting de GitHub habilitado el 20/10 y documentado en SECURITY.md y en la política de privacidad; falta un reporte de prueba. GitHub Issues queda para reportes sanitizados.
 
 Evidencia y límites de este bloque: [auditoría del 20/10](docs/security-licenses/README.md).
 Validación nueva: 229 JVM aprobadas, 6 opt-in omitidas; 11 Android debug y 1 release smoke
