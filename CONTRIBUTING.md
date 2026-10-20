@@ -32,8 +32,8 @@ Add a regression test for changed behavior. Live SSH, Cloudflare Tunnel and scre
 [docs/testing.md](docs/testing.md) and the commands in [CLAUDE.md](CLAUDE.md). Say in the pull request which
 opt-in tests you ran and which you skipped.
 
-CI runs the unit tests, coverage gates, lint and both builds on every pull request; that check must pass before a
-merge. A separate job runs the device tests on an Android 36 emulator; it doesn't block merges yet.
+CI runs the unit tests, coverage gates, lint and both builds on every pull request, and a separate job runs the
+device tests on a small-screen Android 36 emulator. Both must pass before a merge.
 
 ## Code
 
