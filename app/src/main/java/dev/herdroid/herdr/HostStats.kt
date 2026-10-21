@@ -147,8 +147,12 @@ object HostProbe {
             fi
             echo "df=$(df -Pk $dir 2>/dev/null | tail -n 1)"
             if ! command -v nvidia-smi >/dev/null 2>&1; then :
-            elif command -v pgrep >/dev/null 2>&1 && pgrep -u "$(id -u)" -x nvidia-smi >/dev/null 2>&1; then
-              : # an earlier one is still stuck (a hung driver): don't pile up another
+            # Only our own earlier query counts, not the user's `nvidia-smi -l`, `dmon` or `watch`.
+            # Anchored at the start: Linux pgrep doesn't exclude its ancestors, and this very
+            # script's `sh -c` command line contains the query text too.
+            elif command -v pgrep >/dev/null 2>&1 &&
+              pgrep -u "$(id -u)" -f -- '^nvidia-smi --query-gpu=name,utilization[.]gpu,memory[.]used,memory[.]total' >/dev/null 2>&1; then
+              : # an earlier probe's query is still stuck (a hung driver): don't pile up another
             else
               q=--query-gpu=name,utilization.gpu,memory.used,memory.total
               # BusyBox before 1.30 only knows `timeout -t SECS`, so probe for -k support first.
@@ -158,7 +162,9 @@ object HostProbe {
                 nvidia-smi "${'$'}q" --format=csv,noheader,nounits 2>/dev/null & p=$!
                 end=$(( $(date +%s) + 3 ))
                 # No unbounded wait: a process stuck in the driver may never exit. A finished
-                # but unreaped one still passes kill -0, so also stop at its zombie state.
+                # but unreaped one still passes kill -0, so also stop at its zombie state. Where
+                # `ps -p` is missing (some BusyBox builds) ps prints nothing and the loop stops at
+                # once: that gives up the 3 s kill rather than risk waiting on a process that is gone.
                 while kill -0 "${'$'}p" 2>/dev/null; do
                   case "$(ps -o stat= -p "${'$'}p" 2>/dev/null)" in Z*|"") break ;; esac
                   if [ "$(date +%s)" -ge "${'$'}end" ]; then kill -9 "${'$'}p" 2>/dev/null; break; fi
