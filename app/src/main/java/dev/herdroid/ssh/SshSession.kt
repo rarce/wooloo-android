@@ -1,6 +1,7 @@
 package dev.herdroid.ssh
 
 import kotlinx.coroutines.*
+import kotlinx.coroutines.sync.Semaphore
 import net.schmizz.keepalive.KeepAliveProvider
 import net.schmizz.sshj.AndroidConfig
 import net.schmizz.sshj.SSHClient
@@ -10,6 +11,7 @@ import net.schmizz.sshj.connection.channel.direct.Session
 import net.schmizz.sshj.connection.channel.direct.SessionChannel
 import net.schmizz.sshj.common.SSHException
 import net.schmizz.sshj.common.DisconnectReason
+import net.schmizz.sshj.transport.DisconnectListener
 import net.schmizz.sshj.transport.verification.HostKeyVerifier
 import net.schmizz.sshj.userauth.UserAuthException
 import net.schmizz.sshj.userauth.keyprovider.KeyProvider
@@ -24,6 +26,7 @@ import java.security.PublicKey
 import java.util.Base64
 import java.io.InputStream
 import java.io.OutputStream
+import java.util.concurrent.TimeUnit
 
 /** What the user is asked when a server presents an unknown or changed host key. */
 data class HostKeyChallenge(
@@ -66,6 +69,17 @@ class SshSession(
     private val client = SSHClient(AndroidConfig().apply {
         keepAliveProvider = KeepAliveProvider.KEEP_ALIVE
     })
+
+    // Every exec channel counts toward sshd's MaxSessions (10 by default) until its close is
+    // acknowledged, including one still closing after a pane switch. Stay below it: wait, not fail.
+    private val channelLimit = Semaphore(MAX_EXEC_CHANNELS)
+
+    private val disconnected = CompletableDeferred<Unit>()
+
+    init {
+        // sshj reports transport death (socket error, peer disconnect, our own abort) here.
+        client.transport.disconnectListener = DisconnectListener { _, _ -> disconnected.complete(Unit) }
+    }
 
     override val isConnected: Boolean
         get() = client.isConnected && client.isAuthenticated
@@ -153,10 +167,39 @@ class SshSession(
     }
 
     /** Opens a new exec channel. The caller owns the returned session and must close it. */
-    override suspend fun exec(command: String): ExecChannel = openExecChannel(command, {
-        check(isConnected) { "SSH transport is not authenticated" }
-        SessionChannel(client.connection, client.remoteCharset)
-    }, ::abortTransport)
+    override suspend fun exec(command: String): ExecChannel {
+        channelLimit.acquire()
+        return openExecChannel(
+            command,
+            createSession = {
+                check(isConnected) { "SSH transport is not authenticated" }
+                SessionChannel(client.connection, client.remoteCharset)
+            },
+            transportHealthy = ::isTransportHealthy,
+            onReleased = channelLimit::release,
+            abortTransport = ::abortTransport,
+        )
+    }
+
+    /** Returns once the transport is gone: promptly through sshj's disconnect listener. */
+    suspend fun awaitDisconnect() {
+        while (isConnected) withTimeoutOrNull(DISCONNECT_POLL_MS) { disconnected.await() }
+    }
+
+    /**
+     * Whether the peer still reads and answers this transport: a keepalive request with a reply.
+     * Any answer counts (OpenSSH replies failure to unknown requests). A write stuck behind a
+     * full socket blocks this probe too, so it times out and reports the transport unhealthy.
+     */
+    private suspend fun isTransportHealthy(): Boolean {
+        if (!isConnected) return false
+        val probe = channelReaper.async {
+            val reply = client.connection.sendGlobalRequest("keepalive@openssh.com", true, ByteArray(0))
+            runCatching { reply.tryRetrieve(HEALTH_PROBE_MS, TimeUnit.MILLISECONDS) != null }.getOrDefault(true)
+        }
+        val answered = withTimeoutOrNull(HEALTH_PROBE_MS + 500) { runCatching { probe.await() }.getOrDefault(false) }
+        return answered == true && isConnected
+    }
 
     private fun abortTransport() {
         runCatching { client.socket?.close() }
@@ -171,6 +214,10 @@ class SshSession(
     companion object {
         private const val CONNECT_TIMEOUT_MS = 15_000
         private const val KEEPALIVE_SECONDS = 15
+        private const val HEALTH_PROBE_MS = 5_000L
+        private const val DISCONNECT_POLL_MS = 2_000L
+        /** herdr API requests (4), two event subscriptions, a pane stream and one being replaced. */
+        internal const val MAX_EXEC_CHANNELS = 8
 
         init {
             SecurityUtils.setRegisterBouncyCastle(true)
@@ -189,30 +236,42 @@ class SshSession(
     }
 }
 
+/**
+ * Opens an exec channel without ever sacrificing the shared transport. The open runs detached: a
+ * caller that gives up (a fast pane switch) leaves it to finish, and the channel is then closed
+ * gracefully. A refused open (sshd MaxSessions) leaves nothing behind and is simply rethrown.
+ * [onReleased] runs exactly once, when the channel no longer counts against the session.
+ */
 internal suspend fun openExecChannel(
     command: String,
     createSession: () -> SessionChannel,
+    transportHealthy: suspend () -> Boolean = { false },
+    onReleased: () -> Unit = {},
+    stuckMs: Long = CHANNEL_STUCK_MS,
     abortTransport: () -> Unit,
 ): ExecChannel {
-    var opened: ExecChannel? = null
-    var session: SessionChannel? = null
+    val opening = channelReaper.async {
+        val session = try {
+            createSession().also { it.open() }
+        } catch (e: Throwable) {
+            onReleased()
+            throw e
+        }
+        try {
+            ExecChannel(session, session.exec(command), transportHealthy, onReleased, abortTransport)
+        } catch (e: Throwable) {
+            ExecChannel(session, session, transportHealthy, onReleased, abortTransport).closeBounded(stuckMs = stuckMs)
+            throw e
+        }
+    }
+    // A CHANNEL_OPEN write stuck on a dead socket would otherwise never settle.
+    channelReaper.launch { abortIfStuck(opening, transportHealthy, abortTransport, stuckMs) }
     try {
-        return abortOnCancellation(abortTransport) { interruptibleIo {
-            // startSession hides its channel until CHANNEL_OPEN is confirmed.
-            // Own it before opening so cancellation cannot strand that channel.
-            val owned = createSession().also { session = it }
-            owned.open()
-            ExecChannel(owned, owned.exec(command), abortTransport).also { opened = it }
-        } }
-    } catch (e: Throwable) {
-        // Cancellation can win while the result is dispatched back to the caller.
-        if (opened != null) opened!!.closeBounded(terminateRemote = true) else {
-            // An interrupted open may still get a late server confirmation.
-            // Drop the transport rather than leave an ownerless remote channel.
-            abortTransport()
-            withContext(NonCancellable + Dispatchers.IO) {
-                session?.notifyError(SSHException("Exec channel acquisition failed", e))
-            }
+        return opening.await()
+    } catch (e: CancellationException) {
+        // A late server confirmation still finds its channel attached, then closed.
+        channelReaper.launch {
+            runCatching { opening.await() }.getOrNull()?.closeBounded(terminateRemote = true, stuckMs = stuckMs)
         }
         throw e
     }
@@ -223,8 +282,10 @@ interface CommandChannel : AutoCloseable {
     val stdout: InputStream
     val stderr: InputStream
     val isOpen: Boolean
-    /** Breaks non-interruptible IO after the graceful-close budget expires. */
+    /** Breaks non-interruptible IO stuck on an unhealthy transport. */
     fun abort() {}
+    /** Bounded probe of the transport under this channel. Unknown counts as unhealthy. */
+    suspend fun isTransportHealthy(): Boolean = false
     /** Only explicitly cancelled long-lived commands need a remote termination signal. */
     fun close(terminateRemote: Boolean) = close()
 }
@@ -232,9 +293,12 @@ interface CommandChannel : AutoCloseable {
 class ExecChannel(
     private val session: Session,
     val command: Session.Command,
+    private val transportHealthy: suspend () -> Boolean = { false },
+    private val onReleased: () -> Unit = {},
     private val abortTransport: () -> Unit,
 ) : CommandChannel {
     private val closing = java.util.concurrent.atomic.AtomicBoolean()
+    private val released = java.util.concurrent.atomic.AtomicBoolean()
     override val stdin get() = command.outputStream
     override val stdout get() = command.inputStream
     override val stderr get() = command.errorStream
@@ -256,10 +320,18 @@ class ExecChannel(
         // its acknowledgement wait when the first close was interrupted.
         runCatching { command.close() }
         if (command !== session) runCatching { session.close() }
+        release()
     }
+
+    override suspend fun isTransportHealthy() = transportHealthy()
 
     override fun abort() {
         abortTransport()
         session.notifyError(SSHException("Exec channel cleanup exceeded its deadline"))
+        release()
+    }
+
+    private fun release() {
+        if (released.compareAndSet(false, true)) onReleased()
     }
 }

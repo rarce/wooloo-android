@@ -476,7 +476,10 @@ class HerdrConnection(
             }
         }
         try {
-            while (session.isConnected && isActive) delay(2_000)
+            // sshj reports transport death at once, so panes go offline before their streams
+            // look like pane failures. The poll only covers shells without a listener (the demo).
+            if (session is SshSession) session.awaitDisconnect()
+            else while (session.isConnected && isActive) delay(2_000)
         } finally {
             poller.cancel()
             lifecycle.cancel()

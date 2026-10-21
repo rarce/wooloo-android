@@ -147,7 +147,8 @@ class HerdrApiDeadlineTest {
         api.request("ping", timeoutMs = 2000)
         assertTrue((System.nanoTime() - start) / 1_000_000 < 1500)
         assertNotSame(caller, closeThread)
-        assertTrue(aborted)
+        // A slow close finishes in the background; it no longer costs the shared transport (#24).
+        assertFalse(aborted)
     }
 
     @Test(timeout = 5000)

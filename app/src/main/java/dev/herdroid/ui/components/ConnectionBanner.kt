@@ -31,6 +31,13 @@ import dev.herdroid.connection.ConnectionStatus
 import dev.herdroid.connection.FailureKind
 import kotlinx.coroutines.delay
 
+/**
+ * The host states for which the banner offers actions (retry, edit host). The pane overlay stays
+ * passive in these, so only one recovery surface is ever actionable.
+ */
+val ConnectionStatus.bannerOffersRecovery: Boolean
+    get() = this is ConnectionStatus.Reconnecting || this is ConnectionStatus.Failed
+
 /** Slim, non-blocking banner describing connection health with the one action that helps. */
 @Composable
 fun ConnectionBanner(
