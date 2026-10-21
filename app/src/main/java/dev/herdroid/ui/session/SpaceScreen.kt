@@ -44,6 +44,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -171,7 +173,7 @@ internal fun SpaceContent(
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(0.dp),
     ) {
-        if (snapshot.agentsIn(workspaceId).isEmpty()) {
+        if (groups.none { group -> group.panes.any { snapshot.agentFor(it.paneId) != null } }) {
             item(key = "no-agents") {
                 Text(
                     "No agents here yet. Open a pane and start one, like claude or codex.",
@@ -253,7 +255,7 @@ private fun TabHeader(
             }
             Box {
                 IconButton(onClick = { menu = true }) {
-                    Icon(Icons.Outlined.MoreVert, "Actions for ${tab.displayLabel}", Modifier.size(20.dp))
+                    Icon(Icons.Outlined.MoreVert, if (plain) "Tab actions" else "Actions for ${tab.displayLabel}", Modifier.size(20.dp))
                 }
                 DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                     val target = group.panes.firstOrNull { it.focused } ?: group.panes.firstOrNull()
@@ -283,8 +285,11 @@ private fun TabHeader(
             }
         }
         // The miniature shows where the panes listed below sit; it is not a second list of them.
+        // Touch still opens a tile, but screen readers get one node: the rows carry the actions.
         if ((snapshot.layout(tab.tabId)?.panes?.size ?: 0) > 1) {
-            LayoutPreview(snapshot, tab.tabId, onOpenPane)
+            val description = "Layout of ${tab.displayLabel}, ${group.panes.size} panes"
+            LayoutPreview(snapshot, tab.tabId, onOpenPane,
+                Modifier.clearAndSetSemantics { contentDescription = description })
         }
     }
 }

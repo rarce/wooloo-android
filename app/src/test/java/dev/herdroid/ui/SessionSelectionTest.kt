@@ -78,6 +78,9 @@ class SessionSelectionTest {
         assertEquals(expected, rowTitles())
         compose.onNodeWithText("main").assertIsDisplayed()
         compose.onNodeWithText("logs").assertIsDisplayed()
+        // The split tab's miniature is one accessibility node, so each pane is announced once (as its row).
+        compose.onNodeWithContentDescription("Layout of main, 3 panes").assertIsDisplayed()
+        assertEquals(1, compose.onAllNodesWithText("server").fetchSemanticsNodes().size)
 
         compose.onAllNodes(hasText("server") and SemanticsMatcher.keyIsDefined(SemanticsActions.OnLongClick))
             .onFirst().performClick()
@@ -101,7 +104,8 @@ class SessionSelectionTest {
         compose.onNodeWithText("Panes").assertIsDisplayed()
         compose.onNodeWithText("Tab 1").assertDoesNotExist()
         assertEquals(listOf("reviewer"), rowTitles())
-        compose.onNodeWithContentDescription("Actions for Tab 1").performClick()
+        compose.onNodeWithContentDescription("Actions for Tab 1").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Tab actions").performClick()
         compose.onNodeWithText("Close tab").assertIsDisplayed()
     }
 
