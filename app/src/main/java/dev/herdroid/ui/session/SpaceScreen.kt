@@ -1,7 +1,5 @@
 package dev.herdroid.ui.session
 
-import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -9,33 +7,27 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.Chat
-import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.Terminal
 import androidx.compose.material.icons.outlined.ViewAgenda
 import androidx.compose.material.icons.outlined.ViewColumn
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.ListItem
-import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -50,9 +42,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -61,17 +54,16 @@ import dev.herdroid.connection.ConnectionStatus
 import dev.herdroid.herdr.AgentInfo
 import dev.herdroid.herdr.PaneInfo
 import dev.herdroid.herdr.SessionSnapshot
-import dev.herdroid.herdr.TabInfo
+import dev.herdroid.herdr.TabPanes
 import dev.herdroid.ui.components.SnapshotBanner
 import dev.herdroid.ui.components.ConnectionBanner
 import dev.herdroid.ui.components.ConnectionPrompts
 import dev.herdroid.ui.components.StatusDot
 import dev.herdroid.ui.components.SessionListRow
 import dev.herdroid.ui.components.ListRowPosition
-import dev.herdroid.ui.components.StatusPill
 import dev.herdroid.ui.theme.Mono
 
-/** Inside one space: agents in herdr order, then tab layouts and shells. */
+/** Inside one space: its tabs, each listing its panes (agents and shells) in layout order. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SpaceScreen(
@@ -173,59 +165,145 @@ internal fun SpaceContent(
     onAction: (SessionDialog) -> Unit,
     onSplit: (PaneInfo, String) -> Unit,
 ) {
-    val agents = snapshot.agentsIn(workspaceId)
-    val tabs = snapshot.tabsOf(workspaceId)
-    // A tab earns its own section when it has more to show than the agents above already do.
-    val tabSections = tabs.filter { tab ->
-        tabs.size > 1 || (snapshot.layout(tab.tabId)?.panes?.size ?: 0) > 1 ||
-            snapshot.panesOf(tab.tabId).any { snapshot.agentFor(it.paneId) == null }
-    }
+    val groups = snapshot.tabGroupsIn(workspaceId)
+    // A lone tab without a name of its own is just the space: a plain list of its panes.
+    val plain = groups.size == 1 && !groups[0].tab.hasCustomLabel
     LazyColumn(
         modifier = Modifier.fillMaxSize().alpha(if (stale) 0.6f else 1f),
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(0.dp),
     ) {
-        item(key = "agents-title") { SectionLabel("Agents", agents.size) }
-        if (agents.isEmpty()) {
+        if (groups.none { group -> group.panes.any { snapshot.agentFor(it.paneId) != null } }) {
             item(key = "no-agents") {
                 Text(
                     "No agents here yet. Open a pane and start one, like claude or codex.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = 4.dp),
+                    modifier = Modifier.padding(start = 4.dp, end = 4.dp, bottom = 12.dp),
                 )
             }
         }
-        itemsIndexed(agents, key = { _, it -> "agent-" + it.paneId }) { index, agent ->
-            val tab = snapshot.tab(agent.tabId)?.takeIf { it.hasCustomLabel || tabs.size > 1 }
-            AgentRow(
-                agent = agent,
-                tab = tab,
-                position = ListRowPosition.at(index, agents.size),
-                canReply = !stale,
-                onOpen = { onOpenPane(agent.paneId) },
-                onReply = { onCompose(agent) },
-                onLongClick = { snapshot.pane(agent.paneId)?.let(onPaneMenu) },
-            )
-        }
-
-        if (tabSections.isNotEmpty()) {
-            item(key = "tabs-title") {
-                Box(Modifier.padding(top = 20.dp)) { SectionLabel(if (tabs.size > 1) "Tabs" else "Layout", tabs.size) }
+        groups.forEachIndexed { groupIndex, group ->
+            item(key = "tab-" + group.tab.tabId) {
+                TabHeader(
+                    group = group,
+                    plain = plain,
+                    snapshot = snapshot,
+                    onOpenPane = onOpenPane,
+                    onAction = onAction,
+                    onSplit = onSplit,
+                    modifier = Modifier.padding(top = if (groupIndex == 0) 0.dp else 20.dp),
+                )
             }
-            items(tabSections, key = { "tab-" + it.tabId }) { tab ->
-                Box(Modifier.padding(bottom = 8.dp)) { TabSection(tab, snapshot, onOpenPane, onPaneMenu, onAction, onSplit) }
+            itemsIndexed(group.panes, key = { _, it -> "pane-" + it.paneId }) { index, pane ->
+                val agent = snapshot.agentFor(pane.paneId)
+                val position = ListRowPosition.at(index, group.panes.size)
+                if (agent != null) {
+                    AgentRow(
+                        agent = agent,
+                        position = position,
+                        canReply = !stale,
+                        onOpen = { onOpenPane(pane.paneId) },
+                        onReply = { onCompose(agent) },
+                        onLongClick = { onPaneMenu(pane) },
+                    )
+                } else {
+                    ShellRow(
+                        pane = pane,
+                        position = position,
+                        onOpen = { onOpenPane(pane.paneId) },
+                        onLongClick = { onPaneMenu(pane) },
+                    )
+                }
             }
         }
         item { Spacer(Modifier.height(48.dp)) }
     }
 }
 
+/** A tab's name, state and menu, with its layout when it is split. [plain] keeps only the menu. */
+@Composable
+private fun TabHeader(
+    group: TabPanes,
+    plain: Boolean,
+    snapshot: SessionSnapshot,
+    onOpenPane: (String) -> Unit,
+    onAction: (SessionDialog) -> Unit,
+    onSplit: (PaneInfo, String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val tab = group.tab
+    var menu by remember { mutableStateOf(false) }
+    Column(modifier.padding(bottom = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(Modifier.fillMaxWidth().padding(start = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                if (!plain) StatusDot(tab.agentStatus, size = 6.dp)
+                Text(
+                    if (plain) "Panes" else tab.displayLabel,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = if (plain || tab.focused) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+                Text(
+                    group.panes.size.toString(),
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Box {
+                IconButton(onClick = { menu = true }) {
+                    Icon(Icons.Outlined.MoreVert, if (plain) "Tab actions" else "Actions for ${tab.displayLabel}", Modifier.size(20.dp))
+                }
+                DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                    val target = group.panes.firstOrNull { it.focused } ?: group.panes.firstOrNull()
+                    if (target != null) {
+                        DropdownMenuItem(
+                            text = { Text("Split right") },
+                            leadingIcon = { Icon(Icons.Outlined.ViewColumn, null) },
+                            onClick = { menu = false; onSplit(target, "right") },
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Split down") },
+                            leadingIcon = { Icon(Icons.Outlined.ViewAgenda, null) },
+                            onClick = { menu = false; onSplit(target, "down") },
+                        )
+                    }
+                    DropdownMenuItem(
+                        text = { Text("Rename tab") },
+                        leadingIcon = { Icon(Icons.Outlined.Edit, null) },
+                        onClick = { menu = false; onAction(SessionDialog.RenameTab(tab)) },
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Close tab") },
+                        leadingIcon = { Icon(Icons.Outlined.Close, null) },
+                        onClick = { menu = false; onAction(SessionDialog.CloseTab(tab)) },
+                    )
+                }
+            }
+        }
+        // The miniature shows where the panes listed below sit; it is not a second list of them.
+        // Touch still opens a tile, but screen readers get one node: the rows carry the actions.
+        if ((snapshot.layout(tab.tabId)?.panes?.size ?: 0) > 1) {
+            val description = "Layout of ${tab.displayLabel}, ${group.panes.size} panes"
+            LayoutPreview(snapshot, tab.tabId, onOpenPane,
+                Modifier.clearAndSetSemantics { contentDescription = description })
+        }
+    }
+}
+
+/** Agent and shell rows share a leading slot, so their names line up within a tab. */
+@Composable
+private fun LeadingSlot(content: @Composable () -> Unit) {
+    Box(Modifier.size(18.dp), contentAlignment = Alignment.Center) { content() }
+}
+
 /** All agent states use one compact row, so state changes never resize or reorder the list. */
 @Composable
 private fun AgentRow(
     agent: AgentInfo,
-    tab: TabInfo?,
     position: ListRowPosition,
     canReply: Boolean,
     onOpen: () -> Unit,
@@ -237,7 +315,7 @@ private fun AgentRow(
         onLongClick = onLongClick,
         actionLabel = "Pane actions",
         position = position,
-        leading = { StatusDot(agent.agentStatus, size = 8.dp) },
+        leading = { LeadingSlot { StatusDot(agent.agentStatus, size = 8.dp) } },
         focused = agent.focused,
         trailing = {
             IconButton(onClick = onReply, enabled = canReply) {
@@ -257,130 +335,41 @@ private fun AgentRow(
         if (largeText) {
             Text(agent.statusLabel(), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        val detail = listOfNotNull(
-            tab?.displayLabel,
-            agent.subtitle?.takeUnless { it == agent.displayName || it == tab?.displayLabel },
-        ).joinToString(" › ")
-        if (detail.isNotBlank()) {
+        agent.subtitle?.takeUnless { it == agent.displayName }?.let { detail ->
             Text(detail, style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
 }
 
-/** A tab's layout and its non-agent panes (shells, servers, logs); agents are listed above. */
+/** A pane without an agent (shell, server, logs): terminal glyph, title and working directory. */
 @Composable
-private fun TabSection(
-    tab: TabInfo,
-    snapshot: SessionSnapshot,
-    onOpenPane: (String) -> Unit,
-    onPaneMenu: (PaneInfo) -> Unit,
-    onAction: (SessionDialog) -> Unit,
-    onSplit: (PaneInfo, String) -> Unit,
-) {
-    var menu by remember { mutableStateOf(false) }
-    val panes = snapshot.panesOf(tab.tabId)
-    Card(
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
-    ) {
-        Column(Modifier.padding(start = 12.dp, end = 4.dp, top = 4.dp, bottom = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 4.dp)) {
-                StatusDot(tab.agentStatus, size = 6.dp)
-                Text(
-                    tab.displayLabel,
-                    style = MaterialTheme.typography.labelLarge,
-                    fontWeight = FontWeight.Bold,
-                    color = if (tab.focused) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.weight(1f),
-                )
-                Box {
-                    IconButton(onClick = { menu = true }) {
-                        Icon(Icons.Outlined.MoreVert, "Tab actions", Modifier.size(20.dp))
-                    }
-                    DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                        val target = panes.firstOrNull { it.focused } ?: panes.firstOrNull()
-                        if (target != null) {
-                            DropdownMenuItem(
-                                text = { Text("Split right") },
-                                leadingIcon = { Icon(Icons.Outlined.ViewColumn, null) },
-                                onClick = { menu = false; onSplit(target, "right") },
-                            )
-                            DropdownMenuItem(
-                                text = { Text("Split down") },
-                                leadingIcon = { Icon(Icons.Outlined.ViewAgenda, null) },
-                                onClick = { menu = false; onSplit(target, "down") },
-                            )
-                        }
-                        DropdownMenuItem(
-                            text = { Text("Rename tab") },
-                            leadingIcon = { Icon(Icons.Outlined.Edit, null) },
-                            onClick = { menu = false; onAction(SessionDialog.RenameTab(tab)) },
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Close tab") },
-                            leadingIcon = { Icon(Icons.Outlined.Close, null) },
-                            onClick = { menu = false; onAction(SessionDialog.CloseTab(tab)) },
-                        )
-                    }
-                }
-            }
-            Column(Modifier.padding(end = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                if ((snapshot.layout(tab.tabId)?.panes?.size ?: 0) > 1) {
-                    LayoutPreview(snapshot, tab.tabId, onOpenPane)
-                }
-                panes.filter { snapshot.agentFor(it.paneId) == null }.forEach { pane ->
-                    PaneRow(pane = pane, agent = null, onClick = { onOpenPane(pane.paneId) }, onLongClick = { onPaneMenu(pane) })
-                }
-            }
-        }
-    }
-}
-
-@OptIn(ExperimentalFoundationApi::class)
-@Composable
-private fun PaneRow(pane: PaneInfo, agent: AgentInfo?, onClick: () -> Unit, onLongClick: () -> Unit) {
-    val status = agent?.agentStatus
-    ListItem(
-        modifier = Modifier
-            .clip(RoundedCornerShape(16.dp))
-            .combinedClickable(onClick = onClick, onLongClickLabel = "Pane actions", onLongClick = onLongClick),
-        colors = ListItemDefaults.colors(
-            containerColor = if (agent != null) MaterialTheme.colorScheme.surfaceContainer else MaterialTheme.colorScheme.surfaceContainerHigh,
-        ),
-        leadingContent = {
-            if (status != null) StatusDot(status, size = 9.dp)
-            else Icon(Icons.Outlined.Terminal, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+private fun ShellRow(pane: PaneInfo, position: ListRowPosition, onOpen: () -> Unit, onLongClick: () -> Unit) {
+    SessionListRow(
+        onOpen = onOpen,
+        onLongClick = onLongClick,
+        actionLabel = "Pane actions",
+        position = position,
+        leading = {
+            LeadingSlot { Icon(Icons.Outlined.Terminal, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant) }
         },
-        headlineContent = {
+        focused = pane.focused,
+    ) {
+        Text(pane.displayTitle, style = MaterialTheme.typography.titleMedium, fontFamily = Mono,
+            maxLines = 1, overflow = TextOverflow.Ellipsis)
+        val detail = listOfNotNull(
+            pane.terminalTitleStripped?.takeIf { it.isNotBlank() && it != pane.displayTitle },
+            pane.foregroundCwd ?: pane.cwd,
+        ).firstOrNull()
+        if (detail != null) {
             Text(
-                agent?.displayName ?: pane.displayTitle,
+                detail,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontFamily = if (detail.startsWith("/") || detail.startsWith("~")) Mono else null,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                fontWeight = if (agent != null || pane.focused) FontWeight.Bold else FontWeight.Normal,
-                fontFamily = if (agent == null) Mono else null,
             )
-        },
-        supportingContent = {
-            val detail = listOfNotNull(
-                agent?.subtitle ?: pane.terminalTitleStripped?.takeIf { agent == null && it != pane.displayTitle },
-                pane.foregroundCwd ?: pane.cwd,
-            ).firstOrNull()
-            if (detail != null) {
-                Text(
-                    detail,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    style = MaterialTheme.typography.bodySmall,
-                    fontFamily = if (detail.startsWith("/") || detail.startsWith("~")) Mono else null,
-                )
-            }
-        },
-        trailingContent = {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                if (status != null) StatusPill(status, agent.statusLabel())
-                Icon(Icons.Outlined.ChevronRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-        },
-    )
+        }
+    }
 }

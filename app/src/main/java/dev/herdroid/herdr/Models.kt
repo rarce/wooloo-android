@@ -190,4 +190,11 @@ data class SessionSnapshot(
     /** All of a space's panes, agents and shells, tab by tab in layout order. */
     fun panesInLayoutOrder(workspaceId: String): List<PaneInfo> =
         tabsOf(workspaceId).flatMap { panesOf(it.tabId) }
+
+    /** The same panes grouped by tab, as herdr's sidebar shows a space. */
+    fun tabGroupsIn(workspaceId: String): List<TabPanes> =
+        tabsOf(workspaceId).map { TabPanes(it, panesOf(it.tabId)) }
 }
+
+/** One tab of a space with its panes, agents and shells, in layout order. */
+data class TabPanes(val tab: TabInfo, val panes: List<PaneInfo>)

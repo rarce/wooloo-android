@@ -63,6 +63,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -99,6 +100,7 @@ import dev.herdroid.connection.ConnectionStatus
 import dev.herdroid.herdr.AgentStatus
 import dev.herdroid.herdr.PaneInfo
 import dev.herdroid.herdr.SessionSnapshot
+import dev.herdroid.herdr.TabInfo
 import dev.herdroid.herdr.RemoteCommand
 import dev.herdroid.terminal.TerminalView
 import dev.herdroid.terminal.TerminalViewListener
@@ -594,16 +596,29 @@ private fun MenuItem(icon: androidx.compose.ui.graphics.vector.ImageVector, text
 
 /**
  * Every pane of the current space, agents and ordinary terminals alike, in layout order: herdr's
- * state mark for agents, a terminal glyph for shells. The current pane is highlighted.
+ * state mark for agents, a terminal glyph for shells. The current pane is highlighted. With more
+ * than one tab, each tab's panes follow its label, as on the space screen.
  */
 @Composable
 internal fun PaneSwitcher(snapshot: SessionSnapshot, current: PaneInfo, onSelect: (String) -> Unit) {
     // Only this space's panes: changing space means going back up to the spaces list.
-    val panes = snapshot.panesInLayoutOrder(current.workspaceId)
-    if (panes.size <= 1) return
+    val groups = snapshot.tabGroupsIn(current.workspaceId).filter { it.panes.isNotEmpty() }
+    if (groups.sumOf { it.panes.size } <= 1) return
+    val labelled = groups.size > 1
+    // The item to scroll to for each pane, counting the tab labels before it. A tab's first pane
+    // scrolls to its label, so the current pane's tab stays readable.
+    val scrollTarget = remember(groups, labelled) {
+        buildMap {
+            var index = 0
+            groups.forEach { group ->
+                val label = if (labelled) index++ else null
+                group.panes.forEachIndexed { i, pane -> put(pane.paneId, if (i == 0 && label != null) label else index); index++ }
+            }
+        }
+    }
     val listState = rememberLazyListState()
     LaunchedEffect(current.paneId) {
-        panes.indexOfFirst { it.paneId == current.paneId }.takeIf { it >= 0 }?.let { listState.animateScrollToItem(it) }
+        scrollTarget[current.paneId]?.let { listState.animateScrollToItem(it) }
     }
     LazyRow(
         state = listState,
@@ -612,48 +627,72 @@ internal fun PaneSwitcher(snapshot: SessionSnapshot, current: PaneInfo, onSelect
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        items(panes, key = { it.paneId }) { pane ->
-            val agent = snapshot.agentFor(pane.paneId)
-            val selected = pane.paneId == current.paneId
-            val shape = RoundedCornerShape(12.dp)
-            Row(
-                Modifier
-                    .height(40.dp)
-                    .clip(shape)
-                    .background(
-                        if (selected) MaterialTheme.colorScheme.surfaceContainerHighest
-                        else MaterialTheme.colorScheme.surfaceContainer
-                    )
-                    .then(if (selected) Modifier.border(1.dp, MaterialTheme.colorScheme.outline, shape) else Modifier)
-                    .clickable(enabled = !selected) { onSelect(pane.paneId) }
-                    .padding(start = 4.dp, end = 12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                if (agent != null) {
-                    StatusDot(agent.agentStatus, size = 9.dp)
-                } else {
-                    Box(Modifier.size(18.dp + 4.dp), contentAlignment = Alignment.Center) {
-                        Icon(
-                            Icons.Outlined.Terminal, null,
-                            Modifier.size(16.dp),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
-                Text(
-                    agent?.displayName ?: pane.displayTitle,
-                    style = MaterialTheme.typography.labelLarge,
-                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
-                    fontFamily = if (agent == null) Mono else null,
-                    color = if (selected || agent != null) MaterialTheme.colorScheme.onSurface
-                    else MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.widthIn(max = 160.dp),
+        groups.forEachIndexed { groupIndex, group ->
+            if (labelled) {
+                item(key = "tab-" + group.tab.tabId) { SwitcherTabLabel(group.tab, divider = groupIndex > 0) }
+            }
+            items(group.panes, key = { it.paneId }) { pane ->
+                SwitcherChip(snapshot, pane, selected = pane.paneId == current.paneId, onSelect = onSelect)
+            }
+        }
+    }
+}
+
+@Composable
+private fun SwitcherTabLabel(tab: TabInfo, divider: Boolean) {
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        if (divider) VerticalDivider(Modifier.height(24.dp), color = MaterialTheme.colorScheme.outlineVariant)
+        Text(
+            tab.displayLabel,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.widthIn(max = 96.dp),
+        )
+    }
+}
+
+@Composable
+private fun SwitcherChip(snapshot: SessionSnapshot, pane: PaneInfo, selected: Boolean, onSelect: (String) -> Unit) {
+    val agent = snapshot.agentFor(pane.paneId)
+    val shape = RoundedCornerShape(12.dp)
+    Row(
+        Modifier
+            .height(40.dp)
+            .clip(shape)
+            .background(
+                if (selected) MaterialTheme.colorScheme.surfaceContainerHighest
+                else MaterialTheme.colorScheme.surfaceContainer
+            )
+            .then(if (selected) Modifier.border(1.dp, MaterialTheme.colorScheme.outline, shape) else Modifier)
+            .clickable(enabled = !selected) { onSelect(pane.paneId) }
+            .padding(start = 4.dp, end = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        if (agent != null) {
+            StatusDot(agent.agentStatus, size = 9.dp)
+        } else {
+            Box(Modifier.size(18.dp + 4.dp), contentAlignment = Alignment.Center) {
+                Icon(
+                    Icons.Outlined.Terminal, null,
+                    Modifier.size(16.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         }
+        Text(
+            agent?.displayName ?: pane.displayTitle,
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+            fontFamily = if (agent == null) Mono else null,
+            color = if (selected || agent != null) MaterialTheme.colorScheme.onSurface
+            else MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.widthIn(max = 160.dp),
+        )
     }
 }
 

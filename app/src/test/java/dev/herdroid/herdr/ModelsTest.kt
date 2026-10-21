@@ -70,4 +70,22 @@ class ModelsTest {
         assertEquals("blocked", agent.copy(stateLabels = mapOf("blocked" to "")).statusLabel())
     }
 
+    @Test
+    fun tabGroupsListEachPaneOnceInLayoutOrderWithinTheSpace() {
+        fun pane(id: String, tab: String, ws: String = "w1") = PaneInfo(id, workspaceId = ws, tabId = tab)
+        fun at(id: String, x: Int, y: Int) = PaneLayoutPane(id, rect = PaneLayoutRect(x, y, 10, 10))
+        val snapshot = SessionSnapshot(
+            tabs = listOf(TabInfo("w1:t1", "w1", label = "main"), TabInfo("w2:t1", "w2"), TabInfo("w1:t2", "w1", label = "logs")),
+            panes = listOf(pane("w1:p3", "w1:t1"), pane("w1:p9", "w1:t2"), pane("w2:p1", "w2:t1", "w2"),
+                pane("w1:p1", "w1:t1"), pane("w1:p2", "w1:t1")),
+            layouts = listOf(PaneLayoutSnapshot("w1", "w1:t1", area = PaneLayoutRect(0, 0, 20, 20),
+                panes = listOf(at("w1:p3", 10, 10), at("w1:p2", 10, 0), at("w1:p1", 0, 0)))),
+        )
+        val groups = snapshot.tabGroupsIn("w1")
+        assertEquals(listOf("w1:t1", "w1:t2"), groups.map { it.tab.tabId })
+        assertEquals(listOf(listOf("w1:p1", "w1:p2", "w1:p3"), listOf("w1:p9")), groups.map { g -> g.panes.map { it.paneId } })
+        // The space list and the terminal's swipe/switcher walk the panes in the same order.
+        assertEquals(snapshot.panesInLayoutOrder("w1"), groups.flatMap { it.panes })
+    }
+
 }
