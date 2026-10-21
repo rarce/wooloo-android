@@ -16,6 +16,7 @@ import android.text.Selection
 import android.graphics.Rect
 import android.util.TypedValue
 import android.view.GestureDetector
+import android.view.KeyCharacterMap
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.ScaleGestureDetector
@@ -531,6 +532,11 @@ class TerminalView(
         get() = modifiers.ctrl || modifiers.alt ||
             hardwareModifiers and (KeyEvent.META_CTRL_ON or KeyEvent.META_ALT_ON) != 0
 
+    // Sticky Shift uppercases what reaches the remote (ß becomes SS) but not the IME's text,
+    // so input sent with it ends the context like a shortcut does.
+    private val breaksContext: Boolean
+        get() = controlActive || modifiers.shift
+
     private fun emitText(text: String) {
         if (!inputEnabled || text.isEmpty()) return
         val (ctrl, alt, shift) = modifiers.consume()
@@ -546,7 +552,7 @@ class TerminalView(
     fun sendText(text: String) {
         if (!inputEnabled) return
         val connection = inputConnection
-        if (connection != null && !controlActive && text.none { it == '\n' || it == '\r' }) {
+        if (connection != null && !connection.isClosed && !breaksContext && text.none { it == '\n' || it == '\r' }) {
             connection.insertText(text)
         } else {
             resetInputContext()
@@ -562,11 +568,14 @@ class TerminalView(
 
     fun sendPaste(text: String) {
         if (!inputEnabled || text.isEmpty()) return
-        val connection = inputConnection
-        val sameLine = text.none { it == '\n' || it == '\r' }
-        if (connection == null || !sameLine || !connection.canAdopt()) resetInputContext()
+        // Only a short, plain paste is assumed to land literally: agent TUIs may collapse or
+        // transform longer ones, and later backspaces would then edit the wrong text.
+        val connection = inputConnection?.takeIf {
+            text.length <= ADOPT_PASTE_MAX && text.all { c -> c >= ' ' } && it.canAdopt()
+        }
+        if (connection == null) resetInputContext()
         listener?.onInput("\u001b[200~$text\u001b[201~")
-        if (connection != null && sameLine && connection.canAdopt()) connection.adopt(text)
+        connection?.adopt(text)
         restoreInputFocus()
     }
 
@@ -635,7 +644,7 @@ class TerminalView(
             return true
         }
         val unicode = event.getUnicodeChar(event.metaState and (KeyEvent.META_CTRL_MASK or KeyEvent.META_ALT_MASK).inv())
-        if (unicode != 0) {
+        if (unicode != 0 && unicode and KeyCharacterMap.COMBINING_ACCENT == 0) {
             resetInputContext()
             val (_, _, shift) = modifiers.consume()
             val text = String(Character.toChars(unicode))
@@ -664,6 +673,7 @@ class TerminalView(
         override fun getEditable(): Editable = imeText
 
         private var closed = false
+        val isClosed get() = closed
         private var extractedToken: Int? = null
 
         override fun closeConnection() {
@@ -673,7 +683,7 @@ class TerminalView(
 
         private fun edit(operation: () -> Boolean): Boolean {
             if (closed || !inputEnabled) return false
-            val controlInput = controlActive
+            val controlInput = breaksContext
             val result = operation()
             synchronizeText()
             if (controlInput || editable.any { it == '\n' || it == '\r' }) resetInputContext()
@@ -707,7 +717,7 @@ class TerminalView(
         }
 
         /** Whether text the remote already received at its cursor can join this context. */
-        fun canAdopt() = !closed &&
+        fun canAdopt() = !closed && !breaksContext &&
             Selection.getSelectionStart(editable) == sentCursor && Selection.getSelectionEnd(editable) == sentCursor
 
         fun adopt(text: String) {
@@ -746,7 +756,9 @@ class TerminalView(
                     KeyEvent.KEYCODE_FORWARD_DEL -> return deleteKey(forward = true)
                 }
                 val unicode = event.getUnicodeChar(event.metaState and (KeyEvent.META_CTRL_MASK or KeyEvent.META_ALT_MASK).inv())
-                if (unicode != 0 && unicode != '\n'.code && unicode != '\t'.code) {
+                // A dead key's accent combines with the next key; it is not a character yet.
+                if (unicode != 0 && unicode and KeyCharacterMap.COMBINING_ACCENT == 0 &&
+                    unicode != '\n'.code && unicode != '\t'.code) {
                     return commitText(String(Character.toChars(unicode)), 1)
                 }
             }
@@ -821,6 +833,7 @@ class TerminalView(
     companion object {
         const val MIN_FONT_SP = 6f
         const val MAX_FONT_SP = 28f
+        private const val ADOPT_PASTE_MAX = 200
         private const val MIN_COLS = 20
         private const val MIN_ROWS = 6
     }

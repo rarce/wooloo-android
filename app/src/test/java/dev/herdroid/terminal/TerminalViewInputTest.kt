@@ -3,6 +3,7 @@ package dev.herdroid.terminal
 import android.app.Activity
 import android.os.Looper
 import android.text.InputType
+import android.view.KeyCharacterMap
 import android.view.KeyEvent
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.ExtractedTextRequest
@@ -290,5 +291,53 @@ class TerminalViewInputTest {
         view.inputEnabled = true
         assertEquals(restarts + 1, view.inputRestarts)
         assertNotNull(view.onCreateInputConnection(EditorInfo()))
+    }
+
+    @Test fun barTextStillReachesTheRemoteWhenTheConnectionWasClosed() {
+        val connection = requireNotNull(view.onCreateInputConnection(EditorInfo()))
+        connection.closeConnection()
+        view.sendText("/")
+        assertEquals(listOf("/"), output)
+    }
+
+    @Test fun onlyShortPlainPastesJoinTheContext() {
+        val connection = requireNotNull(view.onCreateInputConnection(EditorInfo()))
+        connection.commitText("x", 1)
+        val restarts = view.inputRestarts
+        view.sendPaste("a".repeat(200))
+        assertEquals(restarts, view.inputRestarts)
+        assertEquals("x" + "a".repeat(200), connection.getTextBeforeCursor(500, 0).toString())
+        view.sendPaste("a".repeat(201))
+        assertEquals(restarts + 1, view.inputRestarts)
+        val next = requireNotNull(view.onCreateInputConnection(EditorInfo()))
+        next.commitText("y", 1)
+        val afterLong = view.inputRestarts
+        view.sendPaste("a\tb")
+        assertEquals(afterLong + 1, view.inputRestarts)
+    }
+
+    @Test fun stickyShiftInputEndsTheContextBecauseUppercaseCanChangeLength() {
+        val connection = requireNotNull(view.onCreateInputConnection(EditorInfo()))
+        val restarts = view.inputRestarts
+        view.modifiers.shift = true
+        connection.commitText("ß", 1)
+        assertEquals(listOf("SS"), output)
+        assertEquals(restarts + 1, view.inputRestarts)
+        assertFalse(connection.commitText("late", 1))
+        val next = requireNotNull(view.onCreateInputConnection(EditorInfo()))
+        assertEquals("", next.getTextBeforeCursor(100, 0).toString())
+        view.modifiers.shift = true
+        view.sendText("ß")
+        assertEquals(listOf("SS", "SS"), output)
+    }
+
+    @Test fun deadKeyAccentIsNotSentAsACharacter() {
+        val accent = object : KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_A) {
+            override fun getUnicodeChar(metaState: Int) = KeyCharacterMap.COMBINING_ACCENT or 0x0301
+        }
+        val connection = requireNotNull(view.onCreateInputConnection(EditorInfo()))
+        connection.sendKeyEvent(accent)
+        view.onKeyDown(accent.keyCode, accent)
+        assertTrue(output.isEmpty())
     }
 }
