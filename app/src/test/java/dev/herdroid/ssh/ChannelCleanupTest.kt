@@ -5,6 +5,7 @@ import net.schmizz.sshj.DefaultConfig
 import net.schmizz.sshj.connection.Connection
 import net.schmizz.sshj.connection.channel.Channel
 import net.schmizz.sshj.connection.channel.OpenFailException
+import net.schmizz.sshj.connection.ConnectionException
 import net.schmizz.sshj.connection.channel.direct.SessionChannel
 import net.schmizz.sshj.common.Message
 import net.schmizz.sshj.common.SSHPacket
@@ -116,10 +117,9 @@ class ChannelCleanupTest {
         channel.closeBounded(stuckMs = 300)
         assertTrue("Cleanup must not block the caller", (System.nanoTime() - start) / 1_000_000 < 1000)
         assertEquals("No abort before the stuck deadline", 0, aborted.get())
-        awaitTrue { aborted.get() == 1 }
-        assertTrue(peer.attached.isEmpty())
+        // abort() closes the transport first, then forgets the channel and releases its slot.
+        awaitTrue { aborted.get() == 1 && peer.attached.isEmpty() && released.get() == 1 }
         assertFalse(channel.isOpen)
-        assertEquals(1, released.get())
     }
 
     @Test(timeout = 5000)
@@ -196,6 +196,30 @@ class ChannelCleanupTest {
         session.handle(Message.CHANNEL_OPEN_CONFIRMATION,
             SSHPacket().putUInt32(7).putUInt32(2L * 1024 * 1024).putUInt32(32L * 1024))
         awaitTrue { peer.attached.isEmpty() && released.get() == 1 }
+        assertEquals(0, aborted.get())
+    }
+
+    @Test(timeout = 5000)
+    fun execFailureAfterOpenClosesTheChannelAndReleasesItsSlotOnce(): Unit = runBlocking {
+        val peer = Peer()
+        val aborted = AtomicInteger()
+        val released = AtomicInteger()
+        lateinit var session: SessionChannel
+        peer.onPacket = { message, _ ->
+            if (message == Message.CHANNEL_CLOSE) launch(Dispatchers.IO) { session.handle(Message.CHANNEL_CLOSE, SSHPacket()) }
+        }
+        val failure = runCatching {
+            openExecChannel("refused-exec", {
+                object : SessionChannel(peer.connection) {
+                    init { init(3, 2L * 1024 * 1024, 32L * 1024); openEvent.set() }
+                    override fun exec(command: String) = throw ConnectionException("exec request failed")
+                }.also { session = it }
+            }, onReleased = { released.incrementAndGet() }) { aborted.incrementAndGet() }
+        }.exceptionOrNull()
+        assertTrue(failure is ConnectionException)
+        awaitTrue { released.get() == 1 && peer.attached.isEmpty() }
+        delay(200)
+        assertEquals("Released exactly once", 1, released.get())
         assertEquals(0, aborted.get())
     }
 

@@ -10,6 +10,7 @@ import net.schmizz.sshj.common.SecurityUtils
 import net.schmizz.sshj.connection.channel.direct.Session
 import net.schmizz.sshj.connection.channel.direct.SessionChannel
 import net.schmizz.sshj.common.SSHException
+import net.schmizz.sshj.connection.ConnectionException
 import net.schmizz.sshj.common.DisconnectReason
 import net.schmizz.sshj.transport.DisconnectListener
 import net.schmizz.sshj.transport.verification.HostKeyVerifier
@@ -181,21 +182,27 @@ class SshSession(
         )
     }
 
-    /** Returns once the transport is gone: promptly through sshj's disconnect listener. */
+    /**
+     * Returns once the transport is gone: promptly through sshj's disconnect listener. sshj
+     * notifies before it marks itself closed, so the listener alone is the signal; the caller
+     * closes the session anyway.
+     */
     suspend fun awaitDisconnect() {
-        while (isConnected) withTimeoutOrNull(DISCONNECT_POLL_MS) { disconnected.await() }
+        while (isConnected && !disconnected.isCompleted) withTimeoutOrNull(DISCONNECT_POLL_MS) { disconnected.await() }
     }
 
     /**
      * Whether the peer still reads and answers this transport: a keepalive request with a reply.
-     * Any answer counts (OpenSSH replies failure to unknown requests). A write stuck behind a
-     * full socket blocks this probe too, so it times out and reports the transport unhealthy.
+     * Any answer counts: OpenSSH replies failure to unknown requests, which sshj delivers as a
+     * plain ConnectionException. Anything else (transport death, a timeout, a write stuck behind
+     * a full socket that blocks this probe too) reports the transport unhealthy.
      */
     private suspend fun isTransportHealthy(): Boolean {
         if (!isConnected) return false
         val probe = channelReaper.async {
             val reply = client.connection.sendGlobalRequest("keepalive@openssh.com", true, ByteArray(0))
-            runCatching { reply.tryRetrieve(HEALTH_PROBE_MS, TimeUnit.MILLISECONDS) != null }.getOrDefault(true)
+            runCatching { reply.tryRetrieve(HEALTH_PROBE_MS, TimeUnit.MILLISECONDS) != null }
+                .getOrElse { it is ConnectionException && it.cause == null }
         }
         val answered = withTimeoutOrNull(HEALTH_PROBE_MS + 500) { runCatching { probe.await() }.getOrDefault(false) }
         return answered == true && isConnected

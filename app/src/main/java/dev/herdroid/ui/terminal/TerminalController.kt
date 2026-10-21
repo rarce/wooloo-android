@@ -92,6 +92,7 @@ class TerminalController internal constructor(
 
     private var recovering = false
     private var retries = 0
+    private var stableJob: Job? = null
     private var hostWait: Job? = null
     private var stream: TerminalStream? = null
     private var streamJob: Job? = null
@@ -110,9 +111,10 @@ class TerminalController internal constructor(
                     // leaving an interrupted stream behind: reopen that too.
                     ConnectionStatus.Connected -> if (state == PaneState.Offline ||
                         (state as? PaneState.Closed)?.interrupted == true) open(recovery = true)
+                    // Whatever the pane showed, it waits for the host now; reopening on Connected
+                    // re-detects a pane in use (without taking it over) or one that is gone.
                     is ConnectionStatus.Reconnecting, is ConnectionStatus.Failed -> {
-                        if (state == PaneState.Live || state == PaneState.Opening ||
-                            (state as? PaneState.Closed)?.interrupted == true) {
+                        if (state != PaneState.WaitingForLayout && state != PaneState.Offline) {
                             closeStream()
                             state = PaneState.Offline
                         }
@@ -183,8 +185,11 @@ class TerminalController internal constructor(
                             if (state != PaneState.Live) scope.launch {
                                 if (generation == openingGeneration) {
                                     recovering = false
-                                    retries = 0
                                     state = PaneState.Live
+                                    // A stream that renders a frame and dies must still run out of
+                                    // retries: only a pane that stays live earns them back.
+                                    stableJob?.cancel()
+                                    stableJob = scope.launch { delay(STABLE_LIVE_MS); retries = 0 }
                                 }
                             }
                         }
@@ -199,6 +204,7 @@ class TerminalController internal constructor(
 
     private fun onClosed(event: TerminalEvent.Closed) {
         stream = null
+        stableJob?.cancel()
         state = when {
             event.needsTakeover -> PaneState.Busy(event.reason.orEmpty(), afterReconnect = recovering)
             event.wasTakenOver -> PaneState.TakenOver
@@ -251,6 +257,7 @@ class TerminalController internal constructor(
 
     private fun closeStream() {
         synchronized(model.lock) { generation++ }
+        stableJob?.cancel()
         streamJob?.cancel()
         stream?.close()
         stream = null
@@ -263,6 +270,7 @@ class TerminalController internal constructor(
 
     private companion object {
         const val OPEN_DEBOUNCE_MS = 150L
+        const val STABLE_LIVE_MS = 5_000L
         val RETRY_DELAYS_MS = longArrayOf(250, 1_000, 3_000)
     }
 

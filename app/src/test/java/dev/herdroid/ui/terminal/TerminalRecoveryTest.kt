@@ -70,15 +70,19 @@ class TerminalRecoveryTest {
         await { controller.state == PaneState.Live }
     }
 
-    @Test(timeout = 10_000) fun normalPaneCloseIsNotReopenedByLaterSshReconnect(): Unit = runBlocking {
+    @Test(timeout = 10_000) fun closedPaneIsRecheckedAfterSshReconnectWithoutTakingControl(): Unit = runBlocking {
         startLive()
         connection.opened.last().record("""{"type":"terminal.closed","reason":"pane exited"}""")
         await { controller.state == PaneState.Closed("pane exited") }
+        // While the host is away the pane only waits; the banner owns recovery.
         connection.status.value = ConnectionStatus.Reconnecting(1, "fixture", 0)
+        assertEquals(PaneState.Offline, controller.state)
         connection.status.value = ConnectionStatus.Connected
-        delay(100)
-        assertEquals(PaneState.Closed("pane exited"), controller.state)
-        assertEquals(1, connection.opened.size)
+        await { connection.opened.size == 2 }
+        assertFalse(connection.takeovers.last())
+        connection.opened.last().record("""{"type":"terminal.closed","reason":"pane exited"}""")
+        await { controller.state == PaneState.Closed("pane exited") }
+        assertEquals(2, connection.opened.size)
     }
 
     @Test(timeout = 10_000) fun takeoverIsNotUndoneBySshRecovery(): Unit = runBlocking {
@@ -86,10 +90,26 @@ class TerminalRecoveryTest {
         connection.opened.last().record("""{"type":"terminal.closed","reason":"taken over"}""")
         await { controller.state == PaneState.TakenOver }
         connection.status.value = ConnectionStatus.Reconnecting(1, "fixture", 0)
+        assertEquals(PaneState.Offline, controller.state)
         connection.status.value = ConnectionStatus.Connected
-        delay(100)
-        assertEquals(PaneState.TakenOver, controller.state)
-        assertEquals(1, connection.opened.size)
+        // The reopen re-detects the other controller instead of taking the pane back.
+        await { connection.opened.size == 2 }
+        assertFalse(connection.takeovers.last())
+        connection.opened.last().record("""{"type":"terminal.closed","reason":"use --takeover"}""")
+        await { controller.state is PaneState.Busy }
+        assertTrue((controller.state as PaneState.Busy).afterReconnect)
+        assertEquals(2, connection.opened.size)
+    }
+
+    @Test(timeout = 15_000) fun streamThatRendersOneFrameAndDiesRunsOutOfRetries(): Unit = runBlocking {
+        connection.flapping = true
+        controller.onGridSize(80, 24, 8, 16)
+        await(10_000) { controller.state is PaneState.Closed }
+        assertTrue((controller.state as PaneState.Closed).interrupted)
+        assertEquals("The first open and three retries", 4, connection.opened.size)
+        assertEquals(PaneRecovery.Actions(controller.state), recoveryUi(connection.status.value, controller.state))
+        delay(600)
+        assertEquals(4, connection.opened.size)
     }
 
     private suspend fun startLive(observe: Boolean = false) {
@@ -115,6 +135,8 @@ class TerminalRecoveryTest {
         val takeovers = CopyOnWriteArrayList<Boolean>()
         val observers = CopyOnWriteArrayList<Boolean>()
         @Volatile var refuse = 0
+        /** Each stream renders one frame, then its channel dies without terminal.closed. */
+        @Volatile var flapping = false
         @Volatile var attempts = 0
         override suspend fun openTerminal(paneId: String, cols: Int, rows: Int, takeover: Boolean,
                                           readOnly: Boolean, scope: CoroutineScope): TerminalStream {
@@ -124,7 +146,9 @@ class TerminalRecoveryTest {
             takeovers += takeover
             observers += readOnly
             opened += channel
-            return TerminalStream.fromChannel(channel, scope, readOnly)
+            return TerminalStream.fromChannel(channel, scope, readOnly).also {
+                if (flapping) scope.launch(Dispatchers.IO) { channel.frame(); delay(50); channel.remote.close() }
+            }
         }
     }
     private class Channel : CommandChannel {
