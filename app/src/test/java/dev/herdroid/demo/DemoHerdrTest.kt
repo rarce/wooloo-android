@@ -119,6 +119,10 @@ class DemoHerdrTest {
         assertEquals("demo-machine", sample.hostname)
         assertNotNull(sample.memoryUsed)
         assertNotNull(sample.diskFree)
+        // One simulated GPU, so reviewers and screenshots see the meter.
+        assertEquals(1, sample.gpus.size)
+        assertNotNull(sample.gpus.single().utilization)
+        assertEquals(16_376L * 1_048_576, sample.gpus.single().memoryTotal)
 
         val upload = shell.exec(RemoteCommand.uploadFile("it's.png"))
         upload.stdin.use { it.write(ByteArray(4096) { 10 }) }

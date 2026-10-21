@@ -22,7 +22,7 @@ import dev.herdroid.herdr.AgentProvider
 import dev.herdroid.herdr.HostStats
 import kotlinx.coroutines.delay
 
-/** Host resources and remaining subscription quota for the provider running in this pane. */
+/** Host resources (with GPUs when the host has any) and remaining quota for the provider running in this pane. */
 @Composable
 internal fun PaneMetrics(connection: HerdrConnection, agent: String?) {
     val approved by LocalContext.current.app.preferences.agentQuotaContexts.collectAsState()
@@ -75,6 +75,15 @@ internal fun PaneMetricsContent(stats: HostStats?, quotaText: String?) {
             maxLines = if (expanded) Int.MAX_VALUE else 1,
             overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
         )
+        gpuMetricText(stats)?.let {
+            Text(
+                it,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = if (expanded) Int.MAX_VALUE else 1,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+            )
+        }
         if (quotaText != null) Text(
             quotaText,
             style = MaterialTheme.typography.labelSmall,

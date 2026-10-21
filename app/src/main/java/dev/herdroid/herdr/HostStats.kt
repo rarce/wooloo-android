@@ -24,7 +24,25 @@ data class HostSample(
     val uptimeSeconds: Double? = null,
     val diskFree: Long? = null,
     val diskTotal: Long? = null,
+    /** Empty when the host has no GPU the probe can read. */
+    val gpus: List<GpuSample> = emptyList(),
 )
+
+/** One GPU. Apple's unified memory has no separate total, so [memoryTotal] stays null there. */
+data class GpuSample(
+    val name: String? = null,
+    /** 0..1 */
+    val utilization: Double? = null,
+    val memoryUsed: Long? = null,
+    val memoryTotal: Long? = null,
+) {
+    val memoryFraction: Double?
+        get() {
+            val used = memoryUsed ?: return null
+            val total = memoryTotal?.takeIf { it > 0 } ?: return null
+            return minOf(1.0, used.toDouble() / total)
+        }
+}
 
 /** What the spaces screen shows: a sample plus the CPU usage worked out from the previous one. */
 data class HostStats(val sample: HostSample, val cpuUsage: Double?) {
@@ -41,6 +59,10 @@ data class HostStats(val sample: HostSample, val cpuUsage: Double?) {
             val total = sample.diskTotal?.takeIf { it > 0 } ?: return null
             return minOf(1.0, (total - minOf(free, total)).toDouble() / total)
         }
+
+    /** Mean utilization of the GPUs that report one. */
+    val gpuUsage: Double?
+        get() = sample.gpus.mapNotNull { it.utilization }.takeIf { it.isNotEmpty() }?.average()
 
     companion object {
         /** CPU usage comes from the sample itself, the ticks since [previous], or stays as it was. */
@@ -62,6 +84,24 @@ data class HostStats(val sample: HostSample, val cpuUsage: Double?) {
             }
         }
 
+        /** "37% · 10.0 GB / 24.0 GB", or "12% · 1.2 GB in use" without a memory total. */
+        fun gpuText(gpu: GpuSample): String = listOfNotNull(
+            gpu.utilization?.let(::percentText) ?: "…",
+            when {
+                gpu.memoryUsed != null && gpu.memoryTotal != null -> "${bytesText(gpu.memoryUsed)} / ${bytesText(gpu.memoryTotal)}"
+                gpu.memoryUsed != null -> "${bytesText(gpu.memoryUsed)} in use"
+                else -> null
+            },
+        ).joinToString(" · ")
+
+        /** Several GPUs on one line, "4 GPUs · avg 37%", so the card stays short. */
+        fun gpusText(gpus: List<GpuSample>): String {
+            val usage = gpus.mapNotNull { it.utilization }.takeIf { it.isNotEmpty() }?.average()
+            return "${gpus.size} GPUs · " + (usage?.let { "avg ${percentText(it)}" } ?: "…")
+        }
+
+        private fun percentText(fraction: Double) = String.format(Locale.US, "%.0f%%", fraction.coerceIn(0.0, 1.0) * 100)
+
         fun bytesText(bytes: Long): String {
             val gib = bytes / 1_073_741_824.0
             return when {
@@ -73,11 +113,14 @@ data class HostStats(val sample: HostSample, val cpuUsage: Double?) {
     }
 }
 
-/** Reads a host's CPU, memory, disk and uptime with one read-only shell script (wooloo's `HostProbe`). */
+/** Reads a host's CPU, memory, disk, uptime and GPUs with one read-only shell script (wooloo's `HostProbe`). */
 object HostProbe {
     /**
      * A POSIX sh script printing `key=value` lines, for Linux (`/proc`) and macOS (`sysctl`,
      * `vm_stat`). Disk space is that of the volume holding [directory] (home when null).
+     * GPUs are best effort and need no privileges: `nvidia-smi` (bounded to 2 s, it can be slow
+     * on an idle GPU), AMD's `amdgpu` sysfs files, and macOS's `IOAccelerator` statistics. A
+     * missing tool or file prints nothing, and GPU lines come last so they never cut the rest short.
      */
     fun command(directory: String? = null): String {
         val dir = directory?.let { RemoteCommand.shellQuote(it) } ?: "\"${'$'}HOME\""
@@ -101,15 +144,35 @@ object HostProbe {
                 /^Pages (active|wired down|occupied by compressor):/ { k = $0; sub(/^Pages /, "", k); sub(/:.*/, "", k); n = ${'$'}NF; sub(/\.$/, "", n); print k "=" n }'
             fi
             echo "df=$(df -Pk $dir 2>/dev/null | tail -n 1)"
+            if command -v nvidia-smi >/dev/null 2>&1; then
+              q=--query-gpu=name,utilization.gpu,memory.used,memory.total
+              if command -v timeout >/dev/null 2>&1; then
+                timeout 2 nvidia-smi "${'$'}q" --format=csv,noheader,nounits 2>/dev/null
+              else
+                nvidia-smi "${'$'}q" --format=csv,noheader,nounits 2>/dev/null & p=$!
+                ( sleep 2; kill "${'$'}p" ) >/dev/null 2>&1 & k=$!
+                wait "${'$'}p" 2>/dev/null; kill "${'$'}k" 2>/dev/null
+              fi | head -n 16 | sed 's/^/nvidia=/'
+            fi
+            for d in /sys/class/drm/card[0-9]/device /sys/class/drm/card[0-9][0-9]/device; do
+              [ -r "${'$'}d/gpu_busy_percent" ] || continue
+              echo "amdgpu=$(cat "${'$'}d/gpu_busy_percent" 2>/dev/null || echo -) $(cat "${'$'}d/mem_info_vram_used" 2>/dev/null || echo -) $(cat "${'$'}d/mem_info_vram_total" 2>/dev/null || echo -)"
+            done
+            if [ ! -r /proc/stat ] && command -v ioreg >/dev/null 2>&1; then
+              ioreg -r -d 1 -w 0 -c IOAccelerator 2>/dev/null |
+                grep -E '[+]-o |"model" = |"PerformanceStatistics" = ' | head -n 48 | sed 's/^/ioreg=/'
+            fi
+            :
         """.trimIndent()
         return "/bin/sh -c " + RemoteCommand.shellQuote(script)
     }
 
     fun parse(output: String): HostSample? {
-        val values = output.lineSequence().mapNotNull { line ->
+        val lines = output.lineSequence().mapNotNull { line ->
             val equals = line.indexOf('=').takeIf { it >= 0 } ?: return@mapNotNull null
             line.substring(0, equals) to line.substring(equals + 1).trim()
-        }.toMap()
+        }.toList()
+        val values = lines.toMap()
         // macOS reports its Bonjour name; the .local suffix adds nothing on screen.
         val host = values["host"]?.removeSuffix(".local")?.takeIf { it.isNotEmpty() } ?: return null
         val cpuCount = values["ncpu"]?.toIntOrNull()?.takeIf { it > 0 }
@@ -155,8 +218,73 @@ object HostProbe {
                 sample = sample.copy(diskTotal = total, diskFree = minOf(available, total))
             }
         }
-        return sample
+        return sample.copy(gpus = parseGpus(lines))
     }
+
+    /** GPU lines may repeat, one per GPU: nvidia-smi CSV rows, amdgpu sysfs readings, ioreg accelerators. */
+    private fun parseGpus(lines: List<Pair<String, String>>): List<GpuSample> {
+        val gpus = mutableListOf<GpuSample>()
+        var accelerator: GpuSample? = null
+        fun endAccelerator() {
+            accelerator?.takeIf { it.utilization != null || it.memoryUsed != null }?.let(gpus::add)
+            accelerator = null
+        }
+        for ((key, value) in lines) when (key) {
+            "nvidia" -> nvidiaGpu(value)?.let(gpus::add)
+            "amdgpu" -> amdGpu(value)?.let(gpus::add)
+            "ioreg" -> if (value.startsWith("+-o ") || " +-o " in value) {
+                endAccelerator()
+                accelerator = GpuSample()
+            } else {
+                accelerator = ioregProperty(accelerator ?: GpuSample(), value)
+            }
+        }
+        endAccelerator()
+        return gpus.take(MAX_GPUS)
+    }
+
+    /** `name, utilization %, memory used MiB, memory total MiB`; "[N/A]" fields stay null. */
+    private fun nvidiaGpu(row: String): GpuSample? {
+        val fields = row.split(',').map { it.trim() }
+        if (fields.size < 4) return null // "No devices were found", driver errors
+        val (utilization, used, total) = fields.takeLast(3)
+        val gpu = GpuSample(
+            name = fields.dropLast(3).joinToString(",").trim().ifEmpty { null },
+            utilization = utilization.percentFraction(),
+            memoryUsed = used.nonNegativeLong()?.checkedTimes(MIB),
+            memoryTotal = total.nonNegativeLong()?.checkedTimes(MIB)?.takeIf { it > 0 },
+        )
+        return gpu.takeIf { it.utilization != null || it.memoryUsed != null || it.memoryTotal != null }
+    }
+
+    /** `busy % vram used bytes vram total bytes`, with "-" for a file that couldn't be read. */
+    private fun amdGpu(reading: String): GpuSample? {
+        val fields = reading.split(' ').filter { it.isNotEmpty() }
+        if (fields.size != 3) return null
+        val gpu = GpuSample(
+            utilization = fields[0].percentFraction(),
+            memoryUsed = fields[1].nonNegativeLong(),
+            memoryTotal = fields[2].nonNegativeLong()?.takeIf { it > 0 },
+        )
+        return gpu.takeIf { it.utilization != null || it.memoryUsed != null || it.memoryTotal != null }
+    }
+
+    private val ioregModel = Regex(""""model"\s*=\s*<?"([^"]+)"""")
+    private val ioregUtilization = Regex(""""Device Utilization %"\s*=\s*(\d+)""")
+    private val ioregMemory = Regex(""""In use system memory"\s*=\s*(\d+)""")
+
+    private fun ioregProperty(gpu: GpuSample, line: String): GpuSample = when {
+        line.contains("\"PerformanceStatistics\"") -> gpu.copy(
+            utilization = ioregUtilization.find(line)?.groupValues?.get(1).percentFraction(),
+            memoryUsed = ioregMemory.find(line)?.groupValues?.get(1).nonNegativeLong(),
+        )
+        else -> ioregModel.find(line)?.let { gpu.copy(name = it.groupValues[1].trim().ifEmpty { null }) } ?: gpu
+    }
+
+    private fun String?.percentFraction() = nonNegativeDouble()?.takeIf { it <= 100 }?.div(100)
+
+    private const val MIB = 1_048_576L
+    private const val MAX_GPUS = 16
 
     private fun String?.nonNegativeDouble() = this?.toDoubleOrNull()?.takeIf { it.isFinite() && it >= 0 }
     private fun String?.nonNegativeLong() = this?.toLongOrNull()?.takeIf { it >= 0 }

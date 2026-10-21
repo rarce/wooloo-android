@@ -60,8 +60,8 @@ private class HostStatsState {
 }
 
 /**
- * The machine's CPU, memory, disk and uptime, as in wooloo's HOST sidebar section; collapsed, only
- * CPU and memory. Sampling runs on its own exec channel and pauses when the screen isn't visible.
+ * The machine's CPU, memory, disk, GPUs and uptime, as in wooloo's HOST sidebar section; collapsed,
+ * only CPU, memory and GPU. Sampling runs on its own exec channel and pauses when the screen isn't visible.
  */
 @Composable
 internal fun HostStatsCard(connection: HerdrConnection, modifier: Modifier = Modifier) {
@@ -117,25 +117,41 @@ internal fun HostStatsCard(connection: HerdrConnection, modifier: Modifier = Mod
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
-            collapsed -> Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                MiniMeter("CPU", stats.cpuUsage, Modifier.weight(1f))
-                MiniMeter("MEM", stats.memoryFraction, Modifier.weight(1f))
-            }
-            else -> Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                val sample = stats.sample
-                Meter(
-                    "CPU", stats.cpuUsage,
-                    (stats.cpuUsage?.let { percent(it) + "%" } ?: "…") +
-                        (sample.cpuCount?.let { " / $it cores" } ?: ""),
-                )
-                if (sample.memoryUsed != null && sample.memoryTotal != null) {
-                    Meter(
-                        "MEM", stats.memoryFraction,
-                        "${HostStats.bytesText(sample.memoryUsed)} / ${HostStats.bytesText(sample.memoryTotal)}",
-                    )
-                }
-                sample.diskFree?.let { Meter("DISK", stats.diskUsedFraction, "${HostStats.bytesText(it)} free") }
-            }
+            else -> HostMeters(stats, collapsed)
+        }
+    }
+}
+
+/** The card's meters. GPUs appear only when the host reports some; more than two share one meter. */
+@Composable
+internal fun HostMeters(stats: HostStats, collapsed: Boolean) {
+    val sample = stats.sample
+    if (collapsed) {
+        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            MiniMeter("CPU", stats.cpuUsage, Modifier.weight(1f))
+            MiniMeter("MEM", stats.memoryFraction, Modifier.weight(1f))
+            if (sample.gpus.isNotEmpty()) MiniMeter("GPU", stats.gpuUsage, Modifier.weight(1f))
+        }
+        return
+    }
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Meter(
+            "CPU", stats.cpuUsage,
+            (stats.cpuUsage?.let { percent(it) + "%" } ?: "…") +
+                (sample.cpuCount?.let { " / $it cores" } ?: ""),
+        )
+        if (sample.memoryUsed != null && sample.memoryTotal != null) {
+            Meter(
+                "MEM", stats.memoryFraction,
+                "${HostStats.bytesText(sample.memoryUsed)} / ${HostStats.bytesText(sample.memoryTotal)}",
+            )
+        }
+        sample.diskFree?.let { Meter("DISK", stats.diskUsedFraction, "${HostStats.bytesText(it)} free") }
+        val gpus = sample.gpus
+        when {
+            gpus.size == 1 -> Meter("GPU", gpus[0].utilization, HostStats.gpuText(gpus[0]))
+            gpus.size == 2 -> gpus.forEachIndexed { i, gpu -> Meter("GPU${i + 1}", gpu.utilization, HostStats.gpuText(gpu)) }
+            gpus.size > 2 -> Meter("GPU", stats.gpuUsage, HostStats.gpusText(gpus))
         }
     }
 }
