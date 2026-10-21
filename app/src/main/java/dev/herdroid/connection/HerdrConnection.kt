@@ -359,16 +359,10 @@ class HerdrConnection(
         val session = ssh?.takeIf { it.isConnected }
             ?: return Result.failure(IllegalStateException("Not connected"))
         return try {
-            val output = withTimeoutOrNull(15_000) {
-                val channel = session.exec(HostProbe.command())
-                try {
-                    channel.channelIo { channel.stdout.readBoundedBytes(64 * 1024) }
-                } finally {
-                    channel.closeBounded()
-                }
-            } ?: return Result.failure(IllegalStateException("Reading host stats timed out"))
-            HostProbe.parse(output.toString(Charsets.UTF_8))?.let { Result.success(it) }
-                ?: Result.failure(IllegalStateException("Unreadable host stats"))
+            val (output, finished) = readHostProbe(session, HostProbe.command(), timeoutMs = 15_000)
+            HostProbe.parse(output)?.let { Result.success(it) }
+                ?: Result.failure(IllegalStateException(
+                    if (finished) "Unreadable host stats" else "Reading host stats timed out"))
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -710,4 +704,33 @@ class HerdrConnection(
         private const val SAFETY_POLL_MS = 20_000L
         private const val PROMPT_TIMEOUT_MS = 5 * 60_000L
     }
+}
+
+/**
+ * Runs the host probe and returns its output and whether it finished. GPU lines come last and
+ * an nvidia-smi stuck in the driver never ends the output, so on a timeout the complete lines
+ * already read still make a sample, just without the GPU row.
+ */
+internal suspend fun readHostProbe(shell: RemoteShell, command: String, timeoutMs: Long): Pair<String, Boolean> {
+    val received = java.io.ByteArrayOutputStream()
+    val finished = withTimeoutOrNull(timeoutMs) {
+        val channel = shell.exec(command)
+        try {
+            channel.channelIo {
+                val buffer = ByteArray(8 * 1024)
+                while (true) {
+                    val read = channel.stdout.read(buffer)
+                    if (read < 0) break
+                    synchronized(received) {
+                        if (received.size() + read > 64 * 1024) throw java.io.IOException("Remote response exceeds the size limit")
+                        received.write(buffer, 0, read)
+                    }
+                }
+            }
+        } finally {
+            channel.closeBounded()
+        }
+    } != null
+    val output = synchronized(received) { received.toString(Charsets.UTF_8.name()) }
+    return (if (finished) output else output.substringBeforeLast('\n', "")) to finished
 }

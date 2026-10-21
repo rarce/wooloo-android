@@ -118,9 +118,11 @@ object HostProbe {
     /**
      * A POSIX sh script printing `key=value` lines, for Linux (`/proc`) and macOS (`sysctl`,
      * `vm_stat`). Disk space is that of the volume holding [directory] (home when null).
-     * GPUs are best effort and need no privileges: `nvidia-smi` (bounded to 2 s, it can be slow
-     * on an idle GPU), AMD's `amdgpu` sysfs files, and macOS's `IOAccelerator` statistics. A
-     * missing tool or file prints nothing, and GPU lines come last so they never cut the rest short.
+     * GPUs are best effort and need no privileges: `nvidia-smi` (bounded to 2 s, killed after 3 s;
+     * it can be slow on an idle GPU), AMD's `amdgpu` sysfs files, and macOS's `IOAccelerator`
+     * statistics. A missing tool or file prints nothing. GPU lines come last: an `nvidia-smi` stuck
+     * in the driver can't be killed and keeps the output open, so the caller parses what arrived
+     * (see `HerdrConnection.sampleHost`) and the next probe skips `nvidia-smi` while it lingers.
      */
     fun command(directory: String? = null): String {
         val dir = directory?.let { RemoteCommand.shellQuote(it) } ?: "\"${'$'}HOME\""
@@ -144,14 +146,24 @@ object HostProbe {
                 /^Pages (active|wired down|occupied by compressor):/ { k = $0; sub(/^Pages /, "", k); sub(/:.*/, "", k); n = ${'$'}NF; sub(/\.$/, "", n); print k "=" n }'
             fi
             echo "df=$(df -Pk $dir 2>/dev/null | tail -n 1)"
-            if command -v nvidia-smi >/dev/null 2>&1; then
+            if ! command -v nvidia-smi >/dev/null 2>&1; then :
+            elif command -v pgrep >/dev/null 2>&1 && pgrep -u "$(id -u)" -x nvidia-smi >/dev/null 2>&1; then
+              : # an earlier one is still stuck (a hung driver): don't pile up another
+            else
               q=--query-gpu=name,utilization.gpu,memory.used,memory.total
-              if command -v timeout >/dev/null 2>&1; then
-                timeout 2 nvidia-smi "${'$'}q" --format=csv,noheader,nounits 2>/dev/null
+              # BusyBox before 1.30 only knows `timeout -t SECS`, so probe for -k support first.
+              if timeout -k 1 2 true >/dev/null 2>&1; then
+                timeout -k 1 2 nvidia-smi "${'$'}q" --format=csv,noheader,nounits 2>/dev/null
               else
                 nvidia-smi "${'$'}q" --format=csv,noheader,nounits 2>/dev/null & p=$!
-                ( sleep 2; kill "${'$'}p" ) >/dev/null 2>&1 & k=$!
-                wait "${'$'}p" 2>/dev/null; kill "${'$'}k" 2>/dev/null
+                end=$(( $(date +%s) + 3 ))
+                # No unbounded wait: a process stuck in the driver may never exit. A finished
+                # but unreaped one still passes kill -0, so also stop at its zombie state.
+                while kill -0 "${'$'}p" 2>/dev/null; do
+                  case "$(ps -o stat= -p "${'$'}p" 2>/dev/null)" in Z*|"") break ;; esac
+                  if [ "$(date +%s)" -ge "${'$'}end" ]; then kill -9 "${'$'}p" 2>/dev/null; break; fi
+                  sleep 0.1 2>/dev/null || sleep 1
+                done
               fi | head -n 16 | sed 's/^/nvidia=/'
             fi
             for d in /sys/class/drm/card[0-9]/device /sys/class/drm/card[0-9][0-9]/device; do
@@ -248,8 +260,11 @@ object HostProbe {
         val fields = row.split(',').map { it.trim() }
         if (fields.size < 4) return null // "No devices were found", driver errors
         val (utilization, used, total) = fields.takeLast(3)
+        // The name is free text and may hold commas itself: it is everything before the last three.
+        var cut = row.length
+        repeat(3) { cut = row.lastIndexOf(',', cut - 1) }
         val gpu = GpuSample(
-            name = fields.dropLast(3).joinToString(",").trim().ifEmpty { null },
+            name = row.substring(0, cut).trim().ifEmpty { null },
             utilization = utilization.percentFraction(),
             memoryUsed = used.nonNegativeLong()?.checkedTimes(MIB),
             memoryTotal = total.nonNegativeLong()?.checkedTimes(MIB)?.takeIf { it > 0 },

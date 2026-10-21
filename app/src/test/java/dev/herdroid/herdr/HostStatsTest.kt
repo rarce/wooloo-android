@@ -156,6 +156,11 @@ class HostStatsTest {
         assertEquals(HostProbe.parse(linuxOutput)!!, HostProbe.parse(linuxOutput + "\nnvidia=x, 1, 2, 3")!!.copy(gpus = emptyList()))
     }
 
+    @Test fun nvidiaNameMayContainCommas() {
+        val gpu = HostProbe.parse(linuxOutput + "\nnvidia=Weird, Name, 5, 1, 2")!!.gpus.single()
+        assertEquals(GpuSample("Weird, Name", 0.05, 1_048_576L, 2L * 1_048_576), gpu)
+    }
+
     @Test fun parsesTwoNvidiaGpusInOrder() {
         val gpus = HostProbe.parse(linuxOutput + """
             |
