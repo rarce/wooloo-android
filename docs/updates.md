@@ -99,14 +99,18 @@ production signing key. Until they are added, a tag publishes to Play only: `pub
 for approval in `release`, then skips with the notice "GitHub APK release skipped: signing secrets
 are not configured" and succeeds without creating a GitHub release or update.json.
 
-Before provisioning any signing secrets, the owner must protect `main` and release tags, restrict
-workflow changes, and configure the `release` environment with required independent reviewers and
-appropriate deployment branch/tag restrictions. Move the four HERDROID signing secrets into that
-environment. Merely declaring `environment: release` in YAML does not protect anything: GitHub can
-create an unprotected environment automatically. The private repository currently has no configured
-secrets/environments, ruleset access returned 403 (plan/public-repository constraint), and Actions
-billing prevented PR checks from starting. These remain external owner prerequisites, not completed
-security controls. Do not enable production signing while these prerequisites are unresolved.
+Current protections: the repository is public, and a ruleset on `main` requires pull requests,
+squash merges, linear history and the "Tests, lint and release" check. The `release` and `play`
+environments both exist and are protected (the owner is the required reviewer, deployments are
+restricted to `v*` tags); `play` holds its four secrets and `release` holds none. Merely declaring
+`environment: release` in YAML does not protect anything: GitHub can create an unprotected
+environment automatically, so keep these environments configured in the repository settings.
+
+Do not enable production signing until the owner decides the APK signing key. That key signs every
+future GitHub APK, and Android refuses updates signed with a different one. Once decided, put the
+HERDROID_* signing secrets in the `release` environment only, never in repository secrets. The
+`main` ruleset does not cover tags: before adding them, also restrict who can create, move or delete
+`v*` tags.
 
 Tag builds first run a separate secret-free authorization job: a canonical numeric `vX.Y.Z` tag must
 resolve to a commit reachable from fetched `origin/main`. Build and signing consume that exact commit.
