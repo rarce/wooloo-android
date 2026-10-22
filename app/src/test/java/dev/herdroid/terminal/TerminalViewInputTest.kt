@@ -3,6 +3,7 @@ package dev.herdroid.terminal
 import android.app.Activity
 import android.os.Looper
 import android.text.InputType
+import android.view.KeyCharacterMap
 import android.view.KeyEvent
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.ExtractedTextRequest
@@ -191,5 +192,152 @@ class TerminalViewInputTest {
         val imm = view.context.getSystemService(android.content.Context.INPUT_METHOD_SERVICE)
             as android.view.inputmethod.InputMethodManager
         assertFalse(shadowOf(imm).isSoftInputVisible)
+    }
+
+    private fun key(code: Int) = KeyEvent(KeyEvent.ACTION_DOWN, code)
+
+    private fun composingRange(connection: android.view.inputmethod.InputConnection): Pair<Int, Int> {
+        val text = requireNotNull((connection as android.view.inputmethod.BaseInputConnection).editable)
+        return android.view.inputmethod.BaseInputConnection.getComposingSpanStart(text) to
+            android.view.inputmethod.BaseInputConnection.getComposingSpanEnd(text)
+    }
+
+    @Test fun backspaceKeyAndRetypeKeepOneComposingWordWithoutRestartingInput() {
+        val connection = requireNotNull(view.onCreateInputConnection(EditorInfo()))
+        connection.setComposingText("hola", 1)
+        connection.finishComposingText()
+        val restarts = view.inputRestarts
+        // Gboard sends some backspaces as key events; the word must stay in the IME's context.
+        assertTrue(connection.sendKeyEvent(key(KeyEvent.KEYCODE_DEL)))
+        assertEquals("hol", connection.getTextBeforeCursor(100, 0).toString())
+        assertTrue(connection.setComposingRegion(0, 3))
+        assertTrue(connection.setComposingText("hola", 1))
+        assertEquals("hola", connection.getTextBeforeCursor(100, 0).toString())
+        assertEquals(0 to 4, composingRange(connection))
+        assertEquals(restarts, view.inputRestarts)
+        assertEquals(listOf("hola", "\u007f", "a"), output)
+    }
+
+    @Test fun plainTextEditsDigitKeysAndBarTextNeverRestartInput() {
+        val connection = requireNotNull(view.onCreateInputConnection(EditorInfo()))
+        val restarts = view.inputRestarts
+        connection.commitText("ls -la", 1)
+        connection.setComposingText("archivo", 1)
+        connection.setComposingText("archivos", 1)
+        connection.commitText("archivos", 1)
+        assertTrue(connection.sendKeyEvent(key(KeyEvent.KEYCODE_2)))
+        view.sendText("/")
+        connection.deleteSurroundingText(1, 0)
+        assertEquals("ls -laarchivos2", connection.getTextBeforeCursor(100, 0).toString())
+        assertEquals(restarts, view.inputRestarts)
+        assertEquals(listOf("ls -la", "archivo", "s", "2", "/", "\u007f"), output)
+    }
+
+    @Test fun barTextWithCtrlAndEnterStillResetTheContext() {
+        val connection = requireNotNull(view.onCreateInputConnection(EditorInfo()))
+        connection.commitText("abc", 1)
+        val restarts = view.inputRestarts
+        view.modifiers.ctrl = true
+        view.sendText("c")
+        assertEquals(restarts + 1, view.inputRestarts)
+        assertFalse(connection.commitText("late", 1))
+        val next = requireNotNull(view.onCreateInputConnection(EditorInfo()))
+        assertEquals("", next.getTextBeforeCursor(100, 0).toString())
+        assertEquals(listOf("abc", "\u0003"), output)
+    }
+
+    @Test fun recreatedConnectionKeepsTheLineSoBackspaceStaysInsideTheWord() {
+        val first = requireNotNull(view.onCreateInputConnection(EditorInfo()))
+        first.commitText("hola mundo", 1)
+        val info = EditorInfo()
+        val second = requireNotNull(view.onCreateInputConnection(info))
+        assertEquals(10, info.initialSelStart)
+        assertEquals(10, info.initialSelEnd)
+        assertEquals("hola mundo", second.getTextBeforeCursor(100, 0).toString())
+        assertFalse(first.commitText("late", 1))
+        second.deleteSurroundingText(5, 0)
+        second.commitText("móvil", 1)
+        assertEquals(listOf("hola mundo") + List(5) { "\u007f" } + "móvil", output)
+    }
+
+    @Test fun backspaceKeyAtTheStartOfTheContextReachesTheRemoteLine() {
+        val connection = requireNotNull(view.onCreateInputConnection(EditorInfo()))
+        connection.commitText("ab", 1)
+        connection.setSelection(0, 0)
+        output.clear()
+        assertTrue(connection.sendKeyEvent(key(KeyEvent.KEYCODE_DEL)))
+        assertEquals(listOf("\u007f"), output)
+        assertEquals("ab", connection.getExtractedText(ExtractedTextRequest(), 0).text.toString())
+    }
+
+    @Test fun singleLinePasteJoinsTheContextAndMultiLinePasteResetsIt() {
+        val connection = requireNotNull(view.onCreateInputConnection(EditorInfo()))
+        connection.commitText("git ", 1)
+        val restarts = view.inputRestarts
+        view.sendPaste("status")
+        assertEquals("git status", connection.getTextBeforeCursor(100, 0).toString())
+        connection.deleteSurroundingText(1, 0)
+        assertEquals(restarts, view.inputRestarts)
+        view.sendPaste("a\nb")
+        assertEquals(restarts + 1, view.inputRestarts)
+        assertEquals(listOf("git ", "\u001b[200~status\u001b[201~", "\u007f", "\u001b[200~a\nb\u001b[201~"), output)
+    }
+
+    @Test fun reEnablingInputRebindsTheImeToALiveConnection() {
+        assertTrue(view.hasFocus())
+        view.inputEnabled = false
+        assertNull(view.onCreateInputConnection(EditorInfo()))
+        val restarts = view.inputRestarts
+        view.inputEnabled = true
+        assertEquals(restarts + 1, view.inputRestarts)
+        assertNotNull(view.onCreateInputConnection(EditorInfo()))
+    }
+
+    @Test fun barTextStillReachesTheRemoteWhenTheConnectionWasClosed() {
+        val connection = requireNotNull(view.onCreateInputConnection(EditorInfo()))
+        connection.closeConnection()
+        view.sendText("/")
+        assertEquals(listOf("/"), output)
+    }
+
+    @Test fun onlyShortPlainPastesJoinTheContext() {
+        val connection = requireNotNull(view.onCreateInputConnection(EditorInfo()))
+        connection.commitText("x", 1)
+        val restarts = view.inputRestarts
+        view.sendPaste("a".repeat(200))
+        assertEquals(restarts, view.inputRestarts)
+        assertEquals("x" + "a".repeat(200), connection.getTextBeforeCursor(500, 0).toString())
+        view.sendPaste("a".repeat(201))
+        assertEquals(restarts + 1, view.inputRestarts)
+        val next = requireNotNull(view.onCreateInputConnection(EditorInfo()))
+        next.commitText("y", 1)
+        val afterLong = view.inputRestarts
+        view.sendPaste("a\tb")
+        assertEquals(afterLong + 1, view.inputRestarts)
+    }
+
+    @Test fun stickyShiftInputEndsTheContextBecauseUppercaseCanChangeLength() {
+        val connection = requireNotNull(view.onCreateInputConnection(EditorInfo()))
+        val restarts = view.inputRestarts
+        view.modifiers.shift = true
+        connection.commitText("ß", 1)
+        assertEquals(listOf("SS"), output)
+        assertEquals(restarts + 1, view.inputRestarts)
+        assertFalse(connection.commitText("late", 1))
+        val next = requireNotNull(view.onCreateInputConnection(EditorInfo()))
+        assertEquals("", next.getTextBeforeCursor(100, 0).toString())
+        view.modifiers.shift = true
+        view.sendText("ß")
+        assertEquals(listOf("SS", "SS"), output)
+    }
+
+    @Test fun deadKeyAccentIsNotSentAsACharacter() {
+        val accent = object : KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_A) {
+            override fun getUnicodeChar(metaState: Int) = KeyCharacterMap.COMBINING_ACCENT or 0x0301
+        }
+        val connection = requireNotNull(view.onCreateInputConnection(EditorInfo()))
+        connection.sendKeyEvent(accent)
+        view.onKeyDown(accent.keyCode, accent)
+        assertTrue(output.isEmpty())
     }
 }

@@ -2,6 +2,7 @@ package dev.herdroid.terminal
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.os.Build
 import android.os.Bundle
 import android.view.accessibility.AccessibilityNodeInfo
 import dev.herdroid.R
@@ -15,6 +16,7 @@ import android.text.Selection
 import android.graphics.Rect
 import android.util.TypedValue
 import android.view.GestureDetector
+import android.view.KeyCharacterMap
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.ScaleGestureDetector
@@ -90,6 +92,9 @@ class TerminalView(
             if (field == value) return
             field = value
             if (!value) { hardwareModifiers = 0; resetInputContext(force = true) }
+            // The IME is still bound to the null connection of the disabled pane: rebind it,
+            // or the keyboard (and its dictation key) stays inert until focus moves.
+            else if (hasFocus()) restartInput()
             restoreInputFocus()
         }
 
@@ -119,6 +124,16 @@ class TerminalView(
 
     private var hardwareModifiers = 0
     private var inputConnection: TerminalInputConnection? = null
+
+    // The IME's view of the current line since the last reset, and what the remote already got.
+    // It outlives a connection the framework recreates, so the IME keeps the word it is editing.
+    private val imeText: Editable = Editable.Factory.getInstance().newEditable("")
+    private var sentText = ""
+    private var sentCursor = 0
+
+    @androidx.annotation.VisibleForTesting
+    internal var inputRestarts = 0
+        private set
 
     private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.SUBPIXEL_TEXT_FLAG).apply {
         typeface = Typeface.MONOSPACE
@@ -499,11 +514,28 @@ class TerminalView(
         outAttrs.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
         outAttrs.imeOptions = EditorInfo.IME_FLAG_NO_EXTRACT_UI or
             EditorInfo.IME_FLAG_NO_FULLSCREEN or EditorInfo.IME_ACTION_NONE
-        outAttrs.initialSelStart = 0
-        outAttrs.initialSelEnd = 0
         inputConnection?.closeConnection()
+        // A new IME session starts without a composition, but with the text it can still edit.
+        BaseInputConnection.removeComposingSpans(imeText)
+        outAttrs.initialSelStart = Selection.getSelectionStart(imeText).coerceAtLeast(0)
+        outAttrs.initialSelEnd = Selection.getSelectionEnd(imeText).coerceAtLeast(0)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) outAttrs.setInitialSurroundingText(imeText)
         return TerminalInputConnection().also { inputConnection = it }
     }
+
+    private fun restartInput() {
+        inputRestarts++
+        (context.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager).restartInput(this)
+    }
+
+    private val controlActive: Boolean
+        get() = modifiers.ctrl || modifiers.alt ||
+            hardwareModifiers and (KeyEvent.META_CTRL_ON or KeyEvent.META_ALT_ON) != 0
+
+    // Sticky Shift uppercases what reaches the remote (ß becomes SS) but not the IME's text,
+    // so input sent with it ends the context like a shortcut does.
+    private val breaksContext: Boolean
+        get() = controlActive || modifiers.shift
 
     private fun emitText(text: String) {
         if (!inputEnabled || text.isEmpty()) return
@@ -513,11 +545,19 @@ class TerminalView(
             alt || hardwareModifiers and KeyEvent.META_ALT_ON != 0))
     }
 
-    /** Bar text and paste invalidate the IME's local context, just like cursor movement. */
+    /**
+     * Bar text joins the IME's context like typed text, so the word being edited survives it.
+     * With Ctrl/Alt or a line break it is a command instead, and the context starts over.
+     */
     fun sendText(text: String) {
         if (!inputEnabled) return
-        resetInputContext()
-        emitText(text)
+        val connection = inputConnection
+        if (connection != null && !connection.isClosed && !breaksContext && text.none { it == '\n' || it == '\r' }) {
+            connection.insertText(text)
+        } else {
+            resetInputContext()
+            emitText(text)
+        }
         restoreInputFocus()
     }
 
@@ -528,8 +568,14 @@ class TerminalView(
 
     fun sendPaste(text: String) {
         if (!inputEnabled || text.isEmpty()) return
-        resetInputContext()
+        // Only a short, plain paste is assumed to land literally: agent TUIs may collapse or
+        // transform longer ones, and later backspaces would then edit the wrong text.
+        val connection = inputConnection?.takeIf {
+            text.length <= ADOPT_PASTE_MAX && text.all { c -> c >= ' ' } && it.canAdopt()
+        }
+        if (connection == null) resetInputContext()
         listener?.onInput("\u001b[200~$text\u001b[201~")
+        connection?.adopt(text)
         restoreInputFocus()
     }
 
@@ -544,12 +590,18 @@ class TerminalView(
         restoreInputFocus()
     }
 
+    /** Cursor movement, Enter and shortcuts change the remote line in ways the IME can't follow. */
     private fun resetInputContext(force: Boolean = false) {
+        if (!force && imeText.isEmpty()) return
+        imeText.clear()
+        BaseInputConnection.removeComposingSpans(imeText)
+        Selection.setSelection(imeText, 0)
+        sentText = ""
+        sentCursor = 0
         val connection = inputConnection ?: return
-        if (!force && connection.editable.isEmpty()) return
         connection.closeConnection()
         inputConnection = null
-        (context.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager).restartInput(this)
+        restartInput()
     }
 
     private fun emitSpecial(key: SpecialKey, count: Int = 1) {
@@ -592,7 +644,7 @@ class TerminalView(
             return true
         }
         val unicode = event.getUnicodeChar(event.metaState and (KeyEvent.META_CTRL_MASK or KeyEvent.META_ALT_MASK).inv())
-        if (unicode != 0) {
+        if (unicode != 0 && unicode and KeyCharacterMap.COMBINING_ACCENT == 0) {
             resetInputContext()
             val (_, _, shift) = modifiers.consume()
             val text = String(Character.toChars(unicode))
@@ -618,11 +670,10 @@ class TerminalView(
 
     /** Editable context lets IMEs revise dictation and query the text/cursor coherently. */
     private inner class TerminalInputConnection : BaseInputConnection(this@TerminalView, true) {
-        override fun getEditable(): Editable = requireNotNull(super.getEditable())
+        override fun getEditable(): Editable = imeText
 
-        private var sentText = ""
-        private var sentCursor = 0
         private var closed = false
+        val isClosed get() = closed
         private var extractedToken: Int? = null
 
         override fun closeConnection() {
@@ -632,8 +683,7 @@ class TerminalView(
 
         private fun edit(operation: () -> Boolean): Boolean {
             if (closed || !inputEnabled) return false
-            val controlInput = modifiers.ctrl || modifiers.alt ||
-                hardwareModifiers and (KeyEvent.META_CTRL_ON or KeyEvent.META_ALT_ON) != 0
+            val controlInput = breaksContext
             val result = operation()
             synchronizeText()
             if (controlInput || editable.any { it == '\n' || it == '\r' }) resetInputContext()
@@ -652,6 +702,32 @@ class TerminalView(
         }
 
         override fun setSelection(start: Int, end: Int) = edit { super.setSelection(start, end) }
+
+        // Re-composing a committed word (backspace into it) must reach the IME's selection state.
+        override fun setComposingRegion(start: Int, end: Int): Boolean {
+            if (closed || !inputEnabled) return false
+            return super.setComposingRegion(start, end).also { notifySelection() }
+        }
+
+        /** Bar text, inserted where the IME's cursor is, as if typed. */
+        fun insertText(text: String) {
+            if (closed) return
+            super.finishComposingText()
+            commitText(text, 1)
+        }
+
+        /** Whether text the remote already received at its cursor can join this context. */
+        fun canAdopt() = !closed && !breaksContext &&
+            Selection.getSelectionStart(editable) == sentCursor && Selection.getSelectionEnd(editable) == sentCursor
+
+        fun adopt(text: String) {
+            removeComposingSpans(editable)
+            editable.insert(sentCursor, text)
+            sentText = editable.toString()
+            sentCursor += text.length
+            Selection.setSelection(editable, sentCursor)
+            notifySelection()
+        }
 
         override fun deleteSurroundingText(beforeLength: Int, afterLength: Int): Boolean {
             if (closed || !inputEnabled || beforeLength < 0 || afterLength < 0) return false
@@ -672,6 +748,20 @@ class TerminalView(
 
         override fun sendKeyEvent(event: KeyEvent): Boolean {
             if (closed || !inputEnabled) return false
+            // IMEs send some edits as key events (Gboard: backspace with no known text, digits).
+            // Plain ones stay inside the context instead of restarting the IME and losing the word.
+            if (event.action == KeyEvent.ACTION_DOWN && !controlActive && !event.isCtrlPressed && !event.isAltPressed) {
+                when (event.keyCode) {
+                    KeyEvent.KEYCODE_DEL -> return deleteKey(forward = false)
+                    KeyEvent.KEYCODE_FORWARD_DEL -> return deleteKey(forward = true)
+                }
+                val unicode = event.getUnicodeChar(event.metaState and (KeyEvent.META_CTRL_MASK or KeyEvent.META_ALT_MASK).inv())
+                // A dead key's accent combines with the next key; it is not a character yet.
+                if (unicode != 0 && unicode and KeyCharacterMap.COMBINING_ACCENT == 0 &&
+                    unicode != '\n'.code && unicode != '\t'.code) {
+                    return commitText(String(Character.toChars(unicode)), 1)
+                }
+            }
             return when (event.action) {
                 KeyEvent.ACTION_DOWN -> onKeyDown(event.keyCode, event)
                 KeyEvent.ACTION_UP -> onKeyUp(event.keyCode, event)
@@ -688,6 +778,19 @@ class TerminalView(
                 partialEndOffset = -1
                 selectionStart = Selection.getSelectionStart(editable).coerceAtLeast(0)
                 selectionEnd = Selection.getSelectionEnd(editable).coerceAtLeast(0)
+            }
+        }
+
+        private fun deleteKey(forward: Boolean): Boolean {
+            val start = Selection.getSelectionStart(editable).coerceAtLeast(0)
+            val end = Selection.getSelectionEnd(editable).coerceAtLeast(0)
+            return when {
+                start != end -> commitText("", 1)
+                // The context only begins at the last reset; the remote line goes on beyond it.
+                !forward && start == 0 -> { emitSpecial(SpecialKey.BACKSPACE); true }
+                forward && end == editable.length -> { emitSpecial(SpecialKey.DELETE); true }
+                forward -> deleteSurroundingTextInCodePoints(0, 1)
+                else -> deleteSurroundingTextInCodePoints(1, 0)
             }
         }
 
@@ -730,6 +833,7 @@ class TerminalView(
     companion object {
         const val MIN_FONT_SP = 6f
         const val MAX_FONT_SP = 28f
+        private const val ADOPT_PASTE_MAX = 200
         private const val MIN_COLS = 20
         private const val MIN_ROWS = 6
     }
