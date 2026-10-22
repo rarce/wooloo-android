@@ -747,6 +747,7 @@ internal class DemoHerdr(ambient: Boolean = true) {
             appendLine("MemAvailable=${9_100_000 + Random.nextLong(-300_000, 300_000)}")
             appendLine("uptime=$uptime.42")
             appendLine("df=/dev/nvme0n1p2 490617784 201853012 263770548 44% /")
+            appendLine("nvidia=NVIDIA RTX A4000, ${Random.nextInt(18, 64)}, ${Random.nextInt(5_200, 7_400)}, 16376")
         }
     }
 

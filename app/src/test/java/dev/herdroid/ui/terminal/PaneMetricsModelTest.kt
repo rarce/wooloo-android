@@ -3,6 +3,9 @@ package dev.herdroid.ui.terminal
 import dev.herdroid.connection.AgentQuotaMonitor
 import dev.herdroid.herdr.AgentProvider
 import dev.herdroid.herdr.AgentQuota
+import dev.herdroid.herdr.GpuSample
+import dev.herdroid.herdr.HostSample
+import dev.herdroid.herdr.HostStats
 import dev.herdroid.herdr.QuotaWindow
 import org.junit.Assert.*
 import org.junit.Test
@@ -49,5 +52,15 @@ class PaneMetricsModelTest {
         listOf(null, Double.NaN, Double.POSITIVE_INFINITY).forEach { assertEquals("–", metricPercent(it)) }
         assertEquals("Codex 5H 0% left", paneQuotaText(AgentProvider.CODEX, state(1.0), true, true, now))
         assertEquals("Claude 5H 100% left", paneQuotaText(AgentProvider.CLAUDE, state(0.0), true, true, now))
+    }
+
+    @Test fun gpuLineAppearsOnlyWhenTheHostReportsGpus() {
+        fun stats(vararg utilization: Double?) =
+            HostStats(HostSample("h", gpus = utilization.map { GpuSample(utilization = it) }), null)
+        assertNull(gpuMetricText(null))
+        assertNull(gpuMetricText(stats()))
+        assertEquals("GPU 37%", gpuMetricText(stats(0.37)))
+        assertEquals("GPU 50% ×2", gpuMetricText(stats(0.2, 0.8)))
+        assertEquals("GPU – ×2", gpuMetricText(stats(null, null)))
     }
 }

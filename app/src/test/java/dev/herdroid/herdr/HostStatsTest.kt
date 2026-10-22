@@ -133,5 +133,82 @@ class HostStatsTest {
         assertTrue(output, (sample.memoryUsed ?: 0) > 0 && sample.memoryUsed!! <= sample.memoryTotal!!)
         assertTrue(output, sample.diskFree!! <= sample.diskTotal!!)
         assertTrue(output, sample.uptimeSeconds!! > 0)
+        // A Mac always has an accelerator; elsewhere a GPU is optional.
+        if ("ioreg=" in output) assertTrue(output, sample.gpus.isNotEmpty())
+    }
+
+    // Captured on an Apple M4 Max (macOS 26.6.2) through the probe's ioreg | grep pipeline.
+    private val appleIoreg = """
+        ioreg=+-o AGXAcceleratorG16X  <class AGXAcceleratorG16X, id 0x100000542, registered, matched, active, busy 0 (1581 ms), retain 62>
+        ioreg=      "PerformanceStatistics" = {"In use system memory (driver)"=0,"Alloc system memory"=13397131264,"Tiler Utilization %"=0,"recoveryCount"=0,"lastRecoveryTime"=0,"Renderer Utilization %"=0,"TiledSceneBytes"=2031616,"Device Utilization %"=95,"SplitSceneCount"=0,"Allocated PB Size"=154533888,"In use system memory"=10380492800}
+        ioreg=      "model" = "Apple M4 Max"
+    """.trimIndent()
+
+    @Test fun noGpuSourceMeansNoGpus() {
+        assertTrue(HostProbe.parse(linuxOutput)!!.gpus.isEmpty())
+        assertTrue(HostProbe.parse(macOutput)!!.gpus.isEmpty())
+    }
+
+    @Test fun parsesOneNvidiaGpu() {
+        val gpus = HostProbe.parse(linuxOutput + "\nnvidia=NVIDIA GeForce RTX 4090, 37, 10240, 24564")!!.gpus
+        assertEquals(listOf(GpuSample("NVIDIA GeForce RTX 4090", 0.37, 10_240L * 1_048_576, 24_564L * 1_048_576)), gpus)
+        // CPU, memory and disk are unaffected by the GPU lines.
+        assertEquals(HostProbe.parse(linuxOutput)!!, HostProbe.parse(linuxOutput + "\nnvidia=x, 1, 2, 3")!!.copy(gpus = emptyList()))
+    }
+
+    @Test fun nvidiaNameMayContainCommas() {
+        val gpu = HostProbe.parse(linuxOutput + "\nnvidia=Weird, Name, 5, 1, 2")!!.gpus.single()
+        assertEquals(GpuSample("Weird, Name", 0.05, 1_048_576L, 2L * 1_048_576), gpu)
+    }
+
+    @Test fun parsesTwoNvidiaGpusInOrder() {
+        val gpus = HostProbe.parse(linuxOutput + """
+            |
+            |nvidia=NVIDIA A100-SXM4-80GB, 0, 4, 81920
+            |nvidia=NVIDIA A100-SXM4-80GB, 100, 81000, 81920
+        """.trimMargin())!!.gpus
+        assertEquals(2, gpus.size)
+        assertEquals(listOf(0.0, 1.0), gpus.map { it.utilization })
+        assertEquals(81_000L * 1_048_576, gpus[1].memoryUsed)
+        val stats = HostStats(HostProbe.parse(linuxOutput)!!.copy(gpus = gpus), null)
+        assertEquals(0.5, stats.gpuUsage!!, 0.0)
+        assertEquals("2 GPUs · avg 50%", HostStats.gpusText(gpus))
+    }
+
+    @Test fun parsesAmdSysfsReadings() {
+        val gpus = HostProbe.parse(linuxOutput + "\namdgpu=23 2147483648 17163091968\namdgpu=- 1048576 -")!!.gpus
+        assertEquals(GpuSample(null, 0.23, 2_147_483_648L, 17_163_091_968L), gpus[0])
+        assertEquals(GpuSample(null, null, 1_048_576L, null), gpus[1])
+        assertEquals("23% · 2.0 GB / 16.0 GB", HostStats.gpuText(gpus[0]))
+    }
+
+    @Test fun parsesAppleSiliconIoreg() {
+        val gpus = HostProbe.parse(macOutput + "\n" + appleIoreg)!!.gpus
+        assertEquals(listOf(GpuSample("Apple M4 Max", 0.95, 10_380_492_800L, null)), gpus)
+        assertEquals("95% · 9.7 GB in use", HostStats.gpuText(gpus.single()))
+    }
+
+    @Test fun malformedOrPartialGpuOutputYieldsNullFieldsNotACrash() {
+        val output = linuxOutput + """
+            |
+            |nvidia=No devices were found
+            |nvidia=NVIDIA-SMI has failed because it couldn't communicate with the NVIDIA driver.
+            |nvidia=Tesla T4, [N/A], 15, 15360
+            |nvidia=Broken, abc, -5, 0
+            |nvidia=Over, 250, 1, 2
+            |amdgpu=abc
+            |amdgpu=1 2
+            |amdgpu=- - -
+            |ioreg=+-o IntelAccelerator  <class IntelAccelerator>
+            |ioreg=      "model" = <"Intel Iris Plus Graphics">
+            |ioreg=+-o Garbage
+            |ioreg=      "PerformanceStatistics" = {"Device Utilization %"=900,"In use system memory"=-1}
+        """.trimMargin()
+        val gpus = HostProbe.parse(output)!!.gpus
+        assertEquals(listOf(
+            GpuSample("Tesla T4", null, 15L * 1_048_576, 15_360L * 1_048_576),
+            GpuSample("Over", null, 1_048_576L, 2L * 1_048_576),
+        ), gpus)
+        assertEquals("… · 15 MB / 15.0 GB", HostStats.gpuText(gpus[0]))
     }
 }
