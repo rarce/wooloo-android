@@ -23,6 +23,11 @@ android {
     }
     val releaseVersionCode = majorNumber * 1_000_000L + minorNumber * 1_000L + patchNumber
     require(releaseVersionCode in 1..Int.MAX_VALUE.toLong()) { "versionCode must be a positive Int" }
+    // Google Play rejects version codes above 2,100,000,000, below Android's own Int limit.
+    require(!play || releaseVersionCode <= 2_100_000_000L) {
+        "Play versionCode $releaseVersionCode for appVersion $appVersion exceeds Google Play's limit of " +
+            "2100000000; the highest Play version is 2100.0.0 (see docs/play.md)"
+    }
     testBuildType = if (releaseSmoke) "release" else "debug"
     sourceSets.getByName("androidTest").java.setSrcDirs(
         if (releaseSmoke) listOf("src/releaseSmokeTest/java")
