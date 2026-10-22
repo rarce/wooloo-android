@@ -5,6 +5,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import dev.herdroid.connection.ConnectionStatus
 import dev.herdroid.connection.HerdrConnection
+import dev.herdroid.ui.components.bannerOffersRecovery
 import dev.herdroid.herdr.TerminalEvent
 import dev.herdroid.herdr.TerminalStream
 import dev.herdroid.terminal.ModifierState
@@ -12,6 +13,7 @@ import dev.herdroid.terminal.TerminalModel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
@@ -29,6 +31,31 @@ sealed interface PaneState {
     data object TakenOver : PaneState
     data object Offline : PaneState
     data class Closed(val reason: String?, val interrupted: Boolean = false) : PaneState
+}
+
+/**
+ * What the pane overlay shows. The connection banner owns host problems (`Reconnecting`,
+ * `Failed`), so the overlay offers actions only while the host is connected: never two
+ * competing recovery surfaces. While the host is away the pane waits and reopens by itself.
+ */
+internal sealed interface PaneRecovery {
+    data object None : PaneRecovery
+    data object Loading : PaneRecovery
+    data class WaitingForHost(val failed: Boolean) : PaneRecovery
+    /** A pane-level problem on a healthy host: takeover, watch, reconnect the stream. */
+    data class Actions(val state: PaneState) : PaneRecovery
+}
+
+internal fun recoveryUi(status: ConnectionStatus, state: PaneState): PaneRecovery {
+    val hostAway = status.bannerOffersRecovery
+    val waiting = PaneRecovery.WaitingForHost(failed = status is ConnectionStatus.Failed)
+    return when (state) {
+        PaneState.Live -> PaneRecovery.None
+        PaneState.WaitingForLayout, PaneState.Opening -> if (hostAway) waiting else PaneRecovery.Loading
+        PaneState.Offline -> if (status == ConnectionStatus.Connected) PaneRecovery.Loading else waiting
+        is PaneState.Busy, PaneState.TakenOver, is PaneState.Closed ->
+            if (status == ConnectionStatus.Connected) PaneRecovery.Actions(state) else waiting
+    }
 }
 
 /**
@@ -64,6 +91,9 @@ class TerminalController internal constructor(
         private set
 
     private var recovering = false
+    private var retries = 0
+    private var stableJob: Job? = null
+    private var hostWait: Job? = null
     private var stream: TerminalStream? = null
     private var streamJob: Job? = null
     @Volatile private var generation = 0L
@@ -77,10 +107,14 @@ class TerminalController internal constructor(
         scope.launch {
             connection.status.collect { status ->
                 when (status) {
-                    ConnectionStatus.Connected -> if (state == PaneState.Offline) open(recovery = true)
+                    // A conflated Reconnecting→Connected may never be observed as Reconnecting,
+                    // leaving an interrupted stream behind: reopen that too.
+                    ConnectionStatus.Connected -> if (state == PaneState.Offline ||
+                        (state as? PaneState.Closed)?.interrupted == true) open(recovery = true)
+                    // Whatever the pane showed, it waits for the host now; reopening on Connected
+                    // re-detects a pane in use (without taking it over) or one that is gone.
                     is ConnectionStatus.Reconnecting, is ConnectionStatus.Failed -> {
-                        if (state == PaneState.Live || state == PaneState.Opening ||
-                            (state as? PaneState.Closed)?.interrupted == true) {
+                        if (state != PaneState.WaitingForLayout && state != PaneState.Offline) {
                             closeStream()
                             state = PaneState.Offline
                         }
@@ -98,7 +132,9 @@ class TerminalController internal constructor(
         cellW = cellWidthPx
         cellH = cellHeightPx
         if (first || state == PaneState.WaitingForLayout) {
-            open()
+            // A pane switch storm creates and disposes controllers quickly: don't open a
+            // channel for a pane that is gone again within the debounce.
+            start(takeover = false, observeOnly = readOnly, recovery = false, delayMs = OPEN_DEBOUNCE_MS)
             return
         }
         // Debounce: pinch-zoom and keyboard animations produce bursts of sizes.
@@ -110,23 +146,30 @@ class TerminalController internal constructor(
     }
 
     fun open(takeover: Boolean = false, observeOnly: Boolean = readOnly, recovery: Boolean = false) {
+        retries = 0
+        start(takeover, observeOnly, recovery, delayMs = 0)
+    }
+
+    private fun start(takeover: Boolean, observeOnly: Boolean, recovery: Boolean, delayMs: Long) {
         readOnly = observeOnly
         if (cols == 0) return
         closeStream()
+        hostWait?.cancel()
         recovering = recovery
         if (!connection.isLive) {
-            state = PaneState.Offline
+            waitForHost()
             return
         }
         state = PaneState.Opening
         val openingGeneration = generation
         streamJob = scope.launch {
+            if (delayMs > 0) delay(delayMs)
             val opened = runCatching {
                 connection.openTerminal(paneId, cols, rows, takeover, observeOnly, scope)
             }.getOrElse { error ->
                 if (error is CancellationException) throw error
                 if (generation != openingGeneration) return@launch
-                state = if (connection.isLive) PaneState.Closed(error.message, interrupted = true) else PaneState.Offline
+                retryOrClose(error.message)
                 return@launch
             }
             if (generation != openingGeneration) {
@@ -143,6 +186,10 @@ class TerminalController internal constructor(
                                 if (generation == openingGeneration) {
                                     recovering = false
                                     state = PaneState.Live
+                                    // A stream that renders a frame and dies must still run out of
+                                    // retries: only a pane that stays live earns them back.
+                                    stableJob?.cancel()
+                                    stableJob = scope.launch { delay(STABLE_LIVE_MS); retries = 0 }
                                 }
                             }
                         }
@@ -157,11 +204,36 @@ class TerminalController internal constructor(
 
     private fun onClosed(event: TerminalEvent.Closed) {
         stream = null
+        stableJob?.cancel()
         state = when {
             event.needsTakeover -> PaneState.Busy(event.reason.orEmpty(), afterReconnect = recovering)
             event.wasTakenOver -> PaneState.TakenOver
-            event.interrupted && !connection.isLive -> PaneState.Offline
+            event.interrupted -> return retryOrClose(event.reason)
             else -> PaneState.Closed(event.reason, interrupted = event.interrupted)
+        }
+    }
+
+    /**
+     * A pane stream that failed to open or ended without herdr closing it is a pane problem
+     * while the host is connected: retry it briefly before offering Reconnect. Retries never
+     * take over another client's control.
+     */
+    private fun retryOrClose(reason: String?) {
+        when {
+            !connection.isLive -> waitForHost()
+            retries < RETRY_DELAYS_MS.size ->
+                start(takeover = false, observeOnly = readOnly, recovery = true, delayMs = RETRY_DELAYS_MS[retries++])
+            else -> state = PaneState.Closed(reason, interrupted = true)
+        }
+    }
+
+    /** The status collector can miss a conflated Reconnecting→Connected, so wait for it here too. */
+    private fun waitForHost() {
+        state = PaneState.Offline
+        hostWait?.cancel()
+        hostWait = scope.launch {
+            connection.status.first { it == ConnectionStatus.Connected }
+            if (state == PaneState.Offline) open(recovery = true)
         }
     }
 
@@ -185,6 +257,7 @@ class TerminalController internal constructor(
 
     private fun closeStream() {
         synchronized(model.lock) { generation++ }
+        stableJob?.cancel()
         streamJob?.cancel()
         stream?.close()
         stream = null
@@ -193,6 +266,12 @@ class TerminalController internal constructor(
     fun dispose() {
         closeStream()
         scope.cancel()
+    }
+
+    private companion object {
+        const val OPEN_DEBOUNCE_MS = 150L
+        const val STABLE_LIVE_MS = 5_000L
+        val RETRY_DELAYS_MS = longArrayOf(250, 1_000, 3_000)
     }
 
     /** Validate ownership at the same moment the frame mutates the model. */

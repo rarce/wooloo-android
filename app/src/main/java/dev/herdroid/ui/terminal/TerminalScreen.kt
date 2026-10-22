@@ -343,7 +343,7 @@ private fun TerminalScreenContent(
                     },
                 )
                 }
-                PaneOverlay(controller.state, onTakeOver = { controller.open(takeover = true) },
+                PaneOverlay(recoveryUi(status, controller.state), onTakeOver = { controller.open(takeover = true) },
                     onWatch = { controller.open(observeOnly = true) },
                     onRetry = { controller.open() },
                     onBack = onBack)
@@ -730,49 +730,56 @@ internal fun QuickAnswers(onAnswer: (String) -> Unit) {
 
 @Composable
 private fun PaneOverlay(
-    state: PaneState,
+    recovery: PaneRecovery,
     onTakeOver: () -> Unit,
     onWatch: () -> Unit,
     onRetry: () -> Unit,
     onBack: () -> Unit,
 ) {
-    when (state) {
-        PaneState.Live -> return
-        PaneState.WaitingForLayout, PaneState.Opening -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+    when (recovery) {
+        PaneRecovery.None -> return
+        PaneRecovery.Loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             CircularProgressIndicator(Modifier.size(32.dp), strokeWidth = 3.dp)
         }
-        else -> Box(
+        is PaneRecovery.WaitingForHost, is PaneRecovery.Actions -> Box(
             Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface.copy(alpha = 0.82f)).clickable(enabled = false) {},
             contentAlignment = Alignment.Center,
         ) {
             Surface(shape = RoundedCornerShape(24.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh, modifier = Modifier.padding(24.dp)) {
                 Column(Modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    val (title, body) = when (state) {
-                        is PaneState.Busy -> if (state.afterReconnect) {
+                    val state = (recovery as? PaneRecovery.Actions)?.state
+                    val (title, body) = when {
+                        // The banner above has the host's actions; this pane only waits for it.
+                        recovery is PaneRecovery.WaitingForHost -> if (recovery.failed) {
+                            "Not connected" to "This pane reopens once the connection is back."
+                        } else {
+                            "Offline" to "Waiting for the connection to come back…"
+                        }
+                        state is PaneState.Busy -> if (state.afterReconnect) {
                             "Confirm control after reconnecting" to
                                 "The previous connection may still hold this pane, or another client may control it. Take control here only if you want to replace that controller, or watch without changing it."
                         } else {
                             "Pane in use" to "Another client is controlling this pane. Take control here, or just watch."
                         }
-                        PaneState.TakenOver -> "Control moved" to "Another client took control of this pane."
-                        PaneState.Offline -> "Offline" to "Waiting for the connection to come back…"
-                        is PaneState.Closed -> "Stream ended" to (state.reason ?: "The pane stream closed.")
+                        state == PaneState.TakenOver -> "Control moved" to "Another client took control of this pane."
+                        state is PaneState.Closed -> "Stream ended" to (state.reason ?: "The pane stream closed.")
                         else -> "" to ""
                     }
                     Text(title, style = MaterialTheme.typography.titleMedium)
                     Text(body, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Spacer(Modifier.height(4.dp))
-                    when (state) {
-                        is PaneState.Busy, PaneState.TakenOver -> {
+                    when {
+                        recovery is PaneRecovery.WaitingForHost -> if (!recovery.failed) {
+                            CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
+                        }
+                        state is PaneState.Busy || state == PaneState.TakenOver -> {
                             Button(onClick = onTakeOver, modifier = Modifier.fillMaxWidth()) { Text("Take control") }
                             OutlinedButton(onClick = onWatch, modifier = Modifier.fillMaxWidth()) { Text("Watch only") }
                         }
-                        PaneState.Offline -> CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
-                        is PaneState.Closed -> {
+                        state is PaneState.Closed -> {
                             Button(onClick = onRetry, modifier = Modifier.fillMaxWidth()) { Text("Reconnect") }
                             OutlinedButton(onClick = onBack, modifier = Modifier.fillMaxWidth()) { Text("Back to session") }
                         }
-                        else -> Unit
                     }
                 }
             }

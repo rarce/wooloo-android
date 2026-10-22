@@ -52,6 +52,9 @@ sealed interface TerminalEvent {
 
 enum class MouseAction { DOWN, UP, DRAG, MOVE }
 
+/** The pane's exec channel couldn't be opened (refused, say). A pane problem: the transport is fine. */
+class TerminalOpenException(message: String, cause: Throwable? = null) : IOException(message, cause)
+
 /**
  * A live pane stream: `herdr terminal session control|observe` running over an SSH exec
  * channel. herdr re-renders the pane server-side and sends compact ANSI frames as NDJSON;
@@ -256,7 +259,13 @@ class TerminalStream private constructor(
             } else {
                 RemoteCommand.terminalControl(session, herdrPath, target, cols, rows, takeover)
             }
-            val channel = ssh.exec(command)
+            val channel = try {
+                ssh.exec(command)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                throw TerminalOpenException(e.message ?: "Couldn't open the pane stream", e)
+            }
             return TerminalStream(channel, scope, readOnly).also { it.start() }
         }
     }

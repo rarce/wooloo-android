@@ -1,11 +1,11 @@
 package dev.herdroid.ui.terminal
 
 import dev.herdroid.connection.ConnectionStatus
+import dev.herdroid.herdr.TerminalOpenException
 import dev.herdroid.herdr.TerminalStream
 import dev.herdroid.ssh.CommandChannel
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.setMain
 import org.junit.After
@@ -23,7 +23,7 @@ class TerminalRecoveryTest {
     private lateinit var controller: TerminalController
 
     @Before fun setUp() {
-        Dispatchers.setMain(UnconfinedTestDispatcher())
+        Dispatchers.setMain(Dispatchers.Unconfined)
         controller = TerminalController(connection, "pane")
     }
     @After fun tearDown() {
@@ -32,12 +32,12 @@ class TerminalRecoveryTest {
         Dispatchers.resetMain()
     }
 
-    @Test(timeout = 10_000) fun channelFailureBeforeSshStatusRecoversWithoutStealingControl(): Unit = runBlocking {
+    @Test(timeout = 10_000) fun channelFailureWhileConnectedRetriesThePaneWithoutStealingControl(): Unit = runBlocking {
         startLive()
         connection.opened.last().remote.close()
-        await { (controller.state as? PaneState.Closed)?.interrupted == true }
-        reconnect()
+        // A pane-level failure: the pane retries by itself and the host is never touched.
         await { connection.opened.size == 2 }
+        assertEquals(ConnectionStatus.Connected, connection.status.value)
         assertFalse(connection.takeovers.last())
         connection.opened.last().record("""{"type":"terminal.closed","reason":"use --takeover"}""")
         await { controller.state is PaneState.Busy }
@@ -46,6 +46,18 @@ class TerminalRecoveryTest {
         controller.open(takeover = true)
         await { connection.opened.size == 3 }
         assertTrue(connection.takeovers.last())
+    }
+
+    @Test(timeout = 15_000) fun refusedOpensRetryThenOfferReconnectOnAConnectedHost(): Unit = runBlocking {
+        connection.refuse = 10
+        controller.onGridSize(80, 24, 8, 16)
+        await(8_000) { controller.state is PaneState.Closed }
+        assertEquals(PaneState.Closed("open refused", interrupted = true), controller.state)
+        assertEquals(4, connection.attempts)
+        assertEquals(PaneRecovery.Actions(controller.state), recoveryUi(connection.status.value, controller.state))
+        connection.refuse = 0
+        controller.open()
+        await { connection.opened.size == 1 }
     }
 
     @Test(timeout = 10_000) fun sshFailureBeforeChannelCloseRecoversAndKeepsObserveMode(): Unit = runBlocking {
@@ -58,15 +70,19 @@ class TerminalRecoveryTest {
         await { controller.state == PaneState.Live }
     }
 
-    @Test(timeout = 10_000) fun normalPaneCloseIsNotReopenedByLaterSshReconnect(): Unit = runBlocking {
+    @Test(timeout = 10_000) fun closedPaneIsRecheckedAfterSshReconnectWithoutTakingControl(): Unit = runBlocking {
         startLive()
         connection.opened.last().record("""{"type":"terminal.closed","reason":"pane exited"}""")
         await { controller.state == PaneState.Closed("pane exited") }
+        // While the host is away the pane only waits; the banner owns recovery.
         connection.status.value = ConnectionStatus.Reconnecting(1, "fixture", 0)
+        assertEquals(PaneState.Offline, controller.state)
         connection.status.value = ConnectionStatus.Connected
-        delay(100)
-        assertEquals(PaneState.Closed("pane exited"), controller.state)
-        assertEquals(1, connection.opened.size)
+        await { connection.opened.size == 2 }
+        assertFalse(connection.takeovers.last())
+        connection.opened.last().record("""{"type":"terminal.closed","reason":"pane exited"}""")
+        await { controller.state == PaneState.Closed("pane exited") }
+        assertEquals(2, connection.opened.size)
     }
 
     @Test(timeout = 10_000) fun takeoverIsNotUndoneBySshRecovery(): Unit = runBlocking {
@@ -74,10 +90,26 @@ class TerminalRecoveryTest {
         connection.opened.last().record("""{"type":"terminal.closed","reason":"taken over"}""")
         await { controller.state == PaneState.TakenOver }
         connection.status.value = ConnectionStatus.Reconnecting(1, "fixture", 0)
+        assertEquals(PaneState.Offline, controller.state)
         connection.status.value = ConnectionStatus.Connected
-        delay(100)
-        assertEquals(PaneState.TakenOver, controller.state)
-        assertEquals(1, connection.opened.size)
+        // The reopen re-detects the other controller instead of taking the pane back.
+        await { connection.opened.size == 2 }
+        assertFalse(connection.takeovers.last())
+        connection.opened.last().record("""{"type":"terminal.closed","reason":"use --takeover"}""")
+        await { controller.state is PaneState.Busy }
+        assertTrue((controller.state as PaneState.Busy).afterReconnect)
+        assertEquals(2, connection.opened.size)
+    }
+
+    @Test(timeout = 15_000) fun streamThatRendersOneFrameAndDiesRunsOutOfRetries(): Unit = runBlocking {
+        connection.flapping = true
+        controller.onGridSize(80, 24, 8, 16)
+        await(10_000) { controller.state is PaneState.Closed }
+        assertTrue((controller.state as PaneState.Closed).interrupted)
+        assertEquals("The first open and three retries", 4, connection.opened.size)
+        assertEquals(PaneRecovery.Actions(controller.state), recoveryUi(connection.status.value, controller.state))
+        delay(600)
+        assertEquals(4, connection.opened.size)
     }
 
     private suspend fun startLive(observe: Boolean = false) {
@@ -92,7 +124,7 @@ class TerminalRecoveryTest {
         await { controller.state == PaneState.Offline }
         connection.status.value = ConnectionStatus.Connected
     }
-    private suspend fun await(condition: () -> Boolean) = withTimeout(3000) {
+    private suspend fun await(timeoutMs: Long = 3000, condition: () -> Boolean) = withTimeout(timeoutMs) {
         while (!condition()) delay(5)
     }
 
@@ -102,13 +134,21 @@ class TerminalRecoveryTest {
         val opened = CopyOnWriteArrayList<Channel>()
         val takeovers = CopyOnWriteArrayList<Boolean>()
         val observers = CopyOnWriteArrayList<Boolean>()
+        @Volatile var refuse = 0
+        /** Each stream renders one frame, then its channel dies without terminal.closed. */
+        @Volatile var flapping = false
+        @Volatile var attempts = 0
         override suspend fun openTerminal(paneId: String, cols: Int, rows: Int, takeover: Boolean,
                                           readOnly: Boolean, scope: CoroutineScope): TerminalStream {
+            attempts++
+            if (refuse-- > 0) throw TerminalOpenException("open refused")
             val channel = Channel()
             takeovers += takeover
             observers += readOnly
             opened += channel
-            return TerminalStream.fromChannel(channel, scope, readOnly)
+            return TerminalStream.fromChannel(channel, scope, readOnly).also {
+                if (flapping) scope.launch(Dispatchers.IO) { channel.frame(); delay(50); channel.remote.close() }
+            }
         }
     }
     private class Channel : CommandChannel {
