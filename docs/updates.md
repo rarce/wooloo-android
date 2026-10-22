@@ -93,6 +93,12 @@ The code and workflow are in place; these steps are still needed before the firs
 The direct GitHub APK channel remains the configured default. The same tag also uploads the Play app
 to Play's internal track from separate `build-play` and `play` jobs; see [play.md](play.md).
 
+The `release` environment exists and is protected (the owner is the required reviewer, deployments are
+restricted to `v*` tags), but it holds no HERDROID_* signing secrets yet, pending the choice of the
+production signing key. Until they are added, a tag publishes to Play only: `publish` still waits
+for approval in `release`, then skips with the notice "GitHub APK release skipped: signing secrets
+are not configured" and succeeds without creating a GitHub release or update.json.
+
 Before provisioning any signing secrets, the owner must protect `main` and release tags, restrict
 workflow changes, and configure the `release` environment with required independent reviewers and
 appropriate deployment branch/tag restrictions. Move the four HERDROID signing secrets into that

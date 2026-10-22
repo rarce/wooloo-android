@@ -187,35 +187,52 @@ jobs:
       GH_REPO: ${{ github.repository }}
       VERSION: ${{ needs.authorize.outputs.version }}
     steps:
+      # Until the production signing key is chosen, `release` holds no HERDROID_* secrets and a tag
+      # publishes to Play only: skip with a notice instead of failing the run.
+      - name: Check signing secrets
+        id: secrets
+        env:
+          KEYSTORE_BASE64: ${{ secrets.HERDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.HERDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.HERDROID_KEY_ALIAS }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ] || [ -z "$KEYSTORE_PASSWORD" ] || [ -z "$KEY_ALIAS" ]; then
+            echo "::notice::GitHub APK release skipped: signing secrets are not configured"
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        if: steps.secrets.outputs.ready == 'true'
         with:
           persist-credentials: false
           ref: ${{ needs.authorize.outputs.commit }}
 
       - name: Set build tools
+        if: steps.secrets.outputs.ready == 'true'
         run: |
           echo "BUILD_TOOLS=$ANDROID_HOME/build-tools/36.0.0" >> "$GITHUB_ENV"
 
       - name: Install Android build tools
+        if: steps.secrets.outputs.ready == 'true'
         run: '"$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "build-tools;36.0.0"'
 
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        if: steps.secrets.outputs.ready == 'true'
         with:
           name: unsigned-apk
           path: build/release
 
       # Every release must be signed with the same key, or Android refuses to install it as an update.
       - name: Sign the APK
+        if: steps.secrets.outputs.ready == 'true'
         env:
           KEYSTORE_BASE64: ${{ secrets.HERDROID_KEYSTORE_BASE64 }}
           KEYSTORE_PASSWORD: ${{ secrets.HERDROID_KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.HERDROID_KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.HERDROID_KEY_PASSWORD }}
         run: |
-          if [ -z "$KEYSTORE_BASE64" ] || [ -z "$KEYSTORE_PASSWORD" ] || [ -z "$KEY_ALIAS" ]; then
-            echo "::error::The HERDROID_KEYSTORE_BASE64, HERDROID_KEYSTORE_PASSWORD and HERDROID_KEY_ALIAS secrets must be set"
-            exit 1
-          fi
           export KEY_PASSWORD=${KEY_PASSWORD:-$KEYSTORE_PASSWORD}
           keystore="$RUNNER_TEMP/release.jks"
           trap 'rm -f "$keystore"' EXIT
@@ -227,6 +244,7 @@ jobs:
 
       # docs/releases/vX.Y.Z.md when written by hand, otherwise GitHub's notes since the last release.
       - name: Release notes
+        if: steps.secrets.outputs.ready == 'true'
         run: |
           if [ -f "docs/releases/$GITHUB_REF_NAME.md" ]; then
             cp "docs/releases/$GITHUB_REF_NAME.md" build/release/notes.md
@@ -236,6 +254,7 @@ jobs:
           fi
 
       - name: Write update.json
+        if: steps.secrets.outputs.ready == 'true'
         run: |
           apk="wooloo-mobile-$VERSION.apk"
           "$BUILD_TOOLS/aapt2" dump badging "build/release/$apk" > build/release/badging.txt
@@ -246,6 +265,7 @@ jobs:
             --output build/release/update.json
 
       - name: Publish
+        if: steps.secrets.outputs.ready == 'true'
         env:
           EXPECTED_COMMIT: ${{ needs.authorize.outputs.commit }}
         run: |

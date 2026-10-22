@@ -28,6 +28,10 @@ If any required Play secret is missing, `play` posts a notice ("Google Play uplo
 succeeds without signing or uploading. `play` and `publish` (the GitHub release) are independent: one
 failing or being skipped doesn't affect the other. Both are gated on `build`.
 
+Until the HERDROID_* signing secrets are added to the `release` environment, a tag publishes to Play
+only. `publish` still waits for approval in `release`, then skips with a notice: no GitHub release,
+APK or update.json. See [updates.md](updates.md#release-authorization-and-rehearsal).
+
 **Release → Run workflow** (rehearsal) runs `build-play` too, so the unsigned AAB can be downloaded and
 inspected, but `play` never runs.
 
