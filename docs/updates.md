@@ -90,8 +90,8 @@ The code and workflow are in place; these steps are still needed before the firs
 
 ### Release authorization and rehearsal
 
-The direct GitHub APK channel remains the configured default. Play distribution is conditional on a
-separate owner decision and account/signing setup; this workflow does not publish to Play.
+The direct GitHub APK channel remains the configured default. The same tag also uploads the Play app
+to Play's internal track from separate `build-play` and `play` jobs; see [play.md](play.md).
 
 Before provisioning any signing secrets, the owner must protect `main` and release tags, restrict
 workflow changes, and configure the `release` environment with required independent reviewers and
@@ -118,8 +118,8 @@ No release, feed URL or latest-release pointer changes during rehearsal.
 Version encoding is `major * 1,000,000 + minor * 1,000 + patch`, calculated using bounded `Long`
 arithmetic before conversion to `Int`. Components must be canonical decimal without leading zeros;
 minor/patch are at most 999 and the result must be in 1..2147483647. Thus 0.0.0 and 1.1000.0 fail;
-2147.483.647 is the last supported encoding. This direct APK range is not a promise of compatibility
-with Play's lower versionCode limit; choose a narrower policy before adopting Play.
+2147.483.647 is the last supported encoding for the direct APK. Play's limit is lower: `-Pplay`
+builds fail past 2100.0.0 (see [play.md](play.md#version-policy)).
 
 The generated feed checks APK identity `dev.herdroid`, exact version name/code, HTTPS URL, SHA-256
 and actual nonzero APK size (at most 256 MiB). The complete serialized JSON must fit 64 KiB of UTF-8,

@@ -35,7 +35,8 @@ HERDROID_E2E_AUTHORIZED_KEYS=/home/herd/.ssh/authorized_keys \
 `-PappVersion=X.Y.Z` sets the version (and enables self-updates); `-PupdateFeedUrl=https://…` points at
 another update feed. `-Pplay` builds the Google Play app (`bundleRelease -Pplay -PappVersion=X.Y.Z`): package
 `dev.wooloo.mobile`, never self-updating, with `src/play/AndroidManifest.xml` removing `REQUEST_INSTALL_PACKAGES`
-and the update receivers. `-ProbolectricDeps=<dir>` points Robolectric at pre-downloaded android-all jars for offline runs. There is no
+and the update receivers. Tagged releases also upload the Play AAB to the internal track (`build-play` and `play` jobs,
+protected `play` environment); see `docs/play.md`. `-ProbolectricDeps=<dir>` points Robolectric at pre-downloaded android-all jars for offline runs. There is no
 lint/format tooling configured beyond `kotlin.code.style=official`. Dependencies are in `gradle/libs.versions.toml`.
 
 ## Architecture
