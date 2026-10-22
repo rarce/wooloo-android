@@ -9,10 +9,12 @@ name: Release
 # builds nothing, can write releases and read the keystore. See docs/updates.md.
 #
 # The same tag also uploads the Google Play app (dev.wooloo.mobile) to Play's internal track:
-# build-play builds the unsigned AAB without secrets, and the play job, in the protected `play`
-# environment, signs it with the upload key and uploads it without running Gradle. It is skipped
-# with a notice while the Play secrets are missing, and is independent of publish: one failing never
-# affects the other. Rehearsals build the AAB but never sign or upload it. See docs/play.md.
+# build-play builds the unsigned AAB and its release notes without secrets, and the play job, in the
+# protected `play` environment, signs it with the upload key and uploads it without checking out or
+# running anything from the repository. It waits for build (tests, coverage, lint), so a broken tag
+# never uses up a Play versionCode, and is skipped with a notice while the Play secrets are missing.
+# It is independent of publish: one failing never affects the other. Rehearsals build the AAB but
+# never sign or upload it. See docs/play.md.
 on:
   push:
     tags: ['v*']
@@ -130,6 +132,23 @@ jobs:
       - name: Install Android SDK packages
         run: '"$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-36" "build-tools;36.0.0"'
 
+      # docs/releases/vX.Y.Z.md when written by hand, otherwise GitHub's notes since the last release;
+      # plain text within Play's 500 characters. A generic line if neither is available. Runs before
+      # Gradle, and is the only step given GH_TOKEN (read-only).
+      - name: Play release notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p build/play-notes
+          if [ -f "docs/releases/v$VERSION.md" ]; then
+            cp "docs/releases/v$VERSION.md" build/play-notes/notes.md
+          else
+            gh api "repos/$GITHUB_REPOSITORY/releases/generate-notes" -f tag_name="v$VERSION" \
+              --jq .body > build/play-notes/notes.md || echo "::warning::Generated notes unavailable; using a generic line"
+          fi
+          python3 scripts/play_notes.py --input build/play-notes/notes.md --output build/play-notes/whatsnew/whatsnew-en-US
+          cat build/play-notes/whatsnew/whatsnew-en-US
+
       - name: Build the unsigned Play bundle
         run: ./gradlew bundleRelease -Pplay -PappVersion="$VERSION" --console=plain
 
@@ -146,6 +165,13 @@ jobs:
           path: app/build/outputs/mapping/release/mapping.txt
           if-no-files-found: error
           retention-days: 90
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: play-notes
+          path: build/play-notes/whatsnew/
+          if-no-files-found: error
+          retention-days: 30
 
   publish:
     name: Sign and publish
@@ -252,7 +278,7 @@ jobs:
   # Uploads to Play's internal track only; promotion to closed testing and production stays manual.
   play:
     name: Sign and upload to Google Play
-    needs: [authorize, build-play]
+    needs: [authorize, build, build-play]
     if: github.event_name == 'push'
     runs-on: ubuntu-22.04
     timeout-minutes: 20
@@ -284,17 +310,6 @@ jobs:
             echo "ready=true" >> "$GITHUB_OUTPUT"
           fi
 
-      # Only the notes helper and hand-written notes: this job runs no build scripts.
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-        if: steps.secrets.outputs.ready == 'true'
-        with:
-          persist-credentials: false
-          ref: ${{ needs.authorize.outputs.commit }}
-          sparse-checkout: |
-            scripts/play_notes.py
-            docs/releases
-          sparse-checkout-cone-mode: false
-
       - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
         if: steps.secrets.outputs.ready == 'true'
         with:
@@ -312,6 +327,12 @@ jobs:
         with:
           name: play-mapping
           path: build/play
+
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        if: steps.secrets.outputs.ready == 'true'
+        with:
+          name: play-notes
+          path: build/play/whatsnew
 
       # Play App Signing: Google re-signs for users; this is the upload key Play Console registered.
       # AABs are JARs, so jarsigner (not apksigner) signs them.
@@ -331,22 +352,16 @@ jobs:
           signed="build/play/wooloo-mobile-$VERSION.aab"
           jarsigner -keystore "$keystore" -storepass:env KEYSTORE_PASSWORD -keypass:env KEY_PASSWORD \
             -signedjar "$signed" build/play/app-release.aab "$KEY_ALIAS"
-          jarsigner -verify "$signed" | tee build/play/verify.txt
+          # Verified against the upload key itself while the keystore still exists: every entry
+          # must be signed, by that key.
+          jarsigner -verify -keystore "$keystore" -storepass:env KEYSTORE_PASSWORD "$signed" "$KEY_ALIAS" \
+            | tee build/play/verify.txt
           grep -q '^jar verified' build/play/verify.txt
-
-      # docs/releases/vX.Y.Z.md when written by hand, otherwise GitHub's notes since the last release;
-      # plain text within Play's 500 characters. A generic line if neither is available.
-      - name: Play release notes
-        if: steps.secrets.outputs.ready == 'true'
-        run: |
-          if [ -f "docs/releases/$GITHUB_REF_NAME.md" ]; then
-            cp "docs/releases/$GITHUB_REF_NAME.md" build/play/notes.md
-          else
-            gh api "repos/$GITHUB_REPOSITORY/releases/generate-notes" -f tag_name="$GITHUB_REF_NAME" \
-              --jq .body > build/play/notes.md || echo "::warning::Generated notes unavailable; using a generic line"
+          # Without -strict these are only warnings, still under "jar verified".
+          if grep -qE 'unsigned entries|not signed by' build/play/verify.txt; then
+            echo "::error::The bundle has entries not signed by the upload key"
+            exit 1
           fi
-          python3 scripts/play_notes.py --input build/play/notes.md --output build/play/whatsnew/whatsnew-en-US
-          cat build/play/whatsnew/whatsnew-en-US
 
       - name: Check the tag still points at the built commit
         if: steps.secrets.outputs.ready == 'true'
@@ -370,3 +385,5 @@ jobs:
           status: completed
           mappingFile: build/play/mapping.txt
           whatsNewDirectory: build/play/whatsnew
+      # upload-google-play leaves the service account key in the workspace (serviceAccountJson.json):
+      # never add a step or an artifact upload after it.

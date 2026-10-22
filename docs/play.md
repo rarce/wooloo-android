@@ -10,21 +10,23 @@ The Google Play app is a separate build of wooloo mobile: package `dev.wooloo.mo
 Pushing a `vX.Y.Z` tag runs `.github/workflows/release.yml`:
 
 1. `authorize` checks the tag is canonical and points at a commit on `main`.
-2. `build-play` runs `./gradlew bundleRelease -Pplay -PappVersion=X.Y.Z` with a read-only token and no
-   secrets, and uploads the unsigned AAB (`unsigned-aab`) and the R8 mapping (`play-mapping`).
-3. `play` runs in the protected `play` environment, so it waits for a required reviewer. It runs no
-   Gradle and checks out only `scripts/play_notes.py` and `docs/releases`. It:
+2. `build-play` runs with a read-only token and no secrets. It writes "What's new" from
+   `docs/releases/vX.Y.Z.md` if present, otherwise from GitHub's generated notes, as plain text cut to
+   Play's 500 characters (`scripts/play_notes.py`), then runs
+   `./gradlew bundleRelease -Pplay -PappVersion=X.Y.Z`. It uploads the unsigned AAB (`unsigned-aab`),
+   the R8 mapping (`play-mapping`) and the notes (`play-notes`).
+3. `play` waits for `build` (tests, coverage gates, lint) as well as `build-play`, so a tag that fails
+   them never uses up its version code on Play. It runs in the protected `play` environment, so it
+   also waits for a required reviewer. It checks out nothing and runs no Gradle. It:
    - signs the AAB with the upload key (`jarsigner`, keystore in `$RUNNER_TEMP`, deleted on exit) and
-     verifies it;
-   - writes "What's new" from `docs/releases/vX.Y.Z.md` if present, otherwise from GitHub's generated
-     notes, as plain text cut to Play's 500 characters (`scripts/play_notes.py`);
+     verifies it against that key, failing on unsigned entries or entries signed by another key;
    - checks that the tag still points at the built commit;
    - uploads the AAB, the mapping file and the notes to the **internal** track with status
      `completed` and release name `X.Y.Z`.
 
 If any required Play secret is missing, `play` posts a notice ("Google Play upload skipped") and
 succeeds without signing or uploading. `play` and `publish` (the GitHub release) are independent: one
-failing or being skipped doesn't affect the other.
+failing or being skipped doesn't affect the other. Both are gated on `build`.
 
 **Release → Run workflow** (rehearsal) runs `build-play` too, so the unsigned AAB can be downloaded and
 inspected, but `play` never runs.
@@ -54,25 +56,22 @@ tag can be uploaded only once; fix a bad release with a new patch version.
 
 ## Owner setup
 
-Done:
+All done; nothing is pending:
 
 - Google Cloud project `wooloo-mobile` with the Google Play Android Developer API
   (`androidpublisher`) enabled, and the service account
   `play-publisher@wooloo-mobile.iam.gserviceaccount.com`.
+- In Play Console, **Users and permissions**: the service account is invited with access to this app
+  only, holding "Release apps to testing tracks" plus the default read-only permissions. It has no
+  production rights, so promoting to production stays manual.
 - GitHub environment `play`, with the owner as required reviewer and deployments restricted to tags
-  matching `v*`.
-- Secret `PLAY_SERVICE_ACCOUNT_JSON` (the service account's JSON key) in the `play` environment.
-
-To do:
-
-- In Play Console, **Users and permissions → Invite new users**: invite the service account's email,
-  grant access to this app only, with the release permissions (release to testing tracks, manage
-  testing tracks). No account-wide permissions.
-- Add to the `play` environment (not repository secrets):
-  - `PLAY_UPLOAD_KEYSTORE_BASE64`: the upload keystore, `base64 < upload.p12` on one line.
+  matching `v*`. It holds these secrets (not repository secrets):
+  - `PLAY_SERVICE_ACCOUNT_JSON`: the service account's JSON key.
+  - `PLAY_UPLOAD_KEYSTORE_BASE64`: the upload keystore (PKCS12), `base64 < upload.p12` on one line.
   - `PLAY_UPLOAD_KEYSTORE_PASSWORD`: its password.
   - `PLAY_UPLOAD_KEY_ALIAS`: the upload key's alias.
-  - `PLAY_UPLOAD_KEY_PASSWORD`: optional. Leave unset for a PKCS12 store; the store password is used.
+  - `PLAY_UPLOAD_KEY_PASSWORD` is deliberately unset: a PKCS12 key uses the store password, which the
+    workflow falls back to.
 
 The upload key is the one registered in Play Console under **App integrity** (Play App Signing).
 Google keeps the app signing key; losing the upload key means requesting an upload key reset there.
