@@ -97,10 +97,13 @@ The `release` environment exists and is protected (the owner is the required rev
 restricted to `v*` tags), but it holds no HERDROID_* signing secrets yet, pending the choice of the
 production signing key. Until they are added, a tag publishes to Play only: `publish` still waits
 for approval in `release`, then skips with the notice "GitHub APK release skipped: signing secrets
-are not configured" and succeeds without creating a GitHub release or update.json.
+are not configured" and succeeds without creating a GitHub release or update.json. If only some of
+HERDROID_KEYSTORE_BASE64, HERDROID_KEYSTORE_PASSWORD and HERDROID_KEY_ALIAS are set, `publish`
+fails and names the missing ones.
 
-Current protections: the repository is public, and a ruleset on `main` requires pull requests,
-squash merges, linear history and the "Tests, lint and release" check. The `release` and `play`
+Current protections: the repository is public, and a ruleset on `main` requires pull requests with
+all review threads resolved, squash merges, linear history and two passing checks, "Tests, lint and
+release" and "Android 36 instrumentation"; it also blocks deleting and force-pushing `main`. The `release` and `play`
 environments both exist and are protected (the owner is the required reviewer, deployments are
 restricted to `v*` tags); `play` holds its four secrets and `release` holds none. Merely declaring
 `environment: release` in YAML does not protect anything: GitHub can create an unprotected

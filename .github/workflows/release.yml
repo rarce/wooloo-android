@@ -12,7 +12,7 @@ name: Release
 # build-play builds the unsigned AAB and its release notes without secrets, and the play job, in the
 # protected `play` environment, signs it with the upload key and uploads it without checking out or
 # running anything from the repository. It waits for build (tests, coverage, lint), so a broken tag
-# never uses up a Play versionCode, and is skipped with a notice while the Play secrets are missing.
+# never uses up a Play versionCode, and is skipped with a notice while no Play secret is set.
 # It is independent of publish: one failing never affects the other. Rehearsals build the AAB but
 # never sign or upload it. See docs/play.md.
 on:
@@ -195,10 +195,18 @@ jobs:
           KEYSTORE_BASE64: ${{ secrets.HERDROID_KEYSTORE_BASE64 }}
           KEYSTORE_PASSWORD: ${{ secrets.HERDROID_KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.HERDROID_KEY_ALIAS }}
+        # None set: skip. All set: publish. Only some: a misconfiguration, so fail.
         run: |
-          if [ -z "$KEYSTORE_BASE64" ] || [ -z "$KEYSTORE_PASSWORD" ] || [ -z "$KEY_ALIAS" ]; then
+          missing=()
+          [ -n "$KEYSTORE_BASE64" ] || missing+=(HERDROID_KEYSTORE_BASE64)
+          [ -n "$KEYSTORE_PASSWORD" ] || missing+=(HERDROID_KEYSTORE_PASSWORD)
+          [ -n "$KEY_ALIAS" ] || missing+=(HERDROID_KEY_ALIAS)
+          if [ "${#missing[@]}" -eq 3 ]; then
             echo "::notice::GitHub APK release skipped: signing secrets are not configured"
             echo "ready=false" >> "$GITHUB_OUTPUT"
+          elif [ "${#missing[@]}" -gt 0 ]; then
+            echo "::error::The release environment lacks ${missing[*]}"
+            exit 1
           else
             echo "ready=true" >> "$GITHUB_OUTPUT"
           fi
@@ -317,15 +325,19 @@ jobs:
           KEYSTORE_BASE64: ${{ secrets.PLAY_UPLOAD_KEYSTORE_BASE64 }}
           KEYSTORE_PASSWORD: ${{ secrets.PLAY_UPLOAD_KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.PLAY_UPLOAD_KEY_ALIAS }}
+        # None set: skip. All set: upload. Only some: a misconfiguration, so fail.
         run: |
           missing=()
           [ -n "$SERVICE_ACCOUNT_JSON" ] || missing+=(PLAY_SERVICE_ACCOUNT_JSON)
           [ -n "$KEYSTORE_BASE64" ] || missing+=(PLAY_UPLOAD_KEYSTORE_BASE64)
           [ -n "$KEYSTORE_PASSWORD" ] || missing+=(PLAY_UPLOAD_KEYSTORE_PASSWORD)
           [ -n "$KEY_ALIAS" ] || missing+=(PLAY_UPLOAD_KEY_ALIAS)
-          if [ "${#missing[@]}" -gt 0 ]; then
-            echo "::notice::Google Play upload skipped: the play environment lacks ${missing[*]}. See docs/play.md."
+          if [ "${#missing[@]}" -eq 4 ]; then
+            echo "::notice::Google Play upload skipped: the play secrets are not configured. See docs/play.md."
             echo "ready=false" >> "$GITHUB_OUTPUT"
+          elif [ "${#missing[@]}" -gt 0 ]; then
+            echo "::error::The play environment lacks ${missing[*]}. See docs/play.md."
+            exit 1
           else
             echo "ready=true" >> "$GITHUB_OUTPUT"
           fi

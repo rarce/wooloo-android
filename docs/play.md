@@ -24,8 +24,8 @@ Pushing a `vX.Y.Z` tag runs `.github/workflows/release.yml`:
    - uploads the AAB, the mapping file and the notes to the **internal** track with status
      `completed` and release name `X.Y.Z`.
 
-If any required Play secret is missing, `play` posts a notice ("Google Play upload skipped") and
-succeeds without signing or uploading. `play` and `publish` (the GitHub release) are independent: one
+If none of the required Play secrets is set, `play` posts a notice ("Google Play upload skipped") and
+succeeds without signing or uploading. If only some are set, it fails and names the missing ones. `play` and `publish` (the GitHub release) are independent: one
 failing or being skipped doesn't affect the other. Both are gated on `build`.
 
 Until the HERDROID_* signing secrets are added to the `release` environment, a tag publishes to Play
