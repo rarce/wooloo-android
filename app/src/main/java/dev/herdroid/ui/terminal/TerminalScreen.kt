@@ -189,6 +189,7 @@ private fun TerminalScreenContent(
 
     var terminalView by remember { mutableStateOf<TerminalView?>(null) }
     var composer by remember { mutableStateOf(false) }
+    var pickComposerImages by remember { mutableStateOf(false) }
     var readingTerminal by remember(controller) { mutableStateOf(false) }
     var menu by remember { mutableStateOf(false) }
     var longPress by remember { mutableStateOf<Pair<Int, Int>?>(null) }
@@ -369,7 +370,8 @@ private fun TerminalScreenContent(
                         ?.isVisible(androidx.core.view.WindowInsetsCompat.Type.ime()) == true
                     if (imeVisible) view.hideKeyboard() else view.showKeyboard()
                 },
-                onComposer = { composer = true },
+                onComposer = { pickComposerImages = false; composer = true },
+                onAttachImage = { pickComposerImages = true; composer = true },
                 composerHighlighted = agent?.agentStatus == AgentStatus.BLOCKED,
             )
         }
@@ -396,6 +398,7 @@ private fun TerminalScreenContent(
             agentStatus = agent?.agentStatus,
             isAgent = isAgent,
             onDismiss = { composer = false },
+            pickImagesOnOpen = pickComposerImages,
             onQuickReply = { reply -> controller.input(reply.input) },
             onSend = { text, images, uploads ->
                 when {

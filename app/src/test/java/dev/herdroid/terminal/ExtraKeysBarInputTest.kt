@@ -2,6 +2,8 @@ package dev.herdroid.terminal
 
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.click
@@ -20,6 +22,23 @@ import org.robolectric.annotation.GraphicsMode
 @Config(sdk = [35], qualifiers = "w393dp-h851dp", application = android.app.Application::class)
 class ExtraKeysBarInputTest {
     @get:Rule val compose = createComposeRule()
+
+    @Test fun imageAndConversationButtonsAreVisibleAndOpenTheirOwnActions() {
+        var attachments = 0
+        var conversations = 0
+        compose.setContent {
+            WoolooMobileTheme {
+                ExtraKeysBar(ModifierState(), false,
+                    onSpecial = {}, onText = {}, onPaste = {}, onToggleKeyboard = {},
+                    onComposer = { conversations++ }, composerHighlighted = false,
+                    onAttachImage = { attachments++ })
+            }
+        }
+        compose.onNodeWithContentDescription("Attach images").assertIsDisplayed().performTouchInput { click() }
+        compose.runOnIdle { assertEquals(1, attachments); assertEquals(0, conversations) }
+        compose.onNodeWithContentDescription("Compose prompt").assertIsDisplayed().performTouchInput { click() }
+        compose.runOnIdle { assertEquals(1, attachments); assertEquals(1, conversations) }
+    }
 
     @Test fun rapidShiftThenLeftWorksAndPaneSwitchUsesNewModifiers() {
         val first = ModifierState()

@@ -123,6 +123,7 @@ fun ComposerSheet(
     onDismiss: () -> Unit,
     onQuickReply: (QuickReply) -> Unit,
     onSend: suspend (text: String, images: List<File>, uploads: AttachmentUploads) -> Result<Unit>,
+    pickImagesOnOpen: Boolean = false,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -152,6 +153,11 @@ fun ComposerSheet(
 
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(MAX_IMAGES)) { uris ->
         uris.take(MAX_IMAGES - images.size).forEach { attach(it) }
+    }
+    LaunchedEffect(Unit) {
+        if (pickImagesOnOpen) {
+            picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+        }
     }
     // Images committed by the keyboard (Gboard clipboard, screenshots, stickers) or pasted.
     val receiver = remember {
