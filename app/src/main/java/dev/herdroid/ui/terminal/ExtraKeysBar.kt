@@ -14,6 +14,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.Chat
+import androidx.compose.material.icons.outlined.AddPhotoAlternate
 import androidx.compose.material.icons.outlined.ContentPaste
 import androidx.compose.material.icons.outlined.Keyboard
 import androidx.compose.material3.Icon
@@ -58,6 +59,7 @@ fun ExtraKeysBar(
     composerHighlighted: Boolean,
     modifier: Modifier = Modifier,
     onModifier: () -> Unit = {},
+    onAttachImage: () -> Unit = onComposer,
 ) {
     var ctrl by remember(modifiers) { mutableStateOf(modifiers.ctrl) }
     var alt by remember(modifiers) { mutableStateOf(modifiers.alt) }
@@ -149,6 +151,7 @@ fun ExtraKeysBar(
             IconKey(Icons.Outlined.ContentPaste, "Paste", onTap = { buzz(); onPaste() })
         }
         IconKey(Icons.Outlined.Keyboard, "Toggle keyboard", onTap = onToggleKeyboard)
+        IconKey(Icons.Outlined.AddPhotoAlternate, "Attach images", onTap = { buzz(); onAttachImage() })
         IconKey(
             Icons.AutoMirrored.Outlined.Chat,
             "Compose prompt",
