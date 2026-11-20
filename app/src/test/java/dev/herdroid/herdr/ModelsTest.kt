@@ -6,6 +6,16 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class ModelsTest {
+    @Test
+    fun waitingAgentsFollowSpaceOrderAndDropResolvedAgents() {
+        val first = AgentInfo("a", workspaceId = "one", tabId = "t", agentStatus = AgentStatus.BLOCKED)
+        val second = first.copy(paneId = "b", workspaceId = "two")
+        val snapshot = SessionSnapshot(workspaces = listOf(WorkspaceInfo("two"), WorkspaceInfo("one")),
+            agents = listOf(first, second))
+        assertEquals(listOf(second, first), snapshot.waitingAgents())
+        assertEquals(listOf(first), snapshot.copy(agents = listOf(first, second.copy(agentStatus = AgentStatus.DONE))).waitingAgents())
+    }
+
     private val response = """
         {"id":"x","result":{"type":"session_snapshot","snapshot":{
           "version":"0.7.2","protocol":22,"focused_workspace_id":"w1","focused_tab_id":"w1:t1","focused_pane_id":"w1:p1",

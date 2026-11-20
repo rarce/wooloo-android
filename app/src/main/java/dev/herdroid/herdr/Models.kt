@@ -187,6 +187,12 @@ data class SessionSnapshot(
     /** Keep herdr's authoritative agent order when filtering to a space. */
     fun agentsIn(workspaceId: String) = agents.filter { it.workspaceId == workspaceId }
 
+    fun waitingAgents(): List<AgentInfo> {
+        val spaceOrder = workspaces.mapIndexed { index, space -> space.workspaceId to index }.toMap()
+        return agents.filter { it.agentStatus == AgentStatus.BLOCKED }
+            .sortedBy { spaceOrder[it.workspaceId] ?: Int.MAX_VALUE }
+    }
+
     /** All of a space's panes, agents and shells, tab by tab in layout order. */
     fun panesInLayoutOrder(workspaceId: String): List<PaneInfo> =
         tabsOf(workspaceId).flatMap { panesOf(it.tabId) }

@@ -119,6 +119,7 @@ fun WoolooMobileRoot(openRequests: MutableStateFlow<OpenRequest?>, hostLinks: Mu
     ) {
         composable(Routes.HOSTS) {
             HostsScreen(
+                onOpenAgent = { hostId, paneId -> nav.navigate(Routes.terminal(hostId, paneId)) },
                 onOpenHost = { nav.navigate(Routes.session(it)) },
                 onAddHost = { nav.navigate(Routes.edit(null)) },
                 onScanQr = { nav.navigate(Routes.SCAN) },

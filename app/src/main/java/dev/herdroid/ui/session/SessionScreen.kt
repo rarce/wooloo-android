@@ -33,6 +33,8 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -137,35 +139,37 @@ fun SessionScreen(
         },
     ) { padding ->
         Column(Modifier.padding(padding).fillMaxSize()) {
+            Box(Modifier.weight(1f)) {
+                RefreshBox(connection) {
+                    val snap = snapshot
+                    when {
+                        snap == null -> LoadingOrEmpty(status)
+                        snap.workspaces.isEmpty() -> EmptyState(
+                            icon = Icons.Outlined.Workspaces,
+                            title = "No spaces yet",
+                            body = "This herdr session is empty. Create a space to start a shell or an agent.",
+                        ) {
+                            FilledTonalButton(onClick = { ui.dialog = SessionDialog.NewSpace }) { Text("New space") }
+                        }
+                        else -> SpacesContent(
+                            snapshot = snap,
+                            stale = status !is ConnectionStatus.Connected || snapshotHealth.stale,
+                            onOpenSpace = onOpenSpace,
+                            onSpaceAction = { ui.dialog = it },
+                            details = {
+                                Column {
+                                    HostStatsCard(connection)
+                                    // Nothing is signed in on the demo machine.
+                                    if (!connection.profile.demo) AgentQuotaCard(connection)
+                                }
+                            },
+                        )
+                    }
+                }
+            }
             ConnectionBanner(status, onRetry = { connection.retryNow() }, onEditHost = onEditHost)
             if (status == ConnectionStatus.Connected) {
                 SnapshotBanner(snapshotHealth, onRetry = { connection.requestRefresh() })
-            }
-            RefreshBox(connection) {
-                val snap = snapshot
-                when {
-                    snap == null -> LoadingOrEmpty(status)
-                    snap.workspaces.isEmpty() -> EmptyState(
-                        icon = Icons.Outlined.Workspaces,
-                        title = "No spaces yet",
-                        body = "This herdr session is empty. Create a space to start a shell or an agent.",
-                    ) {
-                        FilledTonalButton(onClick = { ui.dialog = SessionDialog.NewSpace }) { Text("New space") }
-                    }
-                    else -> SpacesContent(
-                        snapshot = snap,
-                        stale = status !is ConnectionStatus.Connected || snapshotHealth.stale,
-                        onOpenSpace = onOpenSpace,
-                        onSpaceAction = { ui.dialog = it },
-                        header = {
-                            Column {
-                                HostStatsCard(connection)
-                                // Nothing is signed in on the demo machine.
-                                if (!connection.profile.demo) AgentQuotaCard(connection)
-                            }
-                        },
-                    )
-                }
             }
         }
     }
@@ -220,18 +224,18 @@ internal fun SpacesContent(
     stale: Boolean,
     onOpenSpace: (String) -> Unit,
     onSpaceAction: (SessionDialog) -> Unit,
-    header: (@Composable () -> Unit)? = null,
+    details: (@Composable () -> Unit)? = null,
 ) {
     LazyColumn(
         modifier = Modifier.fillMaxSize().alpha(if (stale) 0.6f else 1f),
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(0.dp),
     ) {
-        header?.let { item(key = "host") { it() } }
         item(key = "title") { SectionLabel("Spaces", snapshot.workspaces.size) }
         itemsIndexed(snapshot.workspaces, key = { _, it -> "ws-" + it.workspaceId }) { index, workspace ->
             SpaceCard(workspace, snapshot, ListRowPosition.at(index, snapshot.workspaces.size), onOpen = { onOpenSpace(workspace.workspaceId) }, onAction = onSpaceAction)
         }
+        details?.let { item(key = "host-details") { it() } }
         item { Spacer(Modifier.height(48.dp)) }
     }
 }
@@ -276,8 +280,8 @@ private fun SpaceCard(
     ) {
         Text(workspace.label.ifBlank { "Space ${workspace.number}" },
             style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        androidx.compose.foundation.layout.FlowRow(
-            horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(2.dp),
+        androidx.compose.foundation.layout.Row(Modifier.horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             StatusLabel(workspace.agentStatus)
             Text("${count(workspace.tabCount, "tab")}, ${count(workspace.paneCount, "pane")}",

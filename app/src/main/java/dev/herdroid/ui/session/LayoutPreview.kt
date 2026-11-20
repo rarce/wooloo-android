@@ -74,53 +74,55 @@ fun TabMiniature(
             Box(Modifier.size(maxWidth, maxHeight).border(1.dp, scheme.outlineVariant, shape))
         }
         tiles.forEach { tile ->
-            val pane = snapshot.pane(tile.paneId)
-            val agent = snapshot.agentFor(tile.paneId)
-            val state = agent?.agentStatus ?: pane?.agentStatus
-            val solid = state != null && status.isSolid(state)
-            val name = agent?.displayName ?: pane?.displayTitle ?: tile.paneId
-            Box(
-                Modifier
-                    .offset(maxWidth * tile.x, maxHeight * tile.y)
-                    .size(maxWidth * tile.w, maxHeight * tile.h)
-                    .padding(gap / 2)
-                    .clip(shape)
-                    .then(
-                        when {
-                            solid -> Modifier.background(status.of(state!!))
-                            state == AgentStatus.WORKING -> Modifier
-                                .background(status.working.copy(alpha = 0.12f))
-                                .border(1.dp, status.working.copy(alpha = 0.7f), shape)
-                            state == AgentStatus.IDLE -> Modifier.border(1.dp, status.idle, shape)
-                            else -> Modifier.border(1.dp, status.unknown, shape)
-                        }
-                    )
-                    .then(
-                        if (tile.paneId == highlightPaneId) Modifier.border(2.dp, scheme.onSurface, shape) else Modifier
-                    )
-                    .then(
-                        if (onPaneClick != null) {
-                            Modifier
-                                .clickable { onPaneClick(tile.paneId) }
-                                .semantics { contentDescription = name + (state?.let { ", ${it.name.lowercase()}" } ?: "") }
-                        } else Modifier
-                    )
-                    .padding(horizontal = 8.dp, vertical = 6.dp),
-            ) {
-                if (labels) {
-                    Text(
-                        name,
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = if (solid) FontWeight.Bold else FontWeight.Medium,
-                        fontFamily = if (agent == null) Mono else null,
-                        color = when {
-                            solid -> status.onSolid
-                            agent != null -> scheme.onSurface
-                            else -> scheme.onSurfaceVariant
-                        },
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                    )
+            androidx.compose.runtime.key(tile.paneId) {
+                val pane = snapshot.pane(tile.paneId)
+                val agent = snapshot.agentFor(tile.paneId)
+                val state = agent?.agentStatus ?: pane?.agentStatus
+                val solid = state != null && status.isSolid(state)
+                val name = agent?.displayName ?: pane?.displayTitle ?: tile.paneId
+                Box(
+                    Modifier
+                        .offset(maxWidth * tile.x, maxHeight * tile.y)
+                        .size(maxWidth * tile.w, maxHeight * tile.h)
+                        .padding(gap / 2)
+                        .clip(shape)
+                        .then(
+                            when {
+                                solid -> Modifier.background(status.of(state!!))
+                                state == AgentStatus.WORKING -> Modifier
+                                    .background(status.working.copy(alpha = 0.12f))
+                                    .border(1.dp, status.working.copy(alpha = 0.7f), shape)
+                                state == AgentStatus.IDLE -> Modifier.border(1.dp, status.idle, shape)
+                                else -> Modifier.border(1.dp, status.unknown, shape)
+                            }
+                        )
+                        .then(
+                            if (tile.paneId == highlightPaneId) Modifier.border(2.dp, scheme.onSurface, shape) else Modifier
+                        )
+                        .then(
+                            if (onPaneClick != null) {
+                                Modifier
+                                    .clickable { onPaneClick(tile.paneId) }
+                                    .semantics { contentDescription = name + (state?.let { ", ${it.name.lowercase()}" } ?: "") }
+                            } else Modifier
+                        )
+                        .padding(horizontal = 8.dp, vertical = 6.dp),
+                ) {
+                    if (labels) {
+                        Text(
+                            name,
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = if (solid) FontWeight.Bold else FontWeight.Medium,
+                            fontFamily = if (agent == null) Mono else null,
+                            color = when {
+                                solid -> status.onSolid
+                                agent != null -> scheme.onSurface
+                                else -> scheme.onSurfaceVariant
+                            },
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
                 }
             }
         }

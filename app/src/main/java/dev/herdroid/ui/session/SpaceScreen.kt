@@ -126,26 +126,28 @@ fun SpaceScreen(
         },
     ) { padding ->
         Column(Modifier.padding(padding).fillMaxSize()) {
+            Box(Modifier.weight(1f)) {
+                RefreshBox(connection) {
+                    val snap = snapshot
+                    if (snap == null || workspace == null) {
+                        LoadingOrEmpty(status)
+                    } else {
+                        SpaceContent(
+                            snapshot = snap,
+                            workspaceId = workspaceId,
+                            stale = status !is ConnectionStatus.Connected || snapshotHealth.stale,
+                            onOpenPane = onOpenPane,
+                            onPaneMenu = { ui.paneSheet = it },
+                            onCompose = { ui.composeFor = it },
+                            onAction = { ui.dialog = it },
+                            onSplit = { pane, dir -> ui.act("Split") { splitPane(pane.paneId, dir) } },
+                        )
+                    }
+                }
+            }
             ConnectionBanner(status, onRetry = { connection.retryNow() }, onEditHost = onEditHost)
             if (status == ConnectionStatus.Connected) {
                 SnapshotBanner(snapshotHealth, onRetry = { connection.requestRefresh() })
-            }
-            RefreshBox(connection) {
-                val snap = snapshot
-                if (snap == null || workspace == null) {
-                    LoadingOrEmpty(status)
-                } else {
-                    SpaceContent(
-                        snapshot = snap,
-                        workspaceId = workspaceId,
-                        stale = status !is ConnectionStatus.Connected || snapshotHealth.stale,
-                        onOpenPane = onOpenPane,
-                        onPaneMenu = { ui.paneSheet = it },
-                        onCompose = { ui.composeFor = it },
-                        onAction = { ui.dialog = it },
-                        onSplit = { pane, dir -> ui.act("Split") { splitPane(pane.paneId, dir) } },
-                    )
-                }
             }
         }
     }
@@ -333,12 +335,10 @@ private fun AgentRow(
             }
         }
         if (largeText) {
-            Text(agent.statusLabel(), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(agent.statusLabel(), maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        agent.subtitle?.takeUnless { it == agent.displayName }?.let { detail ->
-            Text(detail, style = MaterialTheme.typography.bodySmall,
+        Text(agent.subtitle?.takeUnless { it == agent.displayName }.orEmpty(), style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        }
     }
 }
 

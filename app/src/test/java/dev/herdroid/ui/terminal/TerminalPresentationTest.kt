@@ -29,7 +29,16 @@ import org.robolectric.annotation.GraphicsMode
 class TerminalPresentationTest {
     @get:Rule val compose = createComposeRule()
 
-    @Test fun largeFontHeaderKeepsBreadcrumbAndMetricsInsideItsBounds() {
+    @Test fun finalReviewButtonsSendTheNumberOfTheChosenOption() {
+        val keys = mutableListOf<String>()
+        compose.setContent { WoolooMobileTheme { QuickAnswers(submitMenu = true) { keys.add(it) } } }
+        compose.onNodeWithText("3").assertDoesNotExist()
+        compose.onNodeWithText("Cancel").performClick()
+        compose.onNodeWithText("Submit answers").performClick()
+        assertEquals(listOf("2", "1"), keys)
+    }
+
+    @Test fun largeFontHeaderKeepsSpaceStatusAndMetricsInsideItsBounds() {
         compose.setContent {
             CompositionLocalProvider(LocalDensity provides Density(LocalDensity.current.density, 2f)) {
                 WoolooMobileTheme {
@@ -38,7 +47,7 @@ class TerminalPresentationTest {
                             pane = PaneInfo("p", workspaceId = "w", tabId = "t", title = "Review fixture", cwd = "/tmp/review"),
                             snapshot = SessionSnapshot(workspaces = listOf(WorkspaceInfo("w", label = "Workspace")),
                                 tabs = listOf(TabInfo("t", "w", label = "Shell"))),
-                            agentName = null, agentStatus = null, agentLabel = null, onBack = {},
+                            agentName = "Claude", agentStatus = AgentStatus.BLOCKED, agentLabel = "blocked", onBack = {},
                             menu = false, onMenu = {}, readOnly = false, onToggleReadOnly = {},
                             onFont = {}, onCopy = {}, onZoom = {}, onSplit = {}, onRename = {},
                             onClosePane = {}, onReconnect = {},
@@ -52,7 +61,10 @@ class TerminalPresentationTest {
             compose.onRoot().captureRoboImage("build/screenshots/terminal-header-font200.png")
         }
         val header = compose.onNodeWithTag("header").fetchSemanticsNode().boundsInRoot
-        for (text in listOf("Review fixture", "Workspace › Shell › review", "CPU 25% · RAM 50%")) {
+        compose.onNodeWithText("Workspace › Shell › review").assertDoesNotExist()
+        val title = compose.onNodeWithText("Workspace").fetchSemanticsNode().boundsInRoot
+        assertTrue(compose.onNodeWithText("blocked").fetchSemanticsNode().boundsInRoot.top >= title.bottom)
+        for (text in listOf("Workspace", "CPU 25% · RAM 50%")) {
             val node = compose.onNodeWithText(text).assertIsDisplayed()
             val bounds = node.fetchSemanticsNode().boundsInRoot
             assertTrue(text, bounds.top >= header.top && bounds.bottom <= header.bottom)
@@ -62,6 +74,15 @@ class TerminalPresentationTest {
             assertFalse(text, (0 until layout.lineCount).any { layout.isLineEllipsized(it) })
             assertTrue(text, bounds.height + 1f >= layout.size.height)
         }
+    }
+
+    @Test fun onlyShortensSpaceNamesAtASeparator() {
+        assertEquals("auth-refactor", paneSwitcherLabel("API / auth-refactor", "api"))
+        assertEquals("main", paneSwitcherLabel("api-main", "api"))
+        assertEquals("api", paneSwitcherLabel("api", "api"))
+        assertEquals("api-", paneSwitcherLabel("api-", "api"))
+        assertEquals("apiculture", paneSwitcherLabel("apiculture", "api"))
+        assertEquals("server", paneSwitcherLabel("server", "api"))
     }
 
     @Test fun transcriptIsStableUntilRefreshAndHistoryFailureIsRetryable() {
