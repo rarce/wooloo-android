@@ -90,6 +90,10 @@ class TerminalController internal constructor(
     var readOnly by mutableStateOf(false)
         private set
 
+    private var detectSubmitMenu = false
+    var showsSubmitMenu by mutableStateOf(false)
+        private set
+
     private var recovering = false
     private var retries = 0
     private var stableJob: Job? = null
@@ -256,7 +260,10 @@ class TerminalController internal constructor(
     }
 
     private fun closeStream() {
-        synchronized(model.lock) { generation++ }
+        synchronized(model.lock) {
+            generation++
+            showsSubmitMenu = false
+        }
         stableJob?.cancel()
         streamJob?.cancel()
         stream?.close()
@@ -266,6 +273,18 @@ class TerminalController internal constructor(
     fun dispose() {
         closeStream()
         scope.cancel()
+    }
+
+    fun setSubmitDetection(enabled: Boolean) = synchronized(model.lock) {
+        if (detectSubmitMenu != enabled) {
+            detectSubmitMenu = enabled
+            refreshSubmitMenu()
+        }
+    }
+
+    private fun refreshSubmitMenu() {
+        val grid = model.emulator
+        showsSubmitMenu = detectSubmitMenu && hasSubmitMenu((0 until grid.rows).asSequence().map(grid::rowText))
     }
 
     private companion object {
@@ -278,6 +297,26 @@ class TerminalController internal constructor(
     internal fun applyFrame(expectedGeneration: Long, frame: TerminalEvent.Frame): Boolean = synchronized(model.lock) {
         if (generation != expectedGeneration) return@synchronized false
         model.applyFrame(frame.width, frame.height, frame.full, frame.bytes)
+        refreshSubmitMenu()
         true
     }
+}
+
+// A focused, numbered pair distinguishes the interactive review menu from ordinary output.
+private val submitOption = Regex("""([❯›>]?)[ ]*1[.)] +Submit (?:answers|responses)""", RegexOption.IGNORE_CASE)
+private val cancelOption = Regex("""([❯›>]?)[ ]*2[.)] +Cancel""", RegexOption.IGNORE_CASE)
+
+internal fun hasSubmitMenu(rows: Sequence<String>): Boolean {
+    var submit: MatchResult? = null
+    for (line in rows) {
+        val text = line.trim().trim('│').trim()
+        if (text.isEmpty()) continue
+        val previous = submit
+        if (previous != null) {
+            val cancel = cancelOption.matchEntire(text)
+            if (cancel != null && (previous.groupValues[1].isNotEmpty() || cancel.groupValues[1].isNotEmpty())) return true
+        }
+        submit = submitOption.matchEntire(text)
+    }
+    return false
 }

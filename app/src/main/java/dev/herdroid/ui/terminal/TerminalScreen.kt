@@ -115,7 +115,6 @@ import dev.herdroid.ui.components.ImageAttachments
 import dev.herdroid.ui.components.StatusPill
 import dev.herdroid.ui.components.fadingEdges
 import dev.herdroid.ui.session.SheetItem
-import dev.herdroid.ui.session.breadcrumb
 import dev.herdroid.ui.theme.WoolooMobileTheme
 import dev.herdroid.ui.theme.LocalStatusColors
 import dev.herdroid.ui.theme.Mono
@@ -185,6 +184,9 @@ private fun TerminalScreenContent(
     val snackbar = remember { SnackbarHostState() }
 
     val controller = remember(hostId, paneId) { TerminalController(connection, paneId) }
+    val detectSubmitMenu = (pane?.scroll?.offsetFromBottom ?: 0L) == 0L &&
+        listOf(agent?.agent, agent?.displayAgent, pane?.agentName).any { it?.contains("claude", ignoreCase = true) == true }
+    LaunchedEffect(controller, detectSubmitMenu) { controller.setSubmitDetection(detectSubmitMenu) }
     DisposableEffect(controller) { onDispose { controller.dispose() } }
 
     var terminalView by remember { mutableStateOf<TerminalView?>(null) }
@@ -349,8 +351,10 @@ private fun TerminalScreenContent(
                     onRetry = { controller.open() },
                     onBack = onBack)
             }
-            if (agent?.agentStatus == AgentStatus.BLOCKED && !controller.readOnly) {
-                QuickAnswers(onAnswer = { terminalView?.sendText(it) })
+            val claudeReview = detectSubmitMenu && controller.showsSubmitMenu
+            if (controller.state == PaneState.Live && !controller.readOnly &&
+                (claudeReview || agent?.agentStatus == AgentStatus.BLOCKED)) {
+                QuickAnswers(submitMenu = claudeReview, onAnswer = { terminalView?.sendText(it) })
             }
             ExtraKeysBar(
                 modifiers = controller.modifiers,
@@ -542,23 +546,15 @@ internal fun TerminalTopBar(
                     ),
             ) {
                 Text(
-                    agentName ?: pane?.displayTitle ?: "Terminal",
+                    pane?.let { snapshot?.workspace(it.workspaceId) }?.let { it.label.ifBlank { "Space ${it.number}" } }
+                        ?: agentName ?: pane?.displayTitle ?: "Terminal",
                     style = MaterialTheme.typography.titleMedium,
                     maxLines = if (expanded) 2 else 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                Text(
-                    pane?.let { breadcrumb(snapshot?.workspace(it.workspaceId), snapshot?.tab(it.tabId), it.shortCwd) }.orEmpty(),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = if (expanded) 2 else 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-            if (!expanded) {
-                metrics()
                 if (agentStatus != null && agentLabel != null) StatusPill(agentStatus, agentLabel)
             }
+            if (!expanded) metrics()
             if (readOnly) {
                 Icon(Icons.Outlined.Visibility, "Watching", Modifier.padding(horizontal = 6.dp), tint = MaterialTheme.colorScheme.tertiary)
             }
@@ -586,7 +582,6 @@ internal fun TerminalTopBar(
         if (expanded) {
             Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)) {
                 metrics()
-                if (agentStatus != null && agentLabel != null) StatusPill(agentStatus, agentLabel)
             }
         }
     }
@@ -595,6 +590,15 @@ internal fun TerminalTopBar(
 @Composable
 private fun MenuItem(icon: androidx.compose.ui.graphics.vector.ImageVector, text: String, onClick: () -> Unit) {
     DropdownMenuItem(text = { Text(text) }, leadingIcon = { Icon(icon, null) }, onClick = onClick)
+}
+
+/** Shorten only a whole space prefix, keeping the original label when no suffix remains. */
+internal fun paneSwitcherLabel(label: String, space: String): String {
+    val prefix = space.trim()
+    if (prefix.isEmpty() || !label.startsWith(prefix, ignoreCase = true)) return label
+    val rest = label.drop(prefix.length)
+    val suffix = rest.dropWhile { it.isWhitespace() || it in "-_/:·›–—." }
+    return if (suffix.isNotEmpty() && suffix.length < rest.length) suffix else label
 }
 
 /**
@@ -606,7 +610,7 @@ private fun MenuItem(icon: androidx.compose.ui.graphics.vector.ImageVector, text
 internal fun PaneSwitcher(snapshot: SessionSnapshot, current: PaneInfo, onSelect: (String) -> Unit) {
     // Only this space's panes: changing space means going back up to the spaces list.
     val groups = snapshot.tabGroupsIn(current.workspaceId).filter { it.panes.isNotEmpty() }
-    if (groups.sumOf { it.panes.size } <= 1) return
+    if (groups.isEmpty()) return
     val labelled = groups.size > 1
     // The item to scroll to for each pane, counting the tab labels before it. A tab's first pane
     // scrolls to its label, so the current pane's tab stays readable.
@@ -632,7 +636,7 @@ internal fun PaneSwitcher(snapshot: SessionSnapshot, current: PaneInfo, onSelect
     ) {
         groups.forEachIndexed { groupIndex, group ->
             if (labelled) {
-                item(key = "tab-" + group.tab.tabId) { SwitcherTabLabel(group.tab, divider = groupIndex > 0) }
+                item(key = "tab-" + group.tab.tabId) { SwitcherTabLabel(paneSwitcherLabel(group.tab.displayLabel, snapshot.workspace(current.workspaceId)?.label.orEmpty()), divider = groupIndex > 0) }
             }
             items(group.panes, key = { it.paneId }) { pane ->
                 SwitcherChip(snapshot, pane, selected = pane.paneId == current.paneId, onSelect = onSelect)
@@ -642,11 +646,11 @@ internal fun PaneSwitcher(snapshot: SessionSnapshot, current: PaneInfo, onSelect
 }
 
 @Composable
-private fun SwitcherTabLabel(tab: TabInfo, divider: Boolean) {
+private fun SwitcherTabLabel(label: String, divider: Boolean) {
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         if (divider) VerticalDivider(Modifier.height(24.dp), color = MaterialTheme.colorScheme.outlineVariant)
         Text(
-            tab.displayLabel,
+            label,
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1,
@@ -686,7 +690,7 @@ private fun SwitcherChip(snapshot: SessionSnapshot, pane: PaneInfo, selected: Bo
             }
         }
         Text(
-            agent?.displayName ?: pane.displayTitle,
+            paneSwitcherLabel(agent?.displayName ?: pane.displayTitle, snapshot.workspace(pane.workspaceId)?.label.orEmpty()),
             style = MaterialTheme.typography.labelLarge,
             fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
             fontFamily = if (agent == null) Mono else null,
@@ -701,7 +705,7 @@ private fun SwitcherChip(snapshot: SessionSnapshot, pane: PaneInfo, selected: Bo
 
 /** One-tap answers for a blocked agent's numbered prompt, above the extra keys (which have esc). */
 @Composable
-internal fun QuickAnswers(onAnswer: (String) -> Unit) {
+internal fun QuickAnswers(submitMenu: Boolean = false, onAnswer: (String) -> Unit) {
     val blocked = LocalStatusColors.current.blocked
     val onSolid = LocalStatusColors.current.onSolid
     val shape = RoundedCornerShape(12.dp)
@@ -709,7 +713,8 @@ internal fun QuickAnswers(onAnswer: (String) -> Unit) {
         Modifier.fillMaxWidth().padding(start = 8.dp, end = 8.dp, top = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        listOf("1", "2", "3").forEachIndexed { index, answer ->
+        val labels = if (submitMenu) listOf("Submit answers", "Cancel") else listOf("1", "2", "3")
+        labels.forEachIndexed { index, answer ->
             val first = index == 0
             Box(
                 Modifier
@@ -717,7 +722,7 @@ internal fun QuickAnswers(onAnswer: (String) -> Unit) {
                     .height(44.dp)
                     .clip(shape)
                     .then(if (first) Modifier.background(blocked) else Modifier.border(1.dp, blocked, shape))
-                    .clickable(onClickLabel = "Answer $answer") { onAnswer(answer) },
+                    .clickable(onClickLabel = "Answer $answer") { onAnswer((index + 1).toString()) },
                 contentAlignment = Alignment.Center,
             ) {
                 Text(

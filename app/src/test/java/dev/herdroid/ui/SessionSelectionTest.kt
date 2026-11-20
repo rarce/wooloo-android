@@ -1,5 +1,11 @@
 package dev.herdroid.ui
 
+import androidx.compose.foundation.layout.Column
+import dev.herdroid.connection.ConnectionStatus
+import dev.herdroid.data.HostProfile
+import dev.herdroid.ui.hosts.HostItem
+import androidx.compose.foundation.layout.height
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.test.*
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
@@ -33,6 +39,41 @@ class SessionSelectionTest {
     private val snapshot = SessionSnapshot(workspaces = listOf(workspace), tabs = listOf(tab),
         panes = listOf(pane), agents = listOf(agent))
 
+    @Test fun statsLoadingDuringTapKeepsSecondSpaceUnderTheFinger() {
+        val loaded = androidx.compose.runtime.mutableStateOf(false)
+        var opened: String? = null
+        val spaces = snapshot.copy(workspaces = listOf(workspace, workspace.copy(workspaceId = "w2", label = "web")))
+        compose.setContent { WoolooMobileTheme {
+            SpacesContent(spaces, false, { opened = it }, {}) {
+                androidx.compose.foundation.layout.Spacer(androidx.compose.ui.Modifier.height(if (loaded.value) 180.dp else 12.dp))
+            }
+        } }
+        val row = compose.onNodeWithText("web")
+        val before = row.fetchSemanticsNode().boundsInRoot
+        row.performTouchInput { down(center) }
+        compose.runOnIdle { loaded.value = true }
+        assertEquals(before, row.fetchSemanticsNode().boundsInRoot)
+        row.performTouchInput { up() }
+        assertEquals("w2", opened)
+    }
+
+    @Test fun firstMachineReceivingSnapshotKeepsSecondMachineInPlace() {
+        val data = androidx.compose.runtime.mutableStateOf<SessionSnapshot?>(null)
+        val hosts = listOf("First", "Second").map { HostProfile(label = it, hostname = "example.invalid") }
+        compose.setContent { WoolooMobileTheme {
+            Column {
+                hosts.forEachIndexed { index, host ->
+                    HostItem(host, ConnectionStatus.Connected, if (index == 0) data.value else null,
+                        true, {}, {}, {}, {})
+                }
+            }
+        } }
+        val second = compose.onNodeWithText("Second")
+        val original = second.fetchSemanticsNode().boundsInRoot
+        compose.runOnIdle { data.value = snapshot }
+        assertEquals(original, second.fetchSemanticsNode().boundsInRoot)
+    }
+
     @Test fun spacesOpenOnlySelectedWorkspaceAndExposeActions() {
         var opened: String? = null
         compose.setContent { WoolooMobileTheme {
@@ -44,6 +85,24 @@ class SessionSelectionTest {
         compose.onNodeWithText("Rename space").assertIsDisplayed()
         compose.onNodeWithText("New tab").assertIsDisplayed()
         compose.onNodeWithText("Close space").assertIsDisplayed()
+    }
+
+    @Test fun lateAgentDetailsKeepOtherAgentAndTabPositions() {
+        val first = agent.copy(title = null)
+        val second = agent.copy(paneId = "p2", name = "second")
+        val data = androidx.compose.runtime.mutableStateOf(snapshot.copy(
+            agents = listOf(first, second), panes = listOf(pane, pane.copy(paneId = "p2")),
+            tabs = listOf(tab, tab.copy(tabId = "t2", label = "Shells")),
+        ))
+        compose.setContent { WoolooMobileTheme {
+            SpaceContent(data.value, "w1", false, {}, {}, {}, {}, { _, _ -> })
+        } }
+        val targets = listOf("second", "Shells").map { compose.onNodeWithText(it) }
+        val original = targets.map { it.fetchSemanticsNode().boundsInRoot }
+        compose.runOnIdle {
+            data.value = data.value.copy(agents = listOf(first.copy(title = "Updated task", agentStatus = AgentStatus.DONE), second))
+        }
+        assertEquals(original, targets.map { it.fetchSemanticsNode().boundsInRoot })
     }
 
     @Test fun agentsOpenOnlyTheirPaneAndReplyActionUsesSamePane() {

@@ -1,10 +1,22 @@
 package dev.herdroid.ui.hosts
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.outlined.ExpandLess
+import androidx.compose.material.icons.outlined.ExpandMore
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Surface
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
+import dev.herdroid.ui.components.StatusDot
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -43,6 +55,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.key
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -60,6 +74,7 @@ import dev.herdroid.R
 import dev.herdroid.connection.ConnectionStatus
 import dev.herdroid.connection.HerdrConnection
 import dev.herdroid.data.HostProfile
+import dev.herdroid.herdr.AgentInfo
 import dev.herdroid.herdr.SessionSnapshot
 import dev.herdroid.ui.components.EmptyState
 import dev.herdroid.ui.components.SessionListRow
@@ -71,6 +86,7 @@ import dev.herdroid.ui.session.count
 @Composable
 fun HostsScreen(
     onOpenHost: (String) -> Unit,
+    onOpenAgent: (String, String) -> Unit,
     onAddHost: () -> Unit,
     onScanQr: () -> Unit,
     onEditHost: (String) -> Unit,
@@ -147,6 +163,19 @@ fun HostsScreen(
                 )
             }
         } else {
+            var expanded by rememberSaveable { mutableStateOf(false) }
+            val waiting = hosts.flatMap { host ->
+                key(host.id) {
+                    val connection = connections[host.id]
+                    val snapshot = connection?.snapshot?.collectAsState()?.value
+                    val status = connection?.status?.collectAsState()?.value
+                    val stale = connection?.snapshotHealth?.collectAsState()?.value?.stale ?: true
+                    snapshot?.waitingAgents().orEmpty().map { agent ->
+                        val space = snapshot?.workspace(agent.workspaceId)?.label.orEmpty().ifBlank { agent.workspaceId }
+                        WaitingRow(host, agent, space, status is ConnectionStatus.Connected && !stale)
+                    }
+                }
+            }
             LazyColumn(
                 contentPadding = PaddingValues(
                     start = 16.dp, end = 16.dp,
@@ -169,6 +198,49 @@ fun HostsScreen(
                         },
                         onDelete = { if (!edits.busy) pendingDelete = host },
                     )
+                }
+                if (waiting.isNotEmpty()) {
+                    item { Spacer(Modifier.height(12.dp)) }
+                    item {
+                        Row(
+                            Modifier.fillMaxWidth()
+                                .clickable(role = Role.Button) { expanded = !expanded }
+                                .semantics { stateDescription = if (expanded) "Expanded" else "Collapsed" }
+                                .heightIn(min = 48.dp).padding(horizontal = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            StatusDot(waiting.first().agent.agentStatus)
+                            Text("Needs your reply", style = MaterialTheme.typography.titleMedium)
+                            Text(waiting.size.toString(), Modifier.weight(1f),
+                                style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Icon(if (expanded) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore, null)
+                        }
+                    }
+                    if (expanded) {
+                        itemsIndexed(waiting, key = { _, row -> "reply:${row.host.id.length}:${row.host.id}:${row.agent.paneId}" }) { index, row ->
+                            val top = if (index == 0) 14.dp else 0.dp
+                            val bottom = if (index == waiting.lastIndex) 14.dp else 0.dp
+                            Surface(
+                                shape = RoundedCornerShape(top, top, bottom, bottom),
+                                color = MaterialTheme.colorScheme.surfaceContainer,
+                            ) {
+                                Column(Modifier.fillMaxWidth().clickable(enabled = row.live, role = Role.Button,
+                                    onClickLabel = "Open terminal") { onOpenAgent(row.host.id, row.agent.paneId) }) {
+                                    Column(Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                                        verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                                        Text(row.agent.displayName, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                        Text(row.agent.subtitle.orEmpty(), style = MaterialTheme.typography.bodyMedium,
+                                            minLines = 2, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                        Text(listOfNotNull(row.host.displayName, row.space, "Cached".takeUnless { row.live })
+                                            .joinToString(" · "), style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                    if (index < waiting.lastIndex) HorizontalDivider(Modifier.padding(horizontal = 14.dp))
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -199,6 +271,8 @@ fun HostsScreen(
         )
     }
 }
+
+private data class WaitingRow(val host: HostProfile, val agent: AgentInfo, val space: String, val live: Boolean)
 
 @Composable
 private fun HostCard(
@@ -261,7 +335,7 @@ internal fun HostItem(
         Text(host.target + if (host.session != "default") " / ${host.session}" else "",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Text(if (live && snapshotStale) stringResource(R.string.snapshot_connected_stale) else statusLine(status, host), style = MaterialTheme.typography.bodySmall,
                 color = if (status is ConnectionStatus.Failed) MaterialTheme.colorScheme.error
                     else MaterialTheme.colorScheme.onSurfaceVariant)
@@ -270,11 +344,13 @@ internal fun HostItem(
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
-        snapshot?.let {
-            AgentStatusSummary(it.agents, Modifier.alpha(if (live && !snapshotStale) 1f else 0.45f))
-            if (!live || snapshotStale) {
-                Text(stringResource(R.string.snapshot_cached_agents), style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (snapshot == null) {
+                Text("", style = MaterialTheme.typography.bodySmall)
+            } else {
+                if (!live || snapshotStale) Text(stringResource(R.string.snapshot_cached_agents),
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                AgentStatusSummary(snapshot.agents, Modifier.alpha(if (live && !snapshotStale) 1f else 0.45f))
             }
         }
     }
