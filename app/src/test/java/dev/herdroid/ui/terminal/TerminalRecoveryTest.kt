@@ -32,13 +32,14 @@ class TerminalRecoveryTest {
         Dispatchers.resetMain()
     }
 
-    @Test fun enablingOptionDetectionReadsTheScreenAtOnce() {
-        controller.model.applyFrame(40, 6, true, "\u001b[1;1H\u276f 1. Yes\r\n  2. No".toByteArray())
+    @Test(timeout = 10_000) fun promptOptionsAreReadFromEveryFrameWithoutAToggle(): Unit = runBlocking {
+        startLive()
         assertEquals(emptyList<PromptOption>(), controller.promptOptions)
-        controller.setOptionDetection(true)
+        // "❯ 1. Yes\r\n  2. No"
+        connection.opened.last().record("""{"type":"terminal.frame","width":80,"height":24,"full":true,"bytes":"4p2vIDEuIFllcw0KICAyLiBObw=="}""")
+        await { controller.promptOptions.isNotEmpty() }
         assertEquals(listOf(1, 2), controller.promptOptions.map { it.number })
-        controller.setOptionDetection(false)
-        assertEquals(emptyList<PromptOption>(), controller.promptOptions)
+        assertEquals(1, controller.promptOptions.single { it.focused }.number)
     }
 
     @Test(timeout = 10_000) fun channelFailureWhileConnectedRetriesThePaneWithoutStealingControl(): Unit = runBlocking {

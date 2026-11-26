@@ -90,8 +90,7 @@ class TerminalController internal constructor(
     var readOnly by mutableStateOf(false)
         private set
 
-    private var detectOptions = false
-    /** The active prompt's numbered options, read from the screen while detection is on. */
+    /** The active prompt's numbered options, read from every frame (the screen decides when to show them). */
     var promptOptions by mutableStateOf<List<PromptOption>>(emptyList())
         private set
 
@@ -276,16 +275,10 @@ class TerminalController internal constructor(
         scope.cancel()
     }
 
-    fun setOptionDetection(enabled: Boolean) = synchronized(model.lock) {
-        if (detectOptions != enabled) {
-            detectOptions = enabled
-            refreshPromptOptions()
-        }
-    }
-
     private fun refreshPromptOptions() {
         val grid = model.emulator
-        val options = if (detectOptions) parsePromptOptions((0 until grid.rows).asSequence().map(grid::rowText)) else emptyList()
+        // Parsed on every frame, so the screen can show them as soon as it wants them.
+        val options = parsePromptOptions((0 until grid.rows).asSequence().map(grid::rowText))
         // Only publish a change, so Compose doesn't recompose on every frame.
         if (options != promptOptions) promptOptions = options
     }

@@ -151,6 +151,33 @@ class PromptOptionsTest {
         assertEquals(listOf("Apply the plan", "Edit the plan", "Cancel"), options.map { it.label })
     }
 
+    @Test fun aScrolledOffDescriptionAtTheTopDoesNotStartTheRun() {
+        val options = parse("     2. Then run migrations", "  3. Redis", "❯ 4. SQLite", "  5. Submit")
+        assertEquals(listOf(3, 4, 5), options.map { it.number })
+    }
+
+    @Test fun aPhoneWidthQuestionWithWrappedRowsBelowStillParses() {
+        val options = parse(
+            "Which database should we use?",
+            "❯ 1. Postgres",
+            "     Relational database with",
+            "     strong consistency",
+            "  2. Redis",
+            "     In-memory key-value store",
+            "  3. Type something.",
+            "     Describe the database",
+            "     you want if none of",
+            "     these fit",
+            "",
+            "────────────────────────────",
+            "  Chat about this",
+            "",
+            "Enter to select · ↑/↓ to",
+            "navigate · Esc to cancel",
+        )
+        assertEquals(listOf(1, 2, 3), options.map { it.number })
+    }
+
     @Test fun keepsBracketsInsideALabel() {
         assertEquals("Mark [x] as done", parse("❯ 1. Mark [x] as done", "  2. Skip")[0].label)
     }

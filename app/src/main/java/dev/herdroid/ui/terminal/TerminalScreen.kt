@@ -194,9 +194,6 @@ private fun TerminalScreenContent(
     val blocked = agent?.agentStatus == AgentStatus.BLOCKED
     // The screen only shows the active prompt while scrolled to the bottom.
     val detectOptions = (pane?.scroll?.offsetFromBottom ?: 0L) == 0L && (claudeAgent || blocked)
-    // During composition, not in an effect: the options below are parsed in this same pass, so the
-    // 1/2/3 fallback never flashes before them. A no-op unless detection changes.
-    controller.setOptionDetection(detectOptions)
     DisposableEffect(controller) { onDispose { controller.dispose() } }
 
     var terminalView by remember { mutableStateOf<TerminalView?>(null) }
