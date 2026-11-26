@@ -61,6 +61,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Snackbar
+import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
@@ -102,6 +103,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.core.view.WindowCompat
 import dev.herdroid.app
+import dev.herdroid.connection.AgentAlert
 import dev.herdroid.connection.ConnectionStatus
 import dev.herdroid.herdr.AgentStatus
 import dev.herdroid.herdr.PaneInfo
@@ -124,6 +126,9 @@ import dev.herdroid.ui.session.SheetItem
 import dev.herdroid.ui.theme.WoolooMobileTheme
 import dev.herdroid.ui.theme.LocalStatusColors
 import dev.herdroid.ui.theme.Mono
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.coroutines.launch
 
 /**
@@ -218,21 +223,20 @@ private fun TerminalScreenContent(
 
     // Surface other agents that need attention without leaving this pane.
     LaunchedEffect(connection) {
-        connection.alerts.collect { alert ->
-            if (alert.agent.paneId == paneId) return@collect
-            val here = connection.snapshot.value?.pane(paneId)?.workspaceId
-            val elsewhere = alert.agent.workspaceId != here
-            val verb = if (alert.agent.agentStatus == AgentStatus.BLOCKED) "needs input" else "finished"
-            val where = alert.workspaceLabel?.takeIf { elsewhere }?.let { " in $it" }.orEmpty()
+        presentAlerts(
+            connection.alerts,
+            banner = { alert -> alertBanner(alert, paneId, connection.snapshot.value?.pane(paneId)?.workspaceId) },
+        ) { banner ->
             val result = snackbar.showSnackbar(
-                message = "${alert.agent.displayName}$where $verb",
+                message = banner.message,
                 actionLabel = "Open",
                 withDismissAction = true,
+                duration = SnackbarDuration.Long,
             )
             if (result == SnackbarResult.ActionPerformed) {
                 // Same space: switch in place. Another space: go through it, so back leads there.
-                if (elsewhere) onOpenInSpace(alert.agent.workspaceId, alert.agent.paneId)
-                else paneId = alert.agent.paneId
+                if (banner.elsewhere) onOpenInSpace(banner.workspaceId, banner.paneId)
+                else paneId = banner.paneId
             }
         }
     }
@@ -357,6 +361,11 @@ private fun TerminalScreenContent(
                     onWatch = { controller.open(observeOnly = true) },
                     onRetry = { controller.open() },
                     onBack = onBack)
+                // Over the top rows of the terminal: the switcher, quick answers, extra keys and the
+                // prompt at the bottom of the pane stay visible and usable.
+                SnackbarHost(snackbar, Modifier.align(Alignment.TopCenter).padding(top = 4.dp)) { data ->
+                    Snackbar(data, shape = RoundedCornerShape(14.dp))
+                }
             }
             val options = if (detectOptions) controller.promptOptions else emptyList()
             val claudeReview = claudeAgent && isSubmitMenu(options)
@@ -386,10 +395,6 @@ private fun TerminalScreenContent(
                 composerHighlighted = agent?.agentStatus == AgentStatus.BLOCKED,
             )
         }
-        SnackbarHost(
-            snackbar,
-            modifier = Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top = 56.dp),
-        ) { data -> Snackbar(data, shape = RoundedCornerShape(14.dp)) }
     }
 
     ConnectionPrompts(connection, prompt)
@@ -708,6 +713,37 @@ private fun SwitcherChip(snapshot: SessionSnapshot, pane: PaneInfo, selected: Bo
             modifier = Modifier.widthIn(max = 160.dp),
         )
     }
+}
+
+/** What an alert about another agent shows over the terminal. */
+internal data class AlertBanner(val message: String, val workspaceId: String, val paneId: String, val elsewhere: Boolean)
+
+/**
+ * The banner for [alert] while [currentPaneId] (in [currentWorkspaceId]) is open, or null when it
+ * isn't worth interrupting for: this pane's own alerts, and agents finishing in another space
+ * (the system notification covers those). Blocked agents show from any space.
+ */
+internal fun alertBanner(alert: AgentAlert, currentPaneId: String, currentWorkspaceId: String?): AlertBanner? {
+    val agent = alert.agent
+    if (agent.paneId == currentPaneId) return null
+    val blocked = agent.agentStatus == AgentStatus.BLOCKED
+    val elsewhere = agent.workspaceId != currentWorkspaceId
+    if (elsewhere && !blocked) return null
+    val where = alert.workspaceLabel?.takeIf { elsewhere }?.let { " in $it" }.orEmpty()
+    val verb = if (blocked) "needs input" else "finished"
+    return AlertBanner("${agent.displayName}$where $verb", agent.workspaceId, agent.paneId, elsewhere)
+}
+
+/**
+ * Shows each alert worth a [banner] with [show]; a newer one cancels the one on screen, so alerts
+ * never queue up behind each other. Ignored alerts leave the current banner alone.
+ */
+internal suspend fun presentAlerts(
+    alerts: Flow<AgentAlert>,
+    banner: (AgentAlert) -> AlertBanner?,
+    show: suspend (AlertBanner) -> Unit,
+) {
+    alerts.mapNotNull(banner).collectLatest(show)
 }
 
 /**
