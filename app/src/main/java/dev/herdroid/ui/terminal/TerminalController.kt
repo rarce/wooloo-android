@@ -89,6 +89,9 @@ class TerminalController internal constructor(
         private set
     var readOnly by mutableStateOf(false)
         private set
+    /** Watching because another client took control of the pane (not by the user's choice). */
+    var controlMoved by mutableStateOf(false)
+        private set
 
     /** The active prompt's numbered options, read from every frame (the screen decides when to show them). */
     var promptOptions by mutableStateOf<List<PromptOption>>(emptyList())
@@ -156,6 +159,7 @@ class TerminalController internal constructor(
 
     private fun start(takeover: Boolean, observeOnly: Boolean, recovery: Boolean, delayMs: Long) {
         readOnly = observeOnly
+        if (!observeOnly) controlMoved = false
         if (cols == 0) return
         closeStream()
         hostWait?.cancel()
@@ -211,7 +215,12 @@ class TerminalController internal constructor(
         stableJob?.cancel()
         state = when {
             event.needsTakeover -> PaneState.Busy(event.reason.orEmpty(), afterReconnect = recovering)
-            event.wasTakenOver -> PaneState.TakenOver
+            event.wasTakenOver -> {
+                // Keep showing the pane: watch it while the other client has control.
+                controlMoved = true
+                retries = 0
+                return start(takeover = false, observeOnly = true, recovery = false, delayMs = 0)
+            }
             event.interrupted -> return retryOrClose(event.reason)
             else -> PaneState.Closed(event.reason, interrupted = event.interrupted)
         }
@@ -256,8 +265,12 @@ class TerminalController internal constructor(
     }
 
     fun setObserveOnly(observe: Boolean) {
+        controlMoved = false
         if (observe != readOnly) open(takeover = false, observeOnly = observe)
     }
+
+    /** Control the pane even if another client has it; the pane is resized to this view. */
+    fun takeControl() = open(takeover = true, observeOnly = false)
 
     private fun closeStream() {
         synchronized(model.lock) {

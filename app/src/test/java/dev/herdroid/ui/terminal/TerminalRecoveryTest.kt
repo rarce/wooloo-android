@@ -95,20 +95,46 @@ class TerminalRecoveryTest {
         assertEquals(2, connection.opened.size)
     }
 
+    @Test(timeout = 10_000) fun takenOverPaneIsWatchedUntilTheUserTakesControlBack(): Unit = runBlocking {
+        startLive()
+        connection.opened.last().record("""{"type":"terminal.closed","reason":"taken over"}""")
+        // No modal: the pane reopens as a watcher right away, without taking control back.
+        await { connection.opened.size == 2 }
+        assertTrue(connection.observers.last())
+        assertFalse(connection.takeovers.last())
+        assertTrue(controller.readOnly)
+        assertTrue(controller.controlMoved)
+        connection.opened.last().frame()
+        await { controller.state == PaneState.Live }
+
+        controller.takeControl()
+        await { connection.opened.size == 3 }
+        assertTrue(connection.takeovers.last())
+        assertFalse(connection.observers.last())
+        assertFalse(controller.readOnly)
+        assertFalse(controller.controlMoved)
+    }
+
     @Test(timeout = 10_000) fun takeoverIsNotUndoneBySshRecovery(): Unit = runBlocking {
         startLive()
         connection.opened.last().record("""{"type":"terminal.closed","reason":"taken over"}""")
-        await { controller.state == PaneState.TakenOver }
+        await { connection.opened.size == 2 }
+        connection.opened.last().frame()
+        await { controller.state == PaneState.Live }
         connection.status.value = ConnectionStatus.Reconnecting(1, "fixture", 0)
         assertEquals(PaneState.Offline, controller.state)
         connection.status.value = ConnectionStatus.Connected
-        // The reopen re-detects the other controller instead of taking the pane back.
-        await { connection.opened.size == 2 }
+        // The reopen keeps watching instead of taking the pane back.
+        await { connection.opened.size == 3 }
+        assertTrue(connection.observers.last())
         assertFalse(connection.takeovers.last())
-        connection.opened.last().record("""{"type":"terminal.closed","reason":"use --takeover"}""")
-        await { controller.state is PaneState.Busy }
-        assertTrue((controller.state as PaneState.Busy).afterReconnect)
-        assertEquals(2, connection.opened.size)
+        assertTrue(controller.controlMoved)
+    }
+
+    @Test(timeout = 10_000) fun choosingToWatchIsNotReportedAsMovedControl(): Unit = runBlocking {
+        startLive(observe = true)
+        assertTrue(controller.readOnly)
+        assertFalse(controller.controlMoved)
     }
 
     @Test(timeout = 15_000) fun streamThatRendersOneFrameAndDiesRunsOutOfRetries(): Unit = runBlocking {

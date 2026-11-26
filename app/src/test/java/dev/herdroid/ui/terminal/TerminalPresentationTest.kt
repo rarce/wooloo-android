@@ -4,6 +4,9 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import com.github.takahirom.roborazzi.captureRoboImage
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
@@ -39,6 +42,18 @@ class TerminalPresentationTest {
         compose.onNodeWithText("Cancel").performClick()
         compose.onNodeWithText("Submit answers").performClick()
         assertEquals(listOf("2", "1"), keys)
+    }
+
+    @Test fun watchingBarSaysWhoHasControlAndWhatTakingItDoes() {
+        var moved by mutableStateOf(true)
+        var taken = 0
+        compose.setContent { WoolooMobileTheme { WatchingBar(moved, onTakeControl = { taken++ }) } }
+        compose.onNodeWithText("Another screen has control").assertExists()
+        compose.onNodeWithText("Taking control resizes the pane to fit this phone.").assertExists()
+        compose.onNodeWithText("Take control").performClick()
+        moved = false
+        compose.onNodeWithText("Watching only").assertExists()
+        compose.runOnIdle { assertEquals(1, taken) }
     }
 
     @Test fun fallbackOffersOneToThree() {

@@ -67,6 +67,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -372,6 +373,9 @@ private fun TerminalScreenContent(
             val claudeReview = claudeAgent && isSubmitMenu(options)
             if (controller.state == PaneState.Live && !controller.readOnly && (claudeReview || blocked)) {
                 QuickAnswers(options.ifEmpty { FallbackAnswers }, fromScreen = options.isNotEmpty(), onAnswer = { terminalView?.sendText(it) })
+            }
+            if (controller.state == PaneState.Live && controller.readOnly) {
+                WatchingBar(controller.controlMoved, onTakeControl = { controller.takeControl() })
             }
             ExtraKeysBar(
                 modifiers = controller.modifiers,
@@ -719,6 +723,39 @@ private fun SwitcherChip(snapshot: SessionSnapshot, pane: PaneInfo, selected: Bo
     }
 }
 
+/**
+ * Non-modal note while watching a pane, above the extra keys: who has control and what taking it
+ * does. Shown both when another client took control and when the user chose to watch.
+ */
+@Composable
+internal fun WatchingBar(controlMoved: Boolean, onTakeControl: () -> Unit) {
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        shape = RoundedCornerShape(12.dp),
+        modifier = Modifier.fillMaxWidth().padding(start = 8.dp, end = 8.dp, top = 8.dp),
+    ) {
+        Row(Modifier.padding(start = 12.dp, end = 4.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Outlined.Visibility, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.tertiary)
+            Column(Modifier.weight(1f).padding(horizontal = 10.dp)) {
+                Text(
+                    if (controlMoved) "Another screen has control" else "Watching only",
+                    style = MaterialTheme.typography.labelLarge,
+                )
+                Text(
+                    TAKE_CONTROL_RESIZES,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            TextButton(onClick = onTakeControl) { Text("Take control") }
+        }
+    }
+}
+
+// herdr sizes a pane to its controlling client: control opens with this view's --cols/--rows and
+// its resizes apply, while watchers see the pane at the controller's size.
+private const val TAKE_CONTROL_RESIZES = "Taking control resizes the pane to fit this phone."
+
 /** A composer chip for [this] option: its number and label, sending the number. */
 internal fun PromptOption.asQuickReply() =
     QuickReply(if (label.isEmpty()) "$number" else "$number $label", number.toString())
@@ -852,7 +889,7 @@ private fun PaneOverlay(
                             "Confirm control after reconnecting" to
                                 "The previous connection may still hold this pane, or another client may control it. Take control here only if you want to replace that controller, or watch without changing it."
                         } else {
-                            "Pane in use" to "Another client is controlling this pane. Take control here, or just watch."
+                            "Pane in use" to "Another client is controlling this pane. Take control here, or just watch. $TAKE_CONTROL_RESIZES"
                         }
                         state == PaneState.TakenOver -> "Control moved" to "Another client took control of this pane."
                         state is PaneState.Closed -> "Stream ended" to (state.reason ?: "The pane stream closed.")
