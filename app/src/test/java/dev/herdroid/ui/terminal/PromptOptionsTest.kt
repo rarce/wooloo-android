@@ -87,6 +87,19 @@ class PromptOptionsTest {
         assertEquals(3, options.single { it.focused }.number)
     }
 
+    @Test fun aLaterNumberedListRetiresAnEarlierPrompt() {
+        // Claude's input echoed "> 1. do X" and its plan list; the prompt below has no marker yet.
+        assertTrue(parse("> 1. do X", "  2. do Y", "Do you want to proceed?", "  1. Yes", "  2. No").isEmpty())
+        assertTrue(parse("❯ 1. Yes", "  2. No", "Next steps:", "1. Install", "2. Run").isEmpty())
+        assertTrue(parse("❯ 1. Yes", "  2. No", "❯ 1. Again", "> 2. Twice").isEmpty())
+        assertTrue(parse("❯ 1. Yes", "  2. No", "  1. One", "  3. Three").isEmpty())
+    }
+
+    @Test fun dropsMultiSelectCheckboxes() {
+        val options = parse("❯ 1. [ ] Lint", "  2. [✔] Tests", "  3. [x] Build", "  4. Submit")
+        assertEquals(listOf("Lint", "Tests", "Build", "Submit"), options.map { it.label })
+    }
+
     @Test fun stopsAtNine() {
         val rows = (1..10).map { if (it == 1) "❯ $it. Option $it" else "  $it. Option $it" }
         assertEquals((1..9).toList(), parse(*rows.toTypedArray()).map { it.number })

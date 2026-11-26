@@ -91,6 +91,9 @@ import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -721,8 +724,9 @@ internal fun QuickAnswers(options: List<PromptOption> = FallbackAnswers, onAnswe
     val spacing = 6.dp
     BoxWithConstraints(Modifier.fillMaxWidth().padding(start = 8.dp, end = 8.dp, top = 8.dp)) {
         val fits = options.size * QuickAnswerMinWidth.value + (options.size - 1) * spacing.value <= maxWidth.value
+        val scroll = rememberScrollState()
         Row(
-            if (fits) Modifier.fillMaxWidth() else Modifier.horizontalScroll(rememberScrollState()),
+            if (fits) Modifier.fillMaxWidth() else Modifier.horizontalScroll(scroll),
             horizontalArrangement = Arrangement.spacedBy(spacing),
         ) {
             options.forEach { option ->
@@ -732,7 +736,13 @@ internal fun QuickAnswers(options: List<PromptOption> = FallbackAnswers, onAnswe
                         .height(44.dp)
                         .clip(shape)
                         .then(if (solid) Modifier.background(blocked) else Modifier.border(1.dp, blocked, shape))
-                        .clickable(onClickLabel = "Answer ${option.number}") { onAnswer(option.number.toString()) }
+                        .semantics {
+                            selected = solid
+                            if (solid) stateDescription = "Highlighted in the prompt"
+                        }
+                        .clickable(onClickLabel = "Answer ${option.number}", role = Role.Button) {
+                            onAnswer(option.number.toString())
+                        }
                         .padding(horizontal = 10.dp),
                     horizontalArrangement = Arrangement.Center,
                     verticalAlignment = Alignment.CenterVertically,

@@ -7,7 +7,9 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.text.TextLayoutResult
@@ -56,7 +58,9 @@ class TerminalPresentationTest {
         (1..6).forEach { compose.onNodeWithText(it.toString()).assertExists() }
         compose.onNodeWithText("6").performScrollTo().assertIsDisplayed().performClick()
         compose.onNodeWithText("5").performScrollTo().assertIsDisplayed().performClick()
-        compose.onNodeWithText("1").performScrollTo().assertIsDisplayed().performClick()
+        compose.onNodeWithText("1").performScrollTo().assertIsDisplayed().assertIsSelected().performClick()
+        compose.onNodeWithText("2").assert(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Button))
+            .assertIsNotSelected()
         assertEquals(listOf("6", "5", "1"), keys)
     }
 
