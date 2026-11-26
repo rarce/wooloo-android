@@ -90,8 +90,8 @@ class TerminalController internal constructor(
     var readOnly by mutableStateOf(false)
         private set
 
-    private var detectSubmitMenu = false
-    var showsSubmitMenu by mutableStateOf(false)
+    /** The active prompt's numbered options, read from every frame (the screen decides when to show them). */
+    var promptOptions by mutableStateOf<List<PromptOption>>(emptyList())
         private set
 
     private var recovering = false
@@ -262,7 +262,7 @@ class TerminalController internal constructor(
     private fun closeStream() {
         synchronized(model.lock) {
             generation++
-            showsSubmitMenu = false
+            promptOptions = emptyList()
         }
         stableJob?.cancel()
         streamJob?.cancel()
@@ -275,16 +275,12 @@ class TerminalController internal constructor(
         scope.cancel()
     }
 
-    fun setSubmitDetection(enabled: Boolean) = synchronized(model.lock) {
-        if (detectSubmitMenu != enabled) {
-            detectSubmitMenu = enabled
-            refreshSubmitMenu()
-        }
-    }
-
-    private fun refreshSubmitMenu() {
+    private fun refreshPromptOptions() {
         val grid = model.emulator
-        showsSubmitMenu = detectSubmitMenu && hasSubmitMenu((0 until grid.rows).asSequence().map(grid::rowText))
+        // Parsed on every frame, so the screen can show them as soon as it wants them.
+        val options = parsePromptOptions((0 until grid.rows).asSequence().map(grid::rowText))
+        // Only publish a change, so Compose doesn't recompose on every frame.
+        if (options != promptOptions) promptOptions = options
     }
 
     private companion object {
@@ -297,26 +293,7 @@ class TerminalController internal constructor(
     internal fun applyFrame(expectedGeneration: Long, frame: TerminalEvent.Frame): Boolean = synchronized(model.lock) {
         if (generation != expectedGeneration) return@synchronized false
         model.applyFrame(frame.width, frame.height, frame.full, frame.bytes)
-        refreshSubmitMenu()
+        refreshPromptOptions()
         true
     }
-}
-
-// A focused, numbered pair distinguishes the interactive review menu from ordinary output.
-private val submitOption = Regex("""([❯›>]?)[ ]*1[.)] +Submit (?:answers|responses)""", RegexOption.IGNORE_CASE)
-private val cancelOption = Regex("""([❯›>]?)[ ]*2[.)] +Cancel""", RegexOption.IGNORE_CASE)
-
-internal fun hasSubmitMenu(rows: Sequence<String>): Boolean {
-    var submit: MatchResult? = null
-    for (line in rows) {
-        val text = line.trim().trim('│').trim()
-        if (text.isEmpty()) continue
-        val previous = submit
-        if (previous != null) {
-            val cancel = cancelOption.matchEntire(text)
-            if (cancel != null && (previous.groupValues[1].isNotEmpty() || cancel.groupValues[1].isNotEmpty())) return true
-        }
-        submit = submitOption.matchEntire(text)
-    }
-    return false
 }

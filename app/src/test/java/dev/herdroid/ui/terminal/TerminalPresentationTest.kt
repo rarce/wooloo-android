@@ -7,7 +7,9 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.text.TextLayoutResult
@@ -31,11 +33,41 @@ class TerminalPresentationTest {
 
     @Test fun finalReviewButtonsSendTheNumberOfTheChosenOption() {
         val keys = mutableListOf<String>()
-        compose.setContent { WoolooMobileTheme { QuickAnswers(submitMenu = true) { keys.add(it) } } }
+        val options = parsePromptOptions(sequenceOf(" ❯ 1. Submit answers", "   2. Cancel"))
+        compose.setContent { WoolooMobileTheme { QuickAnswers(options) { keys.add(it) } } }
         compose.onNodeWithText("3").assertDoesNotExist()
         compose.onNodeWithText("Cancel").performClick()
         compose.onNodeWithText("Submit answers").performClick()
         assertEquals(listOf("2", "1"), keys)
+    }
+
+    @Test fun fallbackOffersOneToThree() {
+        val keys = mutableListOf<String>()
+        compose.setContent { WoolooMobileTheme { QuickAnswers { keys.add(it) } } }
+        compose.onNodeWithText("4").assertDoesNotExist()
+        // The filled 1 is only a default: TalkBack mustn't call it highlighted in the prompt.
+        compose.onNodeWithText("1")
+            .assert(SemanticsMatcher.keyNotDefined(SemanticsProperties.Selected))
+            .assert(SemanticsMatcher.keyNotDefined(SemanticsProperties.StateDescription))
+        compose.onNodeWithText("3").performClick()
+        assertEquals(listOf("3"), keys)
+    }
+
+    @Test fun everyParsedOptionGetsAButtonThatScrollsIntoReach() {
+        val keys = mutableListOf<String>()
+        val options = parsePromptOptions(sequenceOf(
+            "❯ 1. Postgres", "  2. MySQL", "  3. SQLite", "  4. DuckDB", "  5. Type something.", "  6. Submit",
+        ))
+        compose.setContent { WoolooMobileTheme { QuickAnswers(options) { keys.add(it) } } }
+        (1..6).forEach { compose.onNodeWithText(it.toString()).assertExists() }
+        compose.onNodeWithText("6").performScrollTo().assertIsDisplayed().performClick()
+        compose.onNodeWithText("5").performScrollTo().assertIsDisplayed().performClick()
+        compose.onNodeWithText("1").performScrollTo().assertIsDisplayed().assertIsSelected()
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Highlighted in the prompt"))
+            .performClick()
+        compose.onNodeWithText("2").assert(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Button))
+            .assertIsNotSelected()
+        assertEquals(listOf("6", "5", "1"), keys)
     }
 
     @Test fun largeFontHeaderKeepsSpaceStatusAndMetricsInsideItsBounds() {
