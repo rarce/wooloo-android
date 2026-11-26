@@ -417,6 +417,8 @@ private fun TerminalScreenContent(
             onDismiss = { composer = false },
             pickImagesOnOpen = pickComposerImages,
             answers = (if (detectOptions) controller.promptOptions else emptyList()).map { it.asQuickReply() },
+            watchOnly = controller.readOnly,
+            onTakeControl = { controller.setObserveOnly(false) },
             onQuickReply = { reply -> controller.input(reply.input) },
             onSend = { text, images, uploads ->
                 when {

@@ -71,6 +71,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -130,6 +131,8 @@ fun ComposerSheet(
     onSend: suspend (text: String, images: List<File>, uploads: AttachmentUploads) -> Result<Unit>,
     pickImagesOnOpen: Boolean = false,
     answers: List<QuickReply> = emptyList(),
+    watchOnly: Boolean = false,
+    onTakeControl: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -172,7 +175,8 @@ fun ComposerSheet(
             content.consume { item -> item.uri?.let { attach(it) } ?: false }
         }
     }
-    val canSend = (text.text.isNotBlank() || images.isNotEmpty()) && preparing == 0 && !sending
+    // Watching: keystrokes wouldn't reach the pane. A message to an agent goes through herdr instead.
+    val canSend = (text.text.isNotBlank() || images.isNotEmpty()) && preparing == 0 && !sending && (isAgent || !watchOnly)
 
     ModalBottomSheet(onDismissRequest = { if (!sending) onDismiss() }, sheetState = sheetState) {
         Column(
@@ -191,7 +195,7 @@ fun ComposerSheet(
             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(if (isAgent) agentQuickReplies(answers) else ShellQuickReplies) { reply ->
                     AssistChip(
-                        enabled = !sending,
+                        enabled = !sending && !watchOnly,
                         onClick = { onQuickReply(reply) },
                         label = {
                             Text(reply.label, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = 180.dp))
@@ -199,11 +203,23 @@ fun ComposerSheet(
                     )
                 }
             }
-            Text(
-                "Quick keys send immediately to the pane.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            if (watchOnly) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        "Watching only, take control to send keys.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.weight(1f),
+                    )
+                    TextButton(onClick = onTakeControl, enabled = !sending) { Text("Take control") }
+                }
+            } else {
+                Text(
+                    "Quick keys send immediately to the pane.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
             if (images.isNotEmpty() || preparing > 0) {
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     items(images, key = { it.path }) { file ->

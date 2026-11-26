@@ -61,4 +61,57 @@ class ComposerAnswersTest {
         compose.runOnIdle { assertEquals(listOf("2"), sent) }
     }
 
+
+    private fun watching(isAgent: Boolean, sent: MutableList<String>, sentKeys: MutableList<String>, takeControl: () -> Unit) {
+        compose.setContent {
+            WoolooMobileTheme {
+                ComposerSheet("Message", null, isAgent, onDismiss = {}, onQuickReply = { sentKeys += it.input },
+                    onSend = { text, _, _ -> sent += text; Result.success(Unit) },
+                    watchOnly = true, onTakeControl = takeControl)
+            }
+        }
+    }
+
+    @Test fun watchingDisablesKeysButStillMessagesAnAgent() {
+        val sent = mutableListOf<String>()
+        val keys = mutableListOf<String>()
+        var takeControl = 0
+        watching(isAgent = true, sent, keys) { takeControl++ }
+        compose.onNodeWithText("⏎ Enter").assertIsNotEnabled()
+        compose.onNodeWithText("1").assertIsNotEnabled()
+        compose.onNodeWithText("Watching only, take control to send keys.").assertExists()
+        compose.onNodeWithText("Take control").performClick()
+        compose.onNode(hasSetTextAction()).performTextInput("carry on")
+        compose.onNodeWithContentDescription("Send").assertIsEnabled().performClick()
+        compose.waitUntil(5000) { sent.isNotEmpty() }
+        compose.runOnIdle {
+            assertEquals(1, takeControl)
+            assertEquals(listOf("carry on"), sent)
+            assertEquals(emptyList<String>(), keys)
+        }
+    }
+
+    @Test fun watchingAShellCantSend() {
+        val sent = mutableListOf<String>()
+        watching(isAgent = false, sent, mutableListOf()) {}
+        compose.onNodeWithText("Ctrl‑C").assertIsNotEnabled()
+        compose.onNodeWithText("Watching only, take control to send keys.").assertExists()
+        compose.onNode(hasSetTextAction()).performTextInput("ls")
+        compose.onNodeWithContentDescription("Send").assertIsNotEnabled()
+    }
+
+    @Test fun inControlTheKeysWork() {
+        val keys = mutableListOf<String>()
+        compose.setContent {
+            WoolooMobileTheme {
+                ComposerSheet("Send", null, false, onDismiss = {}, onQuickReply = { keys += it.input },
+                    onSend = { _, _, _ -> Result.success(Unit) })
+            }
+        }
+        compose.onNodeWithText("Take control").assertDoesNotExist()
+        compose.onNodeWithText("Ctrl‑C").assertIsEnabled().performClick()
+        compose.onNode(hasSetTextAction()).performTextInput("ls")
+        compose.onNodeWithContentDescription("Send").assertIsEnabled()
+        compose.runOnIdle { assertEquals(listOf("\u0003"), keys) }
+    }
 }
