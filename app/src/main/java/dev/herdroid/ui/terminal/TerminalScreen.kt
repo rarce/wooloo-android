@@ -40,6 +40,7 @@ import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.CropFree
 import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.FitScreen
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.OpenInBrowser
 import androidx.compose.material.icons.outlined.Refresh
@@ -201,6 +202,9 @@ private fun TerminalScreenContent(
     val blocked = agent?.agentStatus == AgentStatus.BLOCKED
     // The screen only shows the active prompt while scrolled to the bottom.
     val detectOptions = (pane?.scroll?.offsetFromBottom ?: 0L) == 0L && (claudeAgent || blocked)
+    val paneRect = pane?.let { p -> snapshot?.layout(p.tabId)?.panes?.firstOrNull { it.paneId == p.paneId }?.rect }
+    LaunchedEffect(controller, paneRect) { controller.setPaneSize(paneRect?.width, paneRect?.height) }
+    var fitWidth by rememberSaveable { mutableStateOf(false) }
     DisposableEffect(controller) { onDispose { controller.dispose() } }
 
     var terminalView by remember { mutableStateOf<TerminalView?>(null) }
@@ -284,6 +288,8 @@ private fun TerminalScreenContent(
                 onMenu = { menu = it },
                 readOnly = controller.readOnly,
                 onToggleReadOnly = { controller.setObserveOnly(!controller.readOnly) },
+                fitWidth = fitWidthMenu(controller.wideFrame, fitWidth),
+                onFitWidth = { fitWidth = !fitWidth },
                 onFont = { delta ->
                     val next = (fontSize + delta).coerceIn(TerminalView.MIN_FONT_SP, TerminalView.MAX_FONT_SP)
                     app.preferences.setFontSize(next)
@@ -330,6 +336,7 @@ private fun TerminalScreenContent(
                     },
                     update = { view ->
                         terminalView = view
+                        view.fitWidth = fitWidth
                         view.inputEnabled = retainInputFocus
                         view.retainInputFocus = retainInputFocus
                         view.listener = object : TerminalViewListener {
@@ -530,6 +537,8 @@ internal fun TerminalTopBar(
     onClosePane: () -> Unit,
     onReconnect: () -> Unit,
     onSwipeAgent: ((Int) -> Unit)? = null,
+    fitWidth: Boolean? = null,
+    onFitWidth: () -> Unit = {},
     metrics: @Composable () -> Unit = {},
     onRead: () -> Unit = {},
 ) {
@@ -590,6 +599,11 @@ internal fun TerminalTopBar(
                     MenuItem(Icons.Outlined.ContentCopy, "Copy screen") { onMenu(false); onCopy() }
                     MenuItem(if (readOnly) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility,
                         if (readOnly) "Take control" else "Watch only") { onMenu(false); onToggleReadOnly() }
+                    if (fitWidth != null) {
+                        MenuItem(Icons.Outlined.FitScreen, if (fitWidth) "Actual size" else "Fit width") {
+                            onMenu(false); onFitWidth()
+                        }
+                    }
                     MenuItem(Icons.Outlined.CropFree, "Toggle zoom") { onMenu(false); onZoom() }
                     MenuItem(Icons.Outlined.ViewColumn, "Split right") { onMenu(false); onSplit("right") }
                     MenuItem(Icons.Outlined.ViewAgenda, "Split down") { onMenu(false); onSplit("down") }
@@ -755,6 +769,9 @@ internal fun WatchingBar(controlMoved: Boolean, onTakeControl: () -> Unit) {
 // herdr sizes a pane to its controlling client: control opens with this view's --cols/--rows and
 // its resizes apply, while watchers see the pane at the controller's size.
 private const val TAKE_CONTROL_RESIZES = "Taking control resizes the pane to fit this phone."
+
+/** The pane menu's Fit width state: null (hidden) unless the remote screen is wider than the view. */
+internal fun fitWidthMenu(wideFrame: Boolean, fitWidth: Boolean): Boolean? = fitWidth.takeIf { wideFrame }
 
 /** A composer chip for [this] option: its number and label, sending the number. */
 internal fun PromptOption.asQuickReply() =

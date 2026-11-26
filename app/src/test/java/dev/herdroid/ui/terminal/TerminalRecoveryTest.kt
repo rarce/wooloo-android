@@ -148,6 +148,44 @@ class TerminalRecoveryTest {
         assertEquals(4, connection.opened.size)
     }
 
+    @Test(timeout = 10_000) fun watchersOpenAtThePaneSizeAndFollowItsChanges(): Unit = runBlocking {
+        controller.setPaneSize(147, 50)
+        startLive(observe = true)
+        assertEquals(147 to 50, connection.sizes.last())
+        // A wider desktop pane reopens the watcher at its new size, without the loading state.
+        controller.setPaneSize(180, 50)
+        assertEquals(PaneState.Live, controller.state)
+        await { connection.opened.size == 2 }
+        assertEquals(180 to 50, connection.sizes.last())
+        assertTrue(connection.observers.last())
+        assertFalse(connection.takeovers.last())
+        // Bursts settle into one reopen; an unchanged size reopens nothing.
+        controller.setPaneSize(150, 50)
+        controller.setPaneSize(180, 50)
+        delay(400)
+        assertEquals(2, connection.opened.size)
+    }
+
+    @Test(timeout = 10_000) fun controllersKeepSizingThePaneToTheView(): Unit = runBlocking {
+        controller.setPaneSize(147, 50)
+        startLive()
+        assertEquals(80 to 24, connection.sizes.last())
+        controller.setPaneSize(180, 50)
+        delay(400)
+        assertEquals(1, connection.opened.size)
+    }
+
+    @Test fun observeSizeUsesThePaneWithinHerdrsLimits() {
+        assertEquals(80 to 24, observeSize(80, 24, null))
+        assertEquals(147 to 50, observeSize(80, 24, 147 to 50))
+        assertEquals(80 to 30, observeSize(80, 30, 40 to 10))
+        assertEquals(512 to 128, observeSize(80, 24, 900 to 300))
+        assertEquals(300 to 218, observeSize(80, 24, 300 to 300))
+        assertTrue(isWideFrame(147, 80))
+        assertFalse(isWideFrame(80, 80))
+        assertFalse(isWideFrame(147, 0))
+    }
+
     private suspend fun startLive(observe: Boolean = false) {
         if (observe) controller.setObserveOnly(true)
         controller.onGridSize(80, 24, 8, 16)
@@ -170,6 +208,7 @@ class TerminalRecoveryTest {
         val opened = CopyOnWriteArrayList<Channel>()
         val takeovers = CopyOnWriteArrayList<Boolean>()
         val observers = CopyOnWriteArrayList<Boolean>()
+        val sizes = CopyOnWriteArrayList<Pair<Int, Int>>()
         @Volatile var refuse = 0
         /** Each stream renders one frame, then its channel dies without terminal.closed. */
         @Volatile var flapping = false
@@ -180,6 +219,7 @@ class TerminalRecoveryTest {
             if (refuse-- > 0) throw TerminalOpenException("open refused")
             val channel = Channel()
             takeovers += takeover
+            sizes += cols to rows
             observers += readOnly
             opened += channel
             return TerminalStream.fromChannel(channel, scope, readOnly).also {

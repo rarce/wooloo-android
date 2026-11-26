@@ -56,6 +56,33 @@ class TerminalPresentationTest {
         compose.runOnIdle { assertEquals(1, taken) }
     }
 
+    @Test fun fitWidthIsOfferedOnlyForAWideScreen() {
+        assertNull(fitWidthMenu(wideFrame = false, fitWidth = false))
+        assertNull(fitWidthMenu(wideFrame = false, fitWidth = true))
+        assertEquals(false, fitWidthMenu(wideFrame = true, fitWidth = false))
+        assertEquals(true, fitWidthMenu(wideFrame = true, fitWidth = true))
+
+        var fit by mutableStateOf<Boolean?>(null)
+        var toggled = 0
+        compose.setContent {
+            WoolooMobileTheme {
+                TerminalTopBar(
+                    pane = PaneInfo("p", workspaceId = "w", tabId = "t"), snapshot = null,
+                    agentName = null, agentStatus = null, agentLabel = null, onBack = {},
+                    menu = true, onMenu = {}, readOnly = true, onToggleReadOnly = {},
+                    onFont = {}, onCopy = {}, onZoom = {}, onSplit = {}, onRename = {},
+                    onClosePane = {}, onReconnect = {}, fitWidth = fit, onFitWidth = { toggled++ },
+                )
+            }
+        }
+        compose.onNodeWithText("Fit width").assertDoesNotExist()
+        fit = false
+        compose.onNodeWithText("Fit width").performClick()
+        fit = true
+        compose.onNodeWithText("Actual size").assertExists()
+        compose.runOnIdle { assertEquals(1, toggled) }
+    }
+
     @Test fun fallbackOffersOneToThree() {
         val keys = mutableListOf<String>()
         compose.setContent { WoolooMobileTheme { QuickAnswers { keys.add(it) } } }

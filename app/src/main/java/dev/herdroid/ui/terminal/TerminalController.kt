@@ -10,6 +10,7 @@ import dev.herdroid.herdr.TerminalEvent
 import dev.herdroid.herdr.TerminalStream
 import dev.herdroid.terminal.ModifierState
 import dev.herdroid.terminal.TerminalModel
+import kotlin.math.max
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.StateFlow
@@ -93,6 +94,10 @@ class TerminalController internal constructor(
     var controlMoved by mutableStateOf(false)
         private set
 
+    /** The remote screen is wider than this view (a watched pane keeps its controller's size). */
+    var wideFrame by mutableStateOf(false)
+        private set
+
     /** The active prompt's numbered options, read from every frame (the screen decides when to show them). */
     var promptOptions by mutableStateOf<List<PromptOption>>(emptyList())
         private set
@@ -109,6 +114,10 @@ class TerminalController internal constructor(
     private var rows = 0
     private var cellW = 0
     private var cellH = 0
+    /** The pane's real size from the session layout, when known; watchers open at it. */
+    private var paneSize: Pair<Int, Int>? = null
+    private var openedSize: Pair<Int, Int>? = null
+    private var observeResizeJob: Job? = null
 
     init {
         scope.launch {
@@ -144,6 +153,8 @@ class TerminalController internal constructor(
             start(takeover = false, observeOnly = readOnly, recovery = false, delayMs = OPEN_DEBOUNCE_MS)
             return
         }
+        refreshWideFrame()
+        if (readOnly) return reopenIfObserveSizeChanged()
         // Debounce: pinch-zoom and keyboard animations produce bursts of sizes.
         resizeJob?.cancel()
         resizeJob = scope.launch {
@@ -152,28 +163,56 @@ class TerminalController internal constructor(
         }
     }
 
+    /**
+     * The pane's size in cells from the session layout (null when unknown). Watchers render at it,
+     * so a pane wider than this view arrives whole instead of cropped by herdr.
+     */
+    fun setPaneSize(cols: Int?, rows: Int?) {
+        val size = if (cols != null && rows != null && cols > 0 && rows > 0) cols to rows else null
+        if (size == paneSize) return
+        paneSize = size
+        if (readOnly) reopenIfObserveSizeChanged()
+    }
+
+    /** A watcher can't resize its stream: reopen it at the new size once the sizes settle. */
+    private fun reopenIfObserveSizeChanged() {
+        observeResizeJob?.cancel()
+        val opened = openedSize ?: return
+        if (state != PaneState.Live || observeSize(cols, rows, paneSize) == opened) return
+        observeResizeJob = scope.launch {
+            delay(OPEN_DEBOUNCE_MS)
+            if (readOnly && state == PaneState.Live && observeSize(cols, rows, paneSize) != openedSize) {
+                start(takeover = false, observeOnly = true, recovery = false, delayMs = 0, quiet = true)
+            }
+        }
+    }
+
     fun open(takeover: Boolean = false, observeOnly: Boolean = readOnly, recovery: Boolean = false) {
         retries = 0
         start(takeover, observeOnly, recovery, delayMs = 0)
     }
 
-    private fun start(takeover: Boolean, observeOnly: Boolean, recovery: Boolean, delayMs: Long) {
+    /** [quiet] keeps showing the live pane while a watcher reopens at a new size. */
+    private fun start(takeover: Boolean, observeOnly: Boolean, recovery: Boolean, delayMs: Long, quiet: Boolean = false) {
         readOnly = observeOnly
         if (!observeOnly) controlMoved = false
         if (cols == 0) return
         closeStream()
+        observeResizeJob?.cancel()
         hostWait?.cancel()
         recovering = recovery
         if (!connection.isLive) {
             waitForHost()
             return
         }
-        state = PaneState.Opening
+        if (!quiet) state = PaneState.Opening
         val openingGeneration = generation
+        val (openCols, openRows) = if (observeOnly) observeSize(cols, rows, paneSize) else cols to rows
+        openedSize = openCols to openRows
         streamJob = scope.launch {
             if (delayMs > 0) delay(delayMs)
             val opened = runCatching {
-                connection.openTerminal(paneId, cols, rows, takeover, observeOnly, scope)
+                connection.openTerminal(paneId, openCols, openRows, takeover, observeOnly, scope)
             }.getOrElse { error ->
                 if (error is CancellationException) throw error
                 if (generation != openingGeneration) return@launch
@@ -288,6 +327,11 @@ class TerminalController internal constructor(
         scope.cancel()
     }
 
+    private fun refreshWideFrame() {
+        val wide = synchronized(model.lock) { isWideFrame(model.emulator.cols, cols) }
+        if (wide != wideFrame) wideFrame = wide
+    }
+
     private fun refreshPromptOptions() {
         val grid = model.emulator
         // Parsed on every frame, so the screen can show them as soon as it wants them.
@@ -307,6 +351,25 @@ class TerminalController internal constructor(
         if (generation != expectedGeneration) return@synchronized false
         model.applyFrame(frame.width, frame.height, frame.full, frame.bytes)
         refreshPromptOptions()
+        refreshWideFrame()
         true
     }
 }
+
+/** herdr's frame limits: up to 512 columns or rows and 65,536 cells. */
+private const val MAX_FRAME_SIDE = 512
+private const val MAX_FRAME_CELLS = 65_536
+
+/**
+ * The size a watcher opens at: herdr crops an observer's frames to the size it asks for, so ask
+ * for the pane's real [pane] size (never smaller than this view's grid), within herdr's limits.
+ * Without a known pane size the view's grid is used, as before.
+ */
+internal fun observeSize(viewCols: Int, viewRows: Int, pane: Pair<Int, Int>?): Pair<Int, Int> {
+    val cols = max(viewCols, pane?.first ?: 0).coerceIn(1, MAX_FRAME_SIDE)
+    val rows = max(viewRows, pane?.second ?: 0).coerceIn(1, minOf(MAX_FRAME_SIDE, MAX_FRAME_CELLS / cols))
+    return cols to rows
+}
+
+/** Whether a [frameCols]-wide screen overflows a view [viewCols] wide (so it pans, or can fit). */
+internal fun isWideFrame(frameCols: Int, viewCols: Int): Boolean = viewCols in 1 until frameCols
