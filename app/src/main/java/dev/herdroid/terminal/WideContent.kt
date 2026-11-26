@@ -36,15 +36,17 @@ internal object WideContent {
      * The vertical offset for a screen taller than the view, which can't be scrolled by hand (a
      * vertical drag scrolls the scrollback): moves as little as possible from [previous] to keep the
      * focus row ([focusTop] and [focusHeight] pixels tall, usually the cursor's) in view, or shows the
-     * bottom when there is no focus (the cursor is hidden). Zero when the content fits.
+     * bottom when there is no focus (the cursor is hidden). The focus row keeps [margin] pixels from
+     * the view's edges where the content allows (the edge fades cover that much). Zero when it fits.
      */
-    fun follow(previous: Float, contentPx: Float, viewPx: Float, focusTop: Float?, focusHeight: Float): Float {
+    fun follow(previous: Float, contentPx: Float, viewPx: Float, focusTop: Float?, focusHeight: Float, margin: Float = 0f): Float {
         val max = maxOffset(contentPx, viewPx)
         if (max == 0f) return 0f
         if (focusTop == null) return max
+        val gap = margin.coerceIn(0f, max(0f, (viewPx - focusHeight) / 2))
         var offset = previous.coerceIn(0f, max)
-        if (focusTop + focusHeight > offset + viewPx) offset = focusTop + focusHeight - viewPx
-        if (focusTop < offset) offset = focusTop
+        if (focusTop + focusHeight + gap > offset + viewPx) offset = focusTop + focusHeight + gap - viewPx
+        if (focusTop - gap < offset) offset = focusTop - gap
         return offset.coerceIn(0f, max)
     }
 

@@ -28,6 +28,18 @@ class WideContentTest {
         assertEquals(600f, WideContent.follow(0f, 1000f, 400f, focusTop = null, focusHeight = 20f))
     }
 
+    @Test fun theFollowedRowKeepsClearOfTheEdgeFades() {
+        // Below: the row's bottom stays a margin above the view's bottom edge.
+        assertEquals(400f, WideContent.follow(100f, 1000f, 400f, focusTop = 760f, focusHeight = 20f, margin = 20f))
+        // Above: its top stays a margin below the view's top edge.
+        assertEquals(20f, WideContent.follow(300f, 1000f, 400f, focusTop = 40f, focusHeight = 20f, margin = 20f))
+        // At the content's ends there is nothing to keep clear of.
+        assertEquals(600f, WideContent.follow(100f, 1000f, 400f, focusTop = 980f, focusHeight = 20f, margin = 20f))
+        assertEquals(0f, WideContent.follow(300f, 1000f, 400f, focusTop = 0f, focusHeight = 20f, margin = 20f))
+        // A margin larger than the view allows shrinks to center the row.
+        assertEquals(505f, WideContent.follow(0f, 1000f, 30f, focusTop = 510f, focusHeight = 20f, margin = 20f))
+    }
+
     @Test fun aDragLocksToTheAxisOfItsFirstMovement() {
         assertNull(WideContent.axis(3f, 2f, slop = 8f, canPan = true))
         assertEquals(Axis.Horizontal, WideContent.axis(20f, 5f, slop = 8f, canPan = true))

@@ -318,11 +318,14 @@ class TerminalView(
     private fun updatePanY(emu: TerminalEmulator, scale: Float) {
         val rowH = cellHeight * scale
         val cursorTop = if (emu.cursorVisible) emu.cursorY * rowH else null
-        panY = if (!panWide) 0f else WideContent.follow(panY, emu.rows * rowH, availableHeight(), cursorTop, rowH)
+        panY = if (!panWide) 0f
+        else WideContent.follow(panY, emu.rows * rowH, availableHeight(), cursorTop, rowH, margin = edgeWidth)
     }
 
     /** Fades over the top or bottom edge while rows are hidden there. */
     private fun drawTallIndicators(canvas: Canvas, shownH: Float, availableH: Float) {
+        // Only a watched screen is offset; in control a briefly taller frame (keyboard) gets none.
+        if (!panWide) return
         val max = WideContent.maxOffset(shownH, availableH)
         if (max == 0f) return
         if (edgeShaderColorV != theme.background || topEdge == null) {

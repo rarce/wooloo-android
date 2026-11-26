@@ -238,6 +238,8 @@ private fun TerminalScreenContent(
         presentAlerts(
             connection.alerts,
             banner = { alert -> alertBanner(alert, paneId, connection.snapshot.value?.pane(paneId)?.workspaceId) },
+            // A banner that waited may be about the pane opened meanwhile (Open on the blocked one).
+            stillWanted = { it.paneId != paneId },
         ) { banner ->
             val result = snackbar.showSnackbar(
                 message = banner.message,
@@ -840,11 +842,12 @@ internal fun alertBanner(alert: AgentAlert, currentPaneId: String, currentWorksp
 /**
  * Shows each alert worth a [banner] with [show]; a newer one cancels the one on screen. Ignored
  * alerts leave the current banner alone. An agent finishing never hides one that needs input: it
- * waits until that banner is gone, then shows (only the latest such one waits).
+ * waits until that banner is gone, then shows if still [stillWanted] (only the latest one waits).
  */
 internal suspend fun presentAlerts(
     alerts: Flow<AgentAlert>,
     banner: (AgentAlert) -> AlertBanner?,
+    stillWanted: (AlertBanner) -> Boolean = { true },
     show: suspend (AlertBanner) -> Unit,
 ): Unit = coroutineScope {
     var current: Job? = null
@@ -858,12 +861,14 @@ internal suspend fun presentAlerts(
         current?.cancelAndJoin()
         // A finished banner shown now makes an older waiting one stale.
         if (!next.blocked) waiting = null
+        // Set now, not when the job runs: an alert in the same burst must see this one as shown.
+        currentBlocked = next.blocked
         current = launch {
             var shown: AlertBanner? = next
             while (shown != null) {
                 currentBlocked = shown.blocked
                 show(shown)
-                shown = waiting.also { waiting = null }
+                shown = waiting.also { waiting = null }?.takeIf(stillWanted)
             }
         }
     }

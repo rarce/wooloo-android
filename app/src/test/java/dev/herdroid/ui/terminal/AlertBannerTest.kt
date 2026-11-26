@@ -7,6 +7,8 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
@@ -91,6 +93,44 @@ class AlertBannerTest {
         alerts.emit(alert("p6", "w1", AgentStatus.DONE))
         dismiss.complete(Unit)
         assertEquals(listOf("p2", "p3", "p5", "p4", "p6"), shown)
+        job.cancel()
+    }
+
+    @Test fun aBlockedAlertInTheSameBurstAsAFinishedOneShowsFirst() = runTest {
+        val shown = mutableListOf<String>()
+        val dismiss = CompletableDeferred<Unit>()
+        val job = launch {
+            // flowOf emits both without suspending: the blocked banner's job hasn't run yet.
+            presentAlerts(flowOf(alert("p2", "w1", AgentStatus.BLOCKED), alert("p3", "w1", AgentStatus.DONE)),
+                banner = { alertBanner(it, "p1", "w1") }) { banner ->
+                shown += banner.paneId
+                dismiss.await()
+            }
+        }
+        advanceUntilIdle()
+        assertEquals(listOf("p2"), shown)
+        dismiss.complete(Unit)
+        advanceUntilIdle()
+        assertEquals(listOf("p2", "p3"), shown)
+        job.cancel()
+    }
+
+    @Test fun aWaitingBannerForThePaneNowOpenIsDropped() = runTest(UnconfinedTestDispatcher()) {
+        val alerts = MutableSharedFlow<AgentAlert>()
+        val shown = mutableListOf<String>()
+        var openPane = "p1"
+        var dismiss = CompletableDeferred<Unit>()
+        val job = launch {
+            presentAlerts(alerts, banner = { alertBanner(it, openPane, "w1") }, stillWanted = { it.paneId != openPane }) { banner ->
+                shown += banner.paneId
+                dismiss.await()
+            }
+        }
+        alerts.emit(alert("p2", "w1", AgentStatus.BLOCKED))
+        alerts.emit(alert("p3", "w1", AgentStatus.DONE)) // waits
+        openPane = "p3" // the user opened p3 meanwhile
+        dismiss.complete(Unit)
+        assertEquals(listOf("p2"), shown)
         job.cancel()
     }
 }
