@@ -8,9 +8,12 @@ import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -184,9 +187,11 @@ private fun TerminalScreenContent(
     val snackbar = remember { SnackbarHostState() }
 
     val controller = remember(hostId, paneId) { TerminalController(connection, paneId) }
-    val detectSubmitMenu = (pane?.scroll?.offsetFromBottom ?: 0L) == 0L &&
-        listOf(agent?.agent, agent?.displayAgent, pane?.agentName).any { it?.contains("claude", ignoreCase = true) == true }
-    LaunchedEffect(controller, detectSubmitMenu) { controller.setSubmitDetection(detectSubmitMenu) }
+    val claudeAgent = listOf(agent?.agent, agent?.displayAgent, pane?.agentName).any { it?.contains("claude", ignoreCase = true) == true }
+    val blocked = agent?.agentStatus == AgentStatus.BLOCKED
+    // The screen only shows the active prompt while scrolled to the bottom.
+    val detectOptions = (pane?.scroll?.offsetFromBottom ?: 0L) == 0L && (claudeAgent || blocked)
+    LaunchedEffect(controller, detectOptions) { controller.setOptionDetection(detectOptions) }
     DisposableEffect(controller) { onDispose { controller.dispose() } }
 
     var terminalView by remember { mutableStateOf<TerminalView?>(null) }
@@ -351,10 +356,10 @@ private fun TerminalScreenContent(
                     onRetry = { controller.open() },
                     onBack = onBack)
             }
-            val claudeReview = detectSubmitMenu && controller.showsSubmitMenu
-            if (controller.state == PaneState.Live && !controller.readOnly &&
-                (claudeReview || agent?.agentStatus == AgentStatus.BLOCKED)) {
-                QuickAnswers(submitMenu = claudeReview, onAnswer = { terminalView?.sendText(it) })
+            val options = if (detectOptions) controller.promptOptions else emptyList()
+            val claudeReview = claudeAgent && isSubmitMenu(options)
+            if (controller.state == PaneState.Live && !controller.readOnly && (claudeReview || blocked)) {
+                QuickAnswers(options.ifEmpty { FallbackAnswers }, onAnswer = { terminalView?.sendText(it) })
             }
             ExtraKeysBar(
                 modifiers = controller.modifiers,
@@ -703,38 +708,60 @@ private fun SwitcherChip(snapshot: SessionSnapshot, pane: PaneInfo, selected: Bo
     }
 }
 
-/** One-tap answers for a blocked agent's numbered prompt, above the extra keys (which have esc). */
+/**
+ * One-tap answers for a blocked agent's numbered prompt, above the extra keys (which have esc).
+ * Each button sends its option's number; the focused option is filled. They share the width when
+ * they fit and scroll sideways when they don't.
+ */
 @Composable
-internal fun QuickAnswers(submitMenu: Boolean = false, onAnswer: (String) -> Unit) {
+internal fun QuickAnswers(options: List<PromptOption> = FallbackAnswers, onAnswer: (String) -> Unit) {
     val blocked = LocalStatusColors.current.blocked
     val onSolid = LocalStatusColors.current.onSolid
     val shape = RoundedCornerShape(12.dp)
-    Row(
-        Modifier.fillMaxWidth().padding(start = 8.dp, end = 8.dp, top = 8.dp),
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-    ) {
-        val labels = if (submitMenu) listOf("Submit answers", "Cancel") else listOf("1", "2", "3")
-        labels.forEachIndexed { index, answer ->
-            val first = index == 0
-            Box(
-                Modifier
-                    .weight(1f)
-                    .height(44.dp)
-                    .clip(shape)
-                    .then(if (first) Modifier.background(blocked) else Modifier.border(1.dp, blocked, shape))
-                    .clickable(onClickLabel = "Answer $answer") { onAnswer((index + 1).toString()) },
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    answer,
-                    style = MaterialTheme.typography.labelLarge,
-                    fontWeight = if (first) FontWeight.Bold else FontWeight.Medium,
-                    color = if (first) onSolid else MaterialTheme.colorScheme.onSurface,
-                )
+    val spacing = 6.dp
+    BoxWithConstraints(Modifier.fillMaxWidth().padding(start = 8.dp, end = 8.dp, top = 8.dp)) {
+        val fits = options.size * QuickAnswerMinWidth.value + (options.size - 1) * spacing.value <= maxWidth.value
+        Row(
+            if (fits) Modifier.fillMaxWidth() else Modifier.horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(spacing),
+        ) {
+            options.forEach { option ->
+                val solid = option.focused
+                Row(
+                    (if (fits) Modifier.weight(1f) else Modifier.widthIn(min = QuickAnswerMinWidth, max = 168.dp))
+                        .height(44.dp)
+                        .clip(shape)
+                        .then(if (solid) Modifier.background(blocked) else Modifier.border(1.dp, blocked, shape))
+                        .clickable(onClickLabel = "Answer ${option.number}") { onAnswer(option.number.toString()) }
+                        .padding(horizontal = 10.dp),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    val color = if (solid) onSolid else MaterialTheme.colorScheme.onSurface
+                    Text(
+                        option.number.toString(),
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = color,
+                    )
+                    if (option.label.isNotEmpty()) {
+                        Text(
+                            option.label,
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = if (solid) FontWeight.Bold else FontWeight.Medium,
+                            color = color,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.padding(start = 6.dp),
+                        )
+                    }
+                }
             }
         }
     }
 }
+
+private val QuickAnswerMinWidth = 84.dp
 
 @Composable
 private fun PaneOverlay(

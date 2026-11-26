@@ -31,11 +31,33 @@ class TerminalPresentationTest {
 
     @Test fun finalReviewButtonsSendTheNumberOfTheChosenOption() {
         val keys = mutableListOf<String>()
-        compose.setContent { WoolooMobileTheme { QuickAnswers(submitMenu = true) { keys.add(it) } } }
+        val options = parsePromptOptions(sequenceOf(" ❯ 1. Submit answers", "   2. Cancel"))
+        compose.setContent { WoolooMobileTheme { QuickAnswers(options) { keys.add(it) } } }
         compose.onNodeWithText("3").assertDoesNotExist()
         compose.onNodeWithText("Cancel").performClick()
         compose.onNodeWithText("Submit answers").performClick()
         assertEquals(listOf("2", "1"), keys)
+    }
+
+    @Test fun fallbackOffersOneToThree() {
+        val keys = mutableListOf<String>()
+        compose.setContent { WoolooMobileTheme { QuickAnswers { keys.add(it) } } }
+        compose.onNodeWithText("4").assertDoesNotExist()
+        compose.onNodeWithText("3").performClick()
+        assertEquals(listOf("3"), keys)
+    }
+
+    @Test fun everyParsedOptionGetsAButtonThatScrollsIntoReach() {
+        val keys = mutableListOf<String>()
+        val options = parsePromptOptions(sequenceOf(
+            "❯ 1. Postgres", "  2. MySQL", "  3. SQLite", "  4. DuckDB", "  5. Type something.", "  6. Submit",
+        ))
+        compose.setContent { WoolooMobileTheme { QuickAnswers(options) { keys.add(it) } } }
+        (1..6).forEach { compose.onNodeWithText(it.toString()).assertExists() }
+        compose.onNodeWithText("6").performScrollTo().assertIsDisplayed().performClick()
+        compose.onNodeWithText("5").performScrollTo().assertIsDisplayed().performClick()
+        compose.onNodeWithText("1").performScrollTo().assertIsDisplayed().performClick()
+        assertEquals(listOf("6", "5", "1"), keys)
     }
 
     @Test fun largeFontHeaderKeepsSpaceStatusAndMetricsInsideItsBounds() {
