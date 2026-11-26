@@ -194,7 +194,9 @@ private fun TerminalScreenContent(
     val blocked = agent?.agentStatus == AgentStatus.BLOCKED
     // The screen only shows the active prompt while scrolled to the bottom.
     val detectOptions = (pane?.scroll?.offsetFromBottom ?: 0L) == 0L && (claudeAgent || blocked)
-    LaunchedEffect(controller, detectOptions) { controller.setOptionDetection(detectOptions) }
+    // During composition, not in an effect: the options below are parsed in this same pass, so the
+    // 1/2/3 fallback never flashes before them. A no-op unless detection changes.
+    controller.setOptionDetection(detectOptions)
     DisposableEffect(controller) { onDispose { controller.dispose() } }
 
     var terminalView by remember { mutableStateOf<TerminalView?>(null) }
@@ -362,7 +364,7 @@ private fun TerminalScreenContent(
             val options = if (detectOptions) controller.promptOptions else emptyList()
             val claudeReview = claudeAgent && isSubmitMenu(options)
             if (controller.state == PaneState.Live && !controller.readOnly && (claudeReview || blocked)) {
-                QuickAnswers(options.ifEmpty { FallbackAnswers }, onAnswer = { terminalView?.sendText(it) })
+                QuickAnswers(options.ifEmpty { FallbackAnswers }, fromScreen = options.isNotEmpty(), onAnswer = { terminalView?.sendText(it) })
             }
             ExtraKeysBar(
                 modifiers = controller.modifiers,
@@ -717,7 +719,12 @@ private fun SwitcherChip(snapshot: SessionSnapshot, pane: PaneInfo, selected: Bo
  * they fit and scroll sideways when they don't.
  */
 @Composable
-internal fun QuickAnswers(options: List<PromptOption> = FallbackAnswers, onAnswer: (String) -> Unit) {
+internal fun QuickAnswers(
+    options: List<PromptOption> = FallbackAnswers,
+    // Only options read from the screen are highlighted there; the fallback's filled 1 is just a default.
+    fromScreen: Boolean = options !== FallbackAnswers,
+    onAnswer: (String) -> Unit,
+) {
     val blocked = LocalStatusColors.current.blocked
     val onSolid = LocalStatusColors.current.onSolid
     val shape = RoundedCornerShape(12.dp)
@@ -736,10 +743,10 @@ internal fun QuickAnswers(options: List<PromptOption> = FallbackAnswers, onAnswe
                         .height(44.dp)
                         .clip(shape)
                         .then(if (solid) Modifier.background(blocked) else Modifier.border(1.dp, blocked, shape))
-                        .semantics {
+                        .then(if (fromScreen) Modifier.semantics {
                             selected = solid
                             if (solid) stateDescription = "Highlighted in the prompt"
-                        }
+                        } else Modifier)
                         .clickable(onClickLabel = "Answer ${option.number}", role = Role.Button) {
                             onAnswer(option.number.toString())
                         }

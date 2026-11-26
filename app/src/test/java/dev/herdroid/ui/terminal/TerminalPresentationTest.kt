@@ -45,6 +45,10 @@ class TerminalPresentationTest {
         val keys = mutableListOf<String>()
         compose.setContent { WoolooMobileTheme { QuickAnswers { keys.add(it) } } }
         compose.onNodeWithText("4").assertDoesNotExist()
+        // The filled 1 is only a default: TalkBack mustn't call it highlighted in the prompt.
+        compose.onNodeWithText("1")
+            .assert(SemanticsMatcher.keyNotDefined(SemanticsProperties.Selected))
+            .assert(SemanticsMatcher.keyNotDefined(SemanticsProperties.StateDescription))
         compose.onNodeWithText("3").performClick()
         assertEquals(listOf("3"), keys)
     }
@@ -58,7 +62,9 @@ class TerminalPresentationTest {
         (1..6).forEach { compose.onNodeWithText(it.toString()).assertExists() }
         compose.onNodeWithText("6").performScrollTo().assertIsDisplayed().performClick()
         compose.onNodeWithText("5").performScrollTo().assertIsDisplayed().performClick()
-        compose.onNodeWithText("1").performScrollTo().assertIsDisplayed().assertIsSelected().performClick()
+        compose.onNodeWithText("1").performScrollTo().assertIsDisplayed().assertIsSelected()
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Highlighted in the prompt"))
+            .performClick()
         compose.onNodeWithText("2").assert(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Button))
             .assertIsNotSelected()
         assertEquals(listOf("6", "5", "1"), keys)

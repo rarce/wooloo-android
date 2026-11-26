@@ -12,35 +12,68 @@ internal val FallbackAnswers = listOf(PromptOption(1, "", focused = true), Promp
 // "❯ 1. Yes", "  2) No": an optional focus marker, a single-key number and a label.
 private val promptItem = Regex("""(?:([❯›>])\s*)?([1-9])[.)]\s+(\S.*?)""")
 // Claude Code's multi-select items: "[ ] Option", "[✔] Option".
-private val checkbox = Regex("""\[[ ✔✓xX×]]\s+""")
+private val checkbox = Regex("""^\[[ ✔✓xX×]]\s+""")
 private val submitLabel = Regex("""Submit (?:answers|responses)""", RegexOption.IGNORE_CASE)
 
 /**
+ * The most non-blank rows below a prompt's last item: Claude's separator, the item's description
+ * and the "Enter to select · ↑/↓ to navigate" hint fit; a numbered list further up is history.
+ */
+private const val MAX_ROWS_BELOW_PROMPT = 6
+
+/** A focus marker and its space ("❯ "): how far it can push an item's number right. */
+private const val MARKER_WIDTH = 2
+
+/**
  * The options of the active numbered prompt in [rows] (top to bottom): the last run of consecutive
- * items 1, 2, 3… with exactly one focus marker. Lines between items (descriptions, wrapped labels)
- * are allowed; box borders are ignored. A numbered list without a focus marker is ordinary output,
- * and any numbered list below a prompt means that prompt is no longer the active one.
+ * items with exactly one focus marker, ending near the bottom of the screen. Runs start at 1, except
+ * the first item on screen, whose prompt may have scrolled off the top. Lines between items
+ * (descriptions, wrapped labels, numbered lines indented deeper than the run's items) are allowed;
+ * box borders are ignored. A numbered list without a focus marker is ordinary output, and any
+ * numbered list below a prompt means that prompt is no longer the active one.
  */
 internal fun parsePromptOptions(rows: Sequence<String>): List<PromptOption> {
+    val lines = rows.toList()
     var last = emptyList<PromptOption>()
+    var lastRow = -1
     var run = ArrayList<PromptOption>()
+    var runIndent = 0
+    var runEnd = -1
+    var seenItem = false
     fun close(broken: Boolean = false) {
         // An out-of-sequence item means the screen moved on from any earlier prompt.
-        if (broken || run.size >= 2) last = if (!broken && run.count { it.focused } == 1) run else emptyList()
+        if (broken || run.size >= 2) {
+            last = if (!broken && run.count { it.focused } == 1) run else emptyList()
+            lastRow = runEnd
+        }
         run = ArrayList()
     }
-    for (line in rows) {
-        val match = promptItem.matchEntire(line.trim().trim('│').trim()) ?: continue
+    for ((row, line) in lines.withIndex()) {
+        // A box border counts as indentation, so items keep their columns inside boxes.
+        val text = line.trimEnd().trimEnd('│').trimEnd()
+        val lead = text.length - text.trimStart().length
+        val body = if (text.startsWith("│", lead)) text.replaceRange(lead, lead + 1, " ") else text
+        val trimmed = body.trimStart()
+        val match = promptItem.matchEntire(trimmed) ?: continue
+        val indent = body.length - trimmed.length + match.groups[2]!!.range.first
+        // "     2. Then run migrations" under item 1 is its description, not item 2. A focus marker
+        // written before the digit ("│ ❯ 2." under "│ 1.") shifts it by up to its own width.
+        if (run.isNotEmpty() && indent > runIndent + MARKER_WIDTH) continue
         val (marker, digit, label) = match.destructured
         val option = PromptOption(digit.toInt(), label.replaceFirst(checkbox, ""), focused = marker.isNotEmpty())
-        when (option.number) {
-            run.size + 1 -> run.add(option)
-            1 -> { close(); run.add(option) }
+        val next = (run.lastOrNull()?.number ?: 0) + 1
+        when {
+            option.number == next && run.isNotEmpty() -> run.add(option)
+            option.number == 1 || !seenItem -> { close(); run.add(option); runIndent = indent }
             else -> close(broken = true)
         }
+        if (run.lastOrNull() === option) runEnd = row
+        seenItem = true
     }
     close()
-    return last
+    if (last.isEmpty()) return last
+    val below = (lastRow + 1 until lines.size).count { lines[it].isNotBlank() }
+    return if (below <= MAX_ROWS_BELOW_PROMPT) last else emptyList()
 }
 
 /** Claude Code's final review of a multi-question form: "1. Submit answers", "2. Cancel". */

@@ -32,6 +32,15 @@ class TerminalRecoveryTest {
         Dispatchers.resetMain()
     }
 
+    @Test fun enablingOptionDetectionReadsTheScreenAtOnce() {
+        controller.model.applyFrame(40, 6, true, "\u001b[1;1H\u276f 1. Yes\r\n  2. No".toByteArray())
+        assertEquals(emptyList<PromptOption>(), controller.promptOptions)
+        controller.setOptionDetection(true)
+        assertEquals(listOf(1, 2), controller.promptOptions.map { it.number })
+        controller.setOptionDetection(false)
+        assertEquals(emptyList<PromptOption>(), controller.promptOptions)
+    }
+
     @Test(timeout = 10_000) fun channelFailureWhileConnectedRetriesThePaneWithoutStealingControl(): Unit = runBlocking {
         startLive()
         connection.opened.last().remote.close()
