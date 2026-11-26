@@ -113,6 +113,7 @@ import dev.herdroid.herdr.RemoteCommand
 import dev.herdroid.terminal.TerminalView
 import dev.herdroid.terminal.TerminalViewListener
 import dev.herdroid.ui.components.ComposerSheet
+import dev.herdroid.ui.components.QuickReply
 import dev.herdroid.ui.components.ConfirmDialog
 import dev.herdroid.ui.components.SnapshotBanner
 import dev.herdroid.ui.components.ConnectionBanner
@@ -415,6 +416,7 @@ private fun TerminalScreenContent(
             isAgent = isAgent,
             onDismiss = { composer = false },
             pickImagesOnOpen = pickComposerImages,
+            answers = (if (detectOptions) controller.promptOptions else emptyList()).map { it.asQuickReply() },
             onQuickReply = { reply -> controller.input(reply.input) },
             onSend = { text, images, uploads ->
                 when {
@@ -714,6 +716,10 @@ private fun SwitcherChip(snapshot: SessionSnapshot, pane: PaneInfo, selected: Bo
         )
     }
 }
+
+/** A composer chip for [this] option: its number and label, sending the number. */
+internal fun PromptOption.asQuickReply() =
+    QuickReply(if (label.isEmpty()) "$number" else "$number $label", number.toString())
 
 /** What an alert about another agent shows over the terminal. */
 internal data class AlertBanner(val message: String, val workspaceId: String, val paneId: String, val elsewhere: Boolean)

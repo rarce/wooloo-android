@@ -54,6 +54,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -82,17 +83,21 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.herdroid.herdr.AgentStatus
 
 /** A quick reply that is typed straight into the pane (raw terminal input). */
 data class QuickReply(val label: String, val input: String)
 
-val AgentQuickReplies = listOf(
+private val DefaultAnswers = listOf(QuickReply("1", "1"), QuickReply("2", "2"), QuickReply("3", "3"))
+
+val AgentQuickReplies = agentQuickReplies()
+
+/** The agent's quick keys, with the prompt's own [answers] (when known) in place of 1/2/3. */
+fun agentQuickReplies(answers: List<QuickReply> = emptyList()): List<QuickReply> = listOf(
     QuickReply("⏎ Enter", "\r"),
-    QuickReply("1", "1"),
-    QuickReply("2", "2"),
-    QuickReply("3", "3"),
+) + answers.ifEmpty { DefaultAnswers } + listOf(
     QuickReply("y", "y"),
     QuickReply("n", "n"),
     QuickReply("Esc", "\u001b"),
@@ -124,6 +129,7 @@ fun ComposerSheet(
     onQuickReply: (QuickReply) -> Unit,
     onSend: suspend (text: String, images: List<File>, uploads: AttachmentUploads) -> Result<Unit>,
     pickImagesOnOpen: Boolean = false,
+    answers: List<QuickReply> = emptyList(),
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -183,8 +189,14 @@ fun ComposerSheet(
                 if (agentStatus != null) StatusPill(agentStatus, agentStatus.name.lowercase())
             }
             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(if (isAgent) AgentQuickReplies else ShellQuickReplies) { reply ->
-                    AssistChip(enabled = !sending, onClick = { onQuickReply(reply) }, label = { Text(reply.label) })
+                items(if (isAgent) agentQuickReplies(answers) else ShellQuickReplies) { reply ->
+                    AssistChip(
+                        enabled = !sending,
+                        onClick = { onQuickReply(reply) },
+                        label = {
+                            Text(reply.label, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = 180.dp))
+                        },
+                    )
                 }
             }
             Text(
