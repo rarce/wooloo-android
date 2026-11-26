@@ -93,6 +93,12 @@ class PromptOptionsTest {
         assertTrue(parse("❯ 1. Yes", "  2. No", "Next steps:", "1. Install", "2. Run").isEmpty())
         assertTrue(parse("❯ 1. Yes", "  2. No", "❯ 1. Again", "> 2. Twice").isEmpty())
         assertTrue(parse("❯ 1. Yes", "  2. No", "  1. One", "  3. Three").isEmpty())
+        // A later prompt whose first item isn't recognized still retires the earlier one.
+        assertTrue(parse("> 1. do X", "  2. do Y", "● 1. Allow once", "  2. Allow always").isEmpty())
+    }
+
+    @Test fun aLoneLaterItemKeepsThePrompt() {
+        assertEquals(listOf("Yes", "No"), parse("❯ 1. Yes", "  2. No", "Note:", "1. see above").map { it.label })
     }
 
     @Test fun dropsMultiSelectCheckboxes() {

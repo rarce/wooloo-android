@@ -25,7 +25,8 @@ internal fun parsePromptOptions(rows: Sequence<String>): List<PromptOption> {
     var last = emptyList<PromptOption>()
     var run = ArrayList<PromptOption>()
     fun close(broken: Boolean = false) {
-        if (broken && run.isNotEmpty() || run.size >= 2) last = if (!broken && run.count { it.focused } == 1) run else emptyList()
+        // An out-of-sequence item means the screen moved on from any earlier prompt.
+        if (broken || run.size >= 2) last = if (!broken && run.count { it.focused } == 1) run else emptyList()
         run = ArrayList()
     }
     for (line in rows) {
