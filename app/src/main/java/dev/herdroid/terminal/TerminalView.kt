@@ -5,8 +5,11 @@ import android.content.Context
 import android.os.Build
 import android.os.Bundle
 import android.view.accessibility.AccessibilityNodeInfo
+import androidx.core.graphics.withTranslation
 import dev.herdroid.R
 import android.graphics.Canvas
+import android.graphics.LinearGradient
+import android.graphics.Shader
 import android.graphics.Paint
 import android.graphics.RectF
 import android.graphics.Typeface
@@ -74,7 +77,11 @@ interface TerminalViewListener {
  *   so Gboard/SwiftKey word composition becomes correct keystrokes and backspaces.
  * - Vertical drags scroll herdr's scrollback (with fling), pinch changes font size,
  *   taps become mouse clicks for TUIs that enable mouse reporting.
- * - If the remote screen is wider than the view (e.g. read-only observe), it is scaled to fit.
+ * - If the remote screen is wider than the view it is scaled to fit, except while watching
+ *   ([panWide]: the pane keeps its controller's size), where it pans sideways with a one-finger drag
+ *   locked to the horizontal axis, with a position bar and a fade on the hidden edge, and a screen
+ *   taller than the view keeps the cursor row (or, with the cursor hidden, the bottom) in view,
+ *   unless [fitScreen] asks to scale it all into the view.
  */
 @SuppressLint("ViewConstructor")
 class TerminalView(
@@ -86,6 +93,20 @@ class TerminalView(
     var listener: TerminalViewListener? = null
     var theme: TerminalTheme = TerminalTheme.Default
         set(value) { field = value; invalidate() }
+
+    /** Pan a remote screen wider than the view instead of scaling it (set while watching). */
+    var panWide = false
+        set(value) { if (field != value) { field = value; invalidate() } }
+
+    /** While [panWide], scale a larger screen down to fit both ways instead of panning it. */
+    var fitScreen = false
+        set(value) { if (field != value) { field = value; invalidate() } }
+
+    /** How far a wide screen is panned to the left, in (scaled) pixels. */
+    private var panX = 0f
+
+    /** How far a tall screen is moved up to keep the cursor in view, in (scaled) pixels. */
+    private var panY = 0f
 
     var inputEnabled = true
         set(value) {
@@ -141,6 +162,16 @@ class TerminalView(
     private val bgPaint = Paint()
     private val cursorPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val linePaint = Paint().apply { strokeWidth = 2f }
+    private val edgePaint = Paint()
+    private val thumbPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val edgeWidth = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 20f, resources.displayMetrics)
+    private val thumbHeight = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 3f, resources.displayMetrics)
+    private var edgeShaderColor = 0
+    private var leftEdge: LinearGradient? = null
+    private var rightEdge: LinearGradient? = null
+    private var edgeShaderColorV = 0
+    private var topEdge: LinearGradient? = null
+    private var bottomEdge: LinearGradient? = null
 
     private var fontSizeSp = 13f
     private var cellWidth = 0f
@@ -243,16 +274,100 @@ class TerminalView(
         canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), bgPaint)
         synchronized(model.lock) {
             val emu = model.emulator
-            val contentWidth = emu.cols * cellWidth
-            val available = (width - paddingLeft - paddingRight).toFloat()
-            val scale = if (contentWidth > available && contentWidth > 0) available / contentWidth else 1f
+            val available = availableWidth()
+            val scale = contentScale(emu)
+            val shown = emu.cols * cellWidth * scale
+            panX = WideContent.clamp(panX, shown, available)
+            val availableH = availableHeight()
+            val shownH = emu.rows * cellHeight * scale
+            updatePanY(emu, scale)
             canvas.save()
-            canvas.translate(paddingLeft.toFloat(), paddingTop.toFloat())
+            if (panX > 0f || shown > available) {
+                canvas.clipRect(paddingLeft.toFloat(), 0f, paddingLeft + available, height.toFloat())
+            }
+            if (panY > 0f) canvas.clipRect(0f, paddingTop.toFloat(), width.toFloat(), paddingTop + availableH)
+            canvas.translate(paddingLeft - panX, paddingTop - panY)
             if (scale != 1f) canvas.scale(scale, scale)
             for (y in 0 until emu.rows) drawRow(canvas, emu, y)
             drawCursor(canvas, emu)
             canvas.restore()
+            drawWideIndicators(canvas, shown, available)
+            drawTallIndicators(canvas, shownH, availableH)
         }
+    }
+
+    private fun availableWidth() = (width - paddingLeft - paddingRight).toFloat()
+    private fun availableHeight() = (height - paddingTop - paddingBottom).toFloat()
+
+    /**
+     * A screen wider than the view shrinks to fit its width, unless it is being panned. Fitting a
+     * panned (watched) screen fits its height too, so nothing is left to pan.
+     */
+    private fun contentScale(emu: TerminalEmulator): Float {
+        val contentWidth = emu.cols * cellWidth
+        val available = availableWidth()
+        if (!panWide) return if (contentWidth > available && contentWidth > 0) available / contentWidth else 1f
+        if (!fitScreen) return 1f
+        val contentHeight = emu.rows * cellHeight
+        val byWidth = if (contentWidth > 0) available / contentWidth else 1f
+        val byHeight = if (contentHeight > 0) availableHeight() / contentHeight else 1f
+        return minOf(1f, byWidth, byHeight).takeIf { it > 0f } ?: 1f
+    }
+
+    /** While watching, a screen taller than the view follows the cursor, or shows its bottom. */
+    private fun updatePanY(emu: TerminalEmulator, scale: Float) {
+        val rowH = cellHeight * scale
+        val cursorTop = if (emu.cursorVisible) emu.cursorY * rowH else null
+        panY = if (!panWide) 0f
+        else WideContent.follow(panY, emu.rows * rowH, availableHeight(), cursorTop, rowH, margin = edgeWidth)
+    }
+
+    /** Fades over the top or bottom edge while rows are hidden there. */
+    private fun drawTallIndicators(canvas: Canvas, shownH: Float, availableH: Float) {
+        // Only a watched screen is offset; in control a briefly taller frame (keyboard) gets none.
+        if (!panWide) return
+        val max = WideContent.maxOffset(shownH, availableH)
+        if (max == 0f) return
+        if (edgeShaderColorV != theme.background || topEdge == null) {
+            edgeShaderColorV = theme.background
+            val clear = theme.background and 0x00FFFFFF
+            topEdge = LinearGradient(0f, 0f, 0f, edgeWidth, theme.background, clear, Shader.TileMode.CLAMP)
+            bottomEdge = LinearGradient(0f, 0f, 0f, edgeWidth, clear, theme.background, Shader.TileMode.CLAMP)
+        }
+        val top = paddingTop.toFloat()
+        if (panY > 0.5f) canvas.withTranslation(0f, top) {
+            edgePaint.shader = topEdge
+            drawRect(0f, 0f, width.toFloat(), edgeWidth, edgePaint)
+        }
+        if (panY < max - 0.5f) canvas.withTranslation(0f, top + availableH - edgeWidth) {
+            edgePaint.shader = bottomEdge
+            drawRect(0f, 0f, width.toFloat(), edgeWidth, edgePaint)
+        }
+    }
+
+    /** Fades over the edges with hidden content and a thin bar showing the visible part. */
+    private fun drawWideIndicators(canvas: Canvas, shown: Float, available: Float) {
+        val (start, length) = WideContent.thumb(panX, shown, available) ?: return
+        if (edgeShaderColor != theme.background || leftEdge == null) {
+            edgeShaderColor = theme.background
+            val clear = theme.background and 0x00FFFFFF
+            leftEdge = LinearGradient(0f, 0f, edgeWidth, 0f, theme.background, clear, Shader.TileMode.CLAMP)
+            rightEdge = LinearGradient(0f, 0f, edgeWidth, 0f, clear, theme.background, Shader.TileMode.CLAMP)
+        }
+        val left = paddingLeft.toFloat()
+        val right = left + available
+        if (panX > 0.5f) canvas.withTranslation(left, 0f) {
+            edgePaint.shader = leftEdge
+            drawRect(0f, 0f, edgeWidth, height.toFloat(), edgePaint)
+        }
+        if (panX < WideContent.maxOffset(shown, available) - 0.5f) canvas.withTranslation(right - edgeWidth, 0f) {
+            edgePaint.shader = rightEdge
+            drawRect(0f, 0f, edgeWidth, height.toFloat(), edgePaint)
+        }
+        thumbPaint.color = (theme.foreground and 0x00FFFFFF) or 0x80000000.toInt()
+        val bottom = height - thumbHeight
+        tmpRect.set(left + start * available, bottom, left + (start + length) * available, height.toFloat())
+        canvas.drawRoundRect(tmpRect, thumbHeight / 2, thumbHeight / 2, thumbPaint)
     }
 
     private fun drawRow(canvas: Canvas, emu: TerminalEmulator, y: Int) {
@@ -394,6 +509,7 @@ class TerminalView(
     // ---- Touch ------------------------------------------------------------------------
 
     private var scrollAccumulator = 0f
+    private var dragAxis: WideContent.Axis? = null
     private val scroller = OverScroller(context)
     private var lastFlingY = 0
     private var scaling = false
@@ -419,6 +535,7 @@ class TerminalView(
         override fun onDown(e: MotionEvent): Boolean {
             scroller.forceFinished(true)
             scrollAccumulator = 0f
+            dragAxis = null
             return true
         }
 
@@ -439,12 +556,15 @@ class TerminalView(
 
         override fun onScroll(e1: MotionEvent?, e2: MotionEvent, dx: Float, dy: Float): Boolean {
             if (scaling) return true
-            scrollBy(dy, e2.x, e2.y)
+            val axis = dragAxis ?: WideContent.axis(
+                (e1?.x ?: e2.x) - e2.x, (e1?.y ?: e2.y) - e2.y, slop = 0f, canPan = canPan(),
+            ).also { dragAxis = it }
+            if (axis == WideContent.Axis.Horizontal) panBy(dx) else scrollBy(dy, e2.x, e2.y)
             return true
         }
 
         override fun onFling(e1: MotionEvent?, e2: MotionEvent, vx: Float, vy: Float): Boolean {
-            if (scaling || abs(vy) < abs(vx)) return false
+            if (scaling || dragAxis == WideContent.Axis.Horizontal || abs(vy) < abs(vx)) return false
             lastFlingY = 0
             scroller.fling(0, 0, 0, -vy.toInt(), 0, 0, Int.MIN_VALUE, Int.MAX_VALUE)
             postOnAnimation(flingRunnable)
@@ -461,6 +581,17 @@ class TerminalView(
                 postOnAnimation(this)
             }
         }
+    }
+
+    private fun canPan(): Boolean = synchronized(model.lock) {
+        val emu = model.emulator
+        emu.cols * cellWidth * contentScale(emu) > availableWidth()
+    }
+
+    private fun panBy(dx: Float) {
+        val shown = synchronized(model.lock) { model.emulator.let { it.cols * cellWidth * contentScale(it) } }
+        val next = WideContent.clamp(panX + dx, shown, availableWidth())
+        if (next != panX) { panX = next; invalidate() }
     }
 
     private fun scrollBy(dy: Float, x: Float, y: Float) {
@@ -485,11 +616,10 @@ class TerminalView(
 
     fun cellAt(px: Float, py: Float): Pair<Int, Int> {
         val emu = model.emulator
-        val contentWidth = emu.cols * cellWidth
-        val available = (width - paddingLeft - paddingRight).toFloat()
-        val scale = if (contentWidth > available && contentWidth > 0) available / contentWidth else 1f
-        val col = ((px - paddingLeft) / (cellWidth * scale)).toInt().coerceIn(0, max(0, emu.cols - 1))
-        val row = ((py - paddingTop) / (cellHeight * scale)).toInt().coerceIn(0, max(0, emu.rows - 1))
+        val scale = contentScale(emu)
+        val col = WideContent.column(px - paddingLeft, panX, cellWidth, scale, emu.cols)
+        updatePanY(emu, scale)
+        val row = ((py - paddingTop + panY) / (cellHeight * scale)).toInt().coerceIn(0, max(0, emu.rows - 1))
         return col to row
     }
 

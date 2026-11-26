@@ -95,20 +95,46 @@ class TerminalRecoveryTest {
         assertEquals(2, connection.opened.size)
     }
 
+    @Test(timeout = 10_000) fun takenOverPaneIsWatchedUntilTheUserTakesControlBack(): Unit = runBlocking {
+        startLive()
+        connection.opened.last().record("""{"type":"terminal.closed","reason":"taken over"}""")
+        // No modal: the pane reopens as a watcher right away, without taking control back.
+        await { connection.opened.size == 2 }
+        assertTrue(connection.observers.last())
+        assertFalse(connection.takeovers.last())
+        assertTrue(controller.readOnly)
+        assertTrue(controller.controlMoved)
+        connection.opened.last().frame()
+        await { controller.state == PaneState.Live }
+
+        controller.takeControl()
+        await { connection.opened.size == 3 }
+        assertTrue(connection.takeovers.last())
+        assertFalse(connection.observers.last())
+        assertFalse(controller.readOnly)
+        assertFalse(controller.controlMoved)
+    }
+
     @Test(timeout = 10_000) fun takeoverIsNotUndoneBySshRecovery(): Unit = runBlocking {
         startLive()
         connection.opened.last().record("""{"type":"terminal.closed","reason":"taken over"}""")
-        await { controller.state == PaneState.TakenOver }
+        await { connection.opened.size == 2 }
+        connection.opened.last().frame()
+        await { controller.state == PaneState.Live }
         connection.status.value = ConnectionStatus.Reconnecting(1, "fixture", 0)
         assertEquals(PaneState.Offline, controller.state)
         connection.status.value = ConnectionStatus.Connected
-        // The reopen re-detects the other controller instead of taking the pane back.
-        await { connection.opened.size == 2 }
+        // The reopen keeps watching instead of taking the pane back.
+        await { connection.opened.size == 3 }
+        assertTrue(connection.observers.last())
         assertFalse(connection.takeovers.last())
-        connection.opened.last().record("""{"type":"terminal.closed","reason":"use --takeover"}""")
-        await { controller.state is PaneState.Busy }
-        assertTrue((controller.state as PaneState.Busy).afterReconnect)
-        assertEquals(2, connection.opened.size)
+        assertTrue(controller.controlMoved)
+    }
+
+    @Test(timeout = 10_000) fun choosingToWatchIsNotReportedAsMovedControl(): Unit = runBlocking {
+        startLive(observe = true)
+        assertTrue(controller.readOnly)
+        assertFalse(controller.controlMoved)
     }
 
     @Test(timeout = 15_000) fun streamThatRendersOneFrameAndDiesRunsOutOfRetries(): Unit = runBlocking {
@@ -120,6 +146,107 @@ class TerminalRecoveryTest {
         assertEquals(PaneRecovery.Actions(controller.state), recoveryUi(connection.status.value, controller.state))
         delay(600)
         assertEquals(4, connection.opened.size)
+    }
+
+    @Test(timeout = 10_000) fun watchersOpenAtThePaneSizeAndFollowItsChanges(): Unit = runBlocking {
+        controller.setPaneSize(147, 50)
+        startLive(observe = true)
+        assertEquals(147 to 50, connection.sizes.last())
+        // A wider desktop pane reopens the watcher at its new size, without the loading state.
+        controller.setPaneSize(180, 50)
+        assertEquals(PaneState.Live, controller.state)
+        await { connection.opened.size == 2 }
+        assertEquals(180 to 50, connection.sizes.last())
+        assertTrue(connection.observers.last())
+        assertFalse(connection.takeovers.last())
+        // Bursts settle into one reopen; an unchanged size reopens nothing.
+        controller.setPaneSize(150, 50)
+        controller.setPaneSize(180, 50)
+        delay(400)
+        assertEquals(2, connection.opened.size)
+    }
+
+    @Test(timeout = 10_000) fun aPaneSizeThatArrivesWhileOpeningIsAppliedOnceLive(): Unit = runBlocking {
+        controller.setObserveOnly(true)
+        controller.onGridSize(80, 24, 8, 16)
+        await { connection.opened.size == 1 }
+        assertEquals(80 to 24, connection.sizes.last())
+        assertEquals(PaneState.Opening, controller.state)
+        controller.setPaneSize(147, 50)
+        delay(300)
+        assertEquals(1, connection.opened.size)
+        connection.opened.last().frame()
+        await { connection.opened.size == 2 }
+        assertEquals(147 to 50, connection.sizes.last())
+        connection.opened.last().frame()
+        await { controller.state == PaneState.Live }
+        delay(400)
+        assertEquals("Exactly one reopen", 2, connection.opened.size)
+    }
+
+    @Test(timeout = 10_000) fun aPaneSizeThatArrivesDuringTheFirstOpenDebounceIsUsedDirectly(): Unit = runBlocking {
+        controller.setObserveOnly(true)
+        controller.onGridSize(80, 24, 8, 16)
+        controller.setPaneSize(147, 50)
+        await { connection.opened.size == 1 }
+        assertEquals(147 to 50, connection.sizes.last())
+        connection.opened.last().frame()
+        await { controller.state == PaneState.Live }
+        delay(400)
+        assertEquals(1, connection.opened.size)
+    }
+
+    @Test(timeout = 10_000) fun theMenusTakeControlTakesOver(): Unit = runBlocking {
+        startLive(observe = true)
+        controller.toggleWatching()
+        await { connection.opened.size == 2 }
+        assertTrue(connection.takeovers.last())
+        assertFalse(controller.readOnly)
+        connection.opened.last().frame()
+        await { controller.state == PaneState.Live }
+        controller.toggleWatching()
+        await { connection.opened.size == 3 }
+        assertTrue(connection.observers.last())
+        assertFalse(connection.takeovers.last())
+    }
+
+    @Test(timeout = 10_000) fun controllersKeepSizingThePaneToTheView(): Unit = runBlocking {
+        controller.setPaneSize(147, 50)
+        startLive()
+        assertEquals(80 to 24, connection.sizes.last())
+        controller.setPaneSize(180, 50)
+        delay(400)
+        assertEquals(1, connection.opened.size)
+    }
+
+    @Test fun observeSizeUsesThePaneWithinHerdrsLimits() {
+        assertEquals(80 to 24, observeSize(80, 24, null))
+        assertEquals(147 to 50, observeSize(80, 24, 147 to 50))
+        assertEquals(80 to 30, observeSize(80, 30, 40 to 10))
+        assertEquals(512 to 128, observeSize(80, 24, 900 to 300))
+        assertEquals(300 to 218, observeSize(80, 24, 300 to 300))
+        assertTrue(isOversizeFrame(147, 24, 80, 24))
+        assertTrue("taller only", isOversizeFrame(80, 50, 80, 24))
+        assertFalse(isOversizeFrame(80, 24, 80, 24))
+        assertFalse(isOversizeFrame(147, 50, 0, 0))
+    }
+
+    @Test fun onlyAViewThatLostRowsKeepsTheWatchersStream() {
+        assertFalse(needsObserveReopen(80 to 24, 80 to 24, paneChanged = false))
+        assertFalse("keyboard opened", needsObserveReopen(80 to 24, 80 to 14, paneChanged = false))
+        assertTrue("pane shrank", needsObserveReopen(80 to 50, 80 to 40, paneChanged = true))
+        assertTrue("view grew", needsObserveReopen(80 to 14, 80 to 24, paneChanged = false))
+        assertTrue("narrower", needsObserveReopen(80 to 24, 60 to 24, paneChanged = false))
+    }
+
+    @Test(timeout = 10_000) fun aWatcherKeepsItsStreamWhenTheKeyboardShrinksTheView(): Unit = runBlocking {
+        startLive(observe = true)
+        controller.onGridSize(80, 14, 8, 16)
+        delay(400)
+        assertEquals(1, connection.opened.size)
+        controller.onGridSize(80, 30, 8, 16)
+        await { connection.opened.size == 2 }
+        assertEquals(80 to 30, connection.sizes.last())
     }
 
     private suspend fun startLive(observe: Boolean = false) {
@@ -144,6 +271,7 @@ class TerminalRecoveryTest {
         val opened = CopyOnWriteArrayList<Channel>()
         val takeovers = CopyOnWriteArrayList<Boolean>()
         val observers = CopyOnWriteArrayList<Boolean>()
+        val sizes = CopyOnWriteArrayList<Pair<Int, Int>>()
         @Volatile var refuse = 0
         /** Each stream renders one frame, then its channel dies without terminal.closed. */
         @Volatile var flapping = false
@@ -154,6 +282,7 @@ class TerminalRecoveryTest {
             if (refuse-- > 0) throw TerminalOpenException("open refused")
             val channel = Channel()
             takeovers += takeover
+            sizes += cols to rows
             observers += readOnly
             opened += channel
             return TerminalStream.fromChannel(channel, scope, readOnly).also {

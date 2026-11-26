@@ -40,6 +40,7 @@ import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.CropFree
 import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.FitScreen
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.OpenInBrowser
 import androidx.compose.material.icons.outlined.Refresh
@@ -61,11 +62,13 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Snackbar
+import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -92,6 +95,8 @@ import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
@@ -102,15 +107,19 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.core.view.WindowCompat
 import dev.herdroid.app
+import dev.herdroid.connection.AgentAlert
 import dev.herdroid.connection.ConnectionStatus
 import dev.herdroid.herdr.AgentStatus
 import dev.herdroid.herdr.PaneInfo
+import dev.herdroid.herdr.PaneLayoutRect
+import dev.herdroid.herdr.PaneLayoutSnapshot
 import dev.herdroid.herdr.SessionSnapshot
 import dev.herdroid.herdr.TabInfo
 import dev.herdroid.herdr.RemoteCommand
 import dev.herdroid.terminal.TerminalView
 import dev.herdroid.terminal.TerminalViewListener
 import dev.herdroid.ui.components.ComposerSheet
+import dev.herdroid.ui.components.QuickReply
 import dev.herdroid.ui.components.ConfirmDialog
 import dev.herdroid.ui.components.SnapshotBanner
 import dev.herdroid.ui.components.ConnectionBanner
@@ -124,6 +133,11 @@ import dev.herdroid.ui.session.SheetItem
 import dev.herdroid.ui.theme.WoolooMobileTheme
 import dev.herdroid.ui.theme.LocalStatusColors
 import dev.herdroid.ui.theme.Mono
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.mapNotNull
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 
 /**
@@ -194,6 +208,9 @@ private fun TerminalScreenContent(
     val blocked = agent?.agentStatus == AgentStatus.BLOCKED
     // The screen only shows the active prompt while scrolled to the bottom.
     val detectOptions = (pane?.scroll?.offsetFromBottom ?: 0L) == 0L && (claudeAgent || blocked)
+    val paneRect = pane?.let { p -> paneRectIn(snapshot?.layout(p.tabId), p.paneId) }
+    LaunchedEffect(controller, paneRect) { controller.setPaneSize(paneRect?.width, paneRect?.height) }
+    var fitScreen by rememberSaveable { mutableStateOf(false) }
     DisposableEffect(controller) { onDispose { controller.dispose() } }
 
     var terminalView by remember { mutableStateOf<TerminalView?>(null) }
@@ -218,21 +235,22 @@ private fun TerminalScreenContent(
 
     // Surface other agents that need attention without leaving this pane.
     LaunchedEffect(connection) {
-        connection.alerts.collect { alert ->
-            if (alert.agent.paneId == paneId) return@collect
-            val here = connection.snapshot.value?.pane(paneId)?.workspaceId
-            val elsewhere = alert.agent.workspaceId != here
-            val verb = if (alert.agent.agentStatus == AgentStatus.BLOCKED) "needs input" else "finished"
-            val where = alert.workspaceLabel?.takeIf { elsewhere }?.let { " in $it" }.orEmpty()
+        presentAlerts(
+            connection.alerts,
+            banner = { alert -> alertBanner(alert, paneId, connection.snapshot.value?.pane(paneId)?.workspaceId) },
+            // A banner that waited may be about the pane opened meanwhile (Open on the blocked one).
+            stillWanted = { it.paneId != paneId },
+        ) { banner ->
             val result = snackbar.showSnackbar(
-                message = "${alert.agent.displayName}$where $verb",
+                message = banner.message,
                 actionLabel = "Open",
                 withDismissAction = true,
+                duration = if (banner.brief) SnackbarDuration.Short else SnackbarDuration.Long,
             )
             if (result == SnackbarResult.ActionPerformed) {
                 // Same space: switch in place. Another space: go through it, so back leads there.
-                if (elsewhere) onOpenInSpace(alert.agent.workspaceId, alert.agent.paneId)
-                else paneId = alert.agent.paneId
+                if (banner.elsewhere) onOpenInSpace(banner.workspaceId, banner.paneId)
+                else paneId = banner.paneId
             }
         }
     }
@@ -277,7 +295,9 @@ private fun TerminalScreenContent(
                 menu = menu,
                 onMenu = { menu = it },
                 readOnly = controller.readOnly,
-                onToggleReadOnly = { controller.setObserveOnly(!controller.readOnly) },
+                onToggleReadOnly = { controller.toggleWatching() },
+                fitScreen = fitScreenMenu(controller.readOnly && controller.oversizeFrame, fitScreen),
+                onFitScreen = { fitScreen = !fitScreen },
                 onFont = { delta ->
                     val next = (fontSize + delta).coerceIn(TerminalView.MIN_FONT_SP, TerminalView.MAX_FONT_SP)
                     app.preferences.setFontSize(next)
@@ -324,6 +344,8 @@ private fun TerminalScreenContent(
                     },
                     update = { view ->
                         terminalView = view
+                        view.panWide = controller.readOnly
+                        view.fitScreen = fitScreen
                         view.inputEnabled = retainInputFocus
                         view.retainInputFocus = retainInputFocus
                         view.listener = object : TerminalViewListener {
@@ -357,11 +379,19 @@ private fun TerminalScreenContent(
                     onWatch = { controller.open(observeOnly = true) },
                     onRetry = { controller.open() },
                     onBack = onBack)
+                // Over the top rows of the terminal: the switcher, quick answers, extra keys and the
+                // prompt at the bottom of the pane stay visible and usable.
+                SnackbarHost(snackbar, Modifier.align(Alignment.TopCenter).padding(top = 4.dp)) { data ->
+                    Snackbar(data, shape = RoundedCornerShape(14.dp))
+                }
             }
             val options = if (detectOptions) controller.promptOptions else emptyList()
             val claudeReview = claudeAgent && isSubmitMenu(options)
             if (controller.state == PaneState.Live && !controller.readOnly && (claudeReview || blocked)) {
                 QuickAnswers(options.ifEmpty { FallbackAnswers }, fromScreen = options.isNotEmpty(), onAnswer = { terminalView?.sendText(it) })
+            }
+            if (controller.state == PaneState.Live && controller.readOnly) {
+                WatchingBar(controller.controlMoved, onTakeControl = { controller.takeControl() })
             }
             ExtraKeysBar(
                 modifiers = controller.modifiers,
@@ -386,10 +416,6 @@ private fun TerminalScreenContent(
                 composerHighlighted = agent?.agentStatus == AgentStatus.BLOCKED,
             )
         }
-        SnackbarHost(
-            snackbar,
-            modifier = Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top = 56.dp),
-        ) { data -> Snackbar(data, shape = RoundedCornerShape(14.dp)) }
     }
 
     ConnectionPrompts(connection, prompt)
@@ -410,6 +436,10 @@ private fun TerminalScreenContent(
             isAgent = isAgent,
             onDismiss = { composer = false },
             pickImagesOnOpen = pickComposerImages,
+            answers = (if (detectOptions) controller.promptOptions else emptyList()).map { it.asQuickReply() },
+            watchOnly = controller.readOnly,
+            canTakeControl = controller.state == PaneState.Live,
+            onTakeControl = { controller.takeControl() },
             onQuickReply = { reply -> controller.input(reply.input) },
             onSend = { text, images, uploads ->
                 when {
@@ -517,6 +547,8 @@ internal fun TerminalTopBar(
     onClosePane: () -> Unit,
     onReconnect: () -> Unit,
     onSwipeAgent: ((Int) -> Unit)? = null,
+    fitScreen: Boolean? = null,
+    onFitScreen: () -> Unit = {},
     metrics: @Composable () -> Unit = {},
     onRead: () -> Unit = {},
 ) {
@@ -577,6 +609,11 @@ internal fun TerminalTopBar(
                     MenuItem(Icons.Outlined.ContentCopy, "Copy screen") { onMenu(false); onCopy() }
                     MenuItem(if (readOnly) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility,
                         if (readOnly) "Take control" else "Watch only") { onMenu(false); onToggleReadOnly() }
+                    if (fitScreen != null) {
+                        MenuItem(Icons.Outlined.FitScreen, if (fitScreen) "Actual size" else "Fit to screen") {
+                            onMenu(false); onFitScreen()
+                        }
+                    }
                     MenuItem(Icons.Outlined.CropFree, "Toggle zoom") { onMenu(false); onZoom() }
                     MenuItem(Icons.Outlined.ViewColumn, "Split right") { onMenu(false); onSplit("right") }
                     MenuItem(Icons.Outlined.ViewAgenda, "Split down") { onMenu(false); onSplit("down") }
@@ -711,6 +748,133 @@ private fun SwitcherChip(snapshot: SessionSnapshot, pane: PaneInfo, selected: Bo
 }
 
 /**
+ * Non-modal note while watching a pane, above the extra keys: who has control and what taking it
+ * does. Shown both when another client took control and when the user chose to watch.
+ */
+@Composable
+internal fun WatchingBar(controlMoved: Boolean, onTakeControl: () -> Unit) {
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        shape = RoundedCornerShape(12.dp),
+        modifier = Modifier.fillMaxWidth().padding(start = 8.dp, end = 8.dp, top = 8.dp),
+    ) {
+        Row(
+            Modifier
+                // Announced when control changes hands.
+                .semantics(mergeDescendants = true) { liveRegion = LiveRegionMode.Polite }
+                .padding(start = 12.dp, end = 4.dp, top = 6.dp, bottom = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(Icons.Outlined.Visibility, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.tertiary)
+            Column(Modifier.weight(1f).padding(horizontal = 10.dp)) {
+                Text(
+                    if (controlMoved) "Another screen took control" else "Watching only",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                Text(
+                    TAKE_CONTROL_RESIZES,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            TextButton(onClick = onTakeControl) { Text("Take control") }
+        }
+    }
+}
+
+// herdr sizes a pane to its controlling client: control opens with this view's --cols/--rows and
+// its resizes apply, while watchers see the pane at the controller's size.
+private const val TAKE_CONTROL_RESIZES = "Taking control resizes the pane to fit this phone."
+
+/** The pane menu's Fit to screen state: null (hidden) unless the remote screen is wider than the view. */
+internal fun fitScreenMenu(oversizeFrame: Boolean, fitScreen: Boolean): Boolean? = fitScreen.takeIf { oversizeFrame }
+
+/**
+ * The area [paneId] covers in [layout], in cells. herdr's layout snapshot keeps the tiled rects
+ * while a tab is zoomed, but draws its focused pane over the whole tab [PaneLayoutSnapshot.area]
+ * (ui/panes.rs, compute_pane_infos_for_tab), so that pane gets the area; with no area, the
+ * bounding box of all the panes. Rects include herdr's pane borders and scrollbar gutter, so they
+ * can be a cell or two larger than the terminal: a watcher asks for slightly more, never less.
+ */
+internal fun paneRectIn(layout: PaneLayoutSnapshot?, paneId: String): PaneLayoutRect? {
+    layout ?: return null
+    val own = layout.panes.firstOrNull { it.paneId == paneId }?.rect ?: return null
+    if (!layout.zoomed || layout.focusedPaneId != paneId) return own
+    if (layout.area.width > 0 && layout.area.height > 0) return layout.area
+    val rects = layout.panes.map { it.rect }
+    val left = rects.minOf { it.x }
+    val top = rects.minOf { it.y }
+    return PaneLayoutRect(left, top, rects.maxOf { it.x + it.width } - left, rects.maxOf { it.y + it.height } - top)
+}
+
+/** A composer chip for [this] option: its number and label, sending the number. */
+internal fun PromptOption.asQuickReply() =
+    QuickReply(if (label.isEmpty()) "$number" else "$number $label", number.toString())
+
+/** What an alert about another agent shows over the terminal. */
+internal data class AlertBanner(
+    val message: String,
+    val workspaceId: String,
+    val paneId: String,
+    val elsewhere: Boolean,
+    val blocked: Boolean,
+) {
+    /** An agent finishing in another space only needs a glance: a short banner. */
+    val brief: Boolean get() = elsewhere && !blocked
+}
+
+/**
+ * The banner for [alert] while [currentPaneId] (in [currentWorkspaceId]) is open, or null for this
+ * pane's own alerts. Agents from any space show: the system notification is skipped while the app
+ * is in the foreground, so the banner is the only notice.
+ */
+internal fun alertBanner(alert: AgentAlert, currentPaneId: String, currentWorkspaceId: String?): AlertBanner? {
+    val agent = alert.agent
+    if (agent.paneId == currentPaneId) return null
+    val blocked = agent.agentStatus == AgentStatus.BLOCKED
+    val elsewhere = agent.workspaceId != currentWorkspaceId
+    val where = alert.workspaceLabel?.takeIf { elsewhere }?.let { " in $it" }.orEmpty()
+    val verb = if (blocked) "needs input" else "finished"
+    return AlertBanner("${agent.displayName}$where $verb", agent.workspaceId, agent.paneId, elsewhere, blocked)
+}
+
+/**
+ * Shows each alert worth a [banner] with [show]; a newer one cancels the one on screen. Ignored
+ * alerts leave the current banner alone. An agent finishing never hides one that needs input: it
+ * waits until that banner is gone, then shows if still [stillWanted] (only the latest one waits).
+ */
+internal suspend fun presentAlerts(
+    alerts: Flow<AgentAlert>,
+    banner: (AgentAlert) -> AlertBanner?,
+    stillWanted: (AlertBanner) -> Boolean = { true },
+    show: suspend (AlertBanner) -> Unit,
+): Unit = coroutineScope {
+    var current: Job? = null
+    var currentBlocked = false
+    var waiting: AlertBanner? = null
+    alerts.mapNotNull(banner).collect { next ->
+        if (current?.isActive == true && currentBlocked && !next.blocked) {
+            waiting = next
+            return@collect
+        }
+        current?.cancelAndJoin()
+        // A finished banner shown now makes an older waiting one stale.
+        if (!next.blocked) waiting = null
+        // Set now, not when the job runs: an alert in the same burst must see this one as shown.
+        currentBlocked = next.blocked
+        current = launch {
+            var shown: AlertBanner? = next
+            while (shown != null) {
+                currentBlocked = shown.blocked
+                show(shown)
+                shown = waiting.also { waiting = null }?.takeIf(stillWanted)
+            }
+        }
+    }
+}
+
+/**
  * One-tap answers for a blocked agent's numbered prompt, above the extra keys (which have esc).
  * Each button sends its option's number; the focused option is filled. They share the width when
  * they fit and scroll sideways when they don't.
@@ -808,9 +972,8 @@ private fun PaneOverlay(
                             "Confirm control after reconnecting" to
                                 "The previous connection may still hold this pane, or another client may control it. Take control here only if you want to replace that controller, or watch without changing it."
                         } else {
-                            "Pane in use" to "Another client is controlling this pane. Take control here, or just watch."
+                            "Pane in use" to "Another client is controlling this pane. Take control here, or just watch. $TAKE_CONTROL_RESIZES"
                         }
-                        state == PaneState.TakenOver -> "Control moved" to "Another client took control of this pane."
                         state is PaneState.Closed -> "Stream ended" to (state.reason ?: "The pane stream closed.")
                         else -> "" to ""
                     }
@@ -821,7 +984,7 @@ private fun PaneOverlay(
                         recovery is PaneRecovery.WaitingForHost -> if (!recovery.failed) {
                             CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
                         }
-                        state is PaneState.Busy || state == PaneState.TakenOver -> {
+                        state is PaneState.Busy -> {
                             Button(onClick = onTakeOver, modifier = Modifier.fillMaxWidth()) { Text("Take control") }
                             OutlinedButton(onClick = onWatch, modifier = Modifier.fillMaxWidth()) { Text("Watch only") }
                         }

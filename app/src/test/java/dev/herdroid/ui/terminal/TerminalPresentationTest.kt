@@ -4,9 +4,13 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import com.github.takahirom.roborazzi.captureRoboImage
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
@@ -39,6 +43,61 @@ class TerminalPresentationTest {
         compose.onNodeWithText("Cancel").performClick()
         compose.onNodeWithText("Submit answers").performClick()
         assertEquals(listOf("2", "1"), keys)
+    }
+
+    @Test fun watchingBarSaysWhoHasControlAndWhatTakingItDoes() {
+        var moved by mutableStateOf(true)
+        var taken = 0
+        compose.setContent { WoolooMobileTheme { WatchingBar(moved, onTakeControl = { taken++ }) } }
+        compose.onNodeWithText("Another screen took control").assertExists()
+        compose.onNode(SemanticsMatcher.expectValue(SemanticsProperties.LiveRegion, LiveRegionMode.Polite)).assertExists()
+        compose.onNodeWithText("Taking control resizes the pane to fit this phone.").assertExists()
+        compose.onNodeWithText("Take control").performClick()
+        moved = false
+        compose.onNodeWithText("Watching only").assertExists()
+        compose.runOnIdle { assertEquals(1, taken) }
+    }
+
+    @Test fun aZoomedPaneIsSizedToTheWholeTab() {
+        val left = PaneLayoutPane("p1", focused = true, rect = PaneLayoutRect(0, 0, 100, 50))
+        val right = PaneLayoutPane("p2", rect = PaneLayoutRect(100, 0, 100, 50))
+        val tiled = PaneLayoutSnapshot("w", "t", zoomed = false, area = PaneLayoutRect(0, 0, 200, 50),
+            focusedPaneId = "p1", panes = listOf(left, right))
+        assertEquals(PaneLayoutRect(0, 0, 100, 50), paneRectIn(tiled, "p1"))
+        val zoomed = tiled.copy(zoomed = true)
+        assertEquals(PaneLayoutRect(0, 0, 200, 50), paneRectIn(zoomed, "p1"))
+        assertEquals("other panes keep their rect", PaneLayoutRect(100, 0, 100, 50), paneRectIn(zoomed, "p2"))
+        val noArea = zoomed.copy(area = PaneLayoutRect(0, 0, 0, 0))
+        assertEquals("bounding box without an area", PaneLayoutRect(0, 0, 200, 50), paneRectIn(noArea, "p1"))
+        assertNull(paneRectIn(zoomed, "p9"))
+        assertNull(paneRectIn(null, "p1"))
+    }
+
+    @Test fun fitScreenIsOfferedOnlyForAWideScreen() {
+        assertNull(fitScreenMenu(oversizeFrame = false, fitScreen = false))
+        assertNull(fitScreenMenu(oversizeFrame = false, fitScreen = true))
+        assertEquals(false, fitScreenMenu(oversizeFrame = true, fitScreen = false))
+        assertEquals(true, fitScreenMenu(oversizeFrame = true, fitScreen = true))
+
+        var fit by mutableStateOf<Boolean?>(null)
+        var toggled = 0
+        compose.setContent {
+            WoolooMobileTheme {
+                TerminalTopBar(
+                    pane = PaneInfo("p", workspaceId = "w", tabId = "t"), snapshot = null,
+                    agentName = null, agentStatus = null, agentLabel = null, onBack = {},
+                    menu = true, onMenu = {}, readOnly = true, onToggleReadOnly = {},
+                    onFont = {}, onCopy = {}, onZoom = {}, onSplit = {}, onRename = {},
+                    onClosePane = {}, onReconnect = {}, fitScreen = fit, onFitScreen = { toggled++ },
+                )
+            }
+        }
+        compose.onNodeWithText("Fit to screen").assertDoesNotExist()
+        fit = false
+        compose.onNodeWithText("Fit to screen").performClick()
+        fit = true
+        compose.onNodeWithText("Actual size").assertExists()
+        compose.runOnIdle { assertEquals(1, toggled) }
     }
 
     @Test fun fallbackOffersOneToThree() {

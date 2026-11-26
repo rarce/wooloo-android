@@ -10,6 +10,7 @@ import dev.herdroid.herdr.TerminalEvent
 import dev.herdroid.herdr.TerminalStream
 import dev.herdroid.terminal.ModifierState
 import dev.herdroid.terminal.TerminalModel
+import kotlin.math.max
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.StateFlow
@@ -27,8 +28,6 @@ sealed interface PaneState {
     data object Live : PaneState
     /** Another client controls this pane; we can take it over. */
     data class Busy(val reason: String, val afterReconnect: Boolean = false) : PaneState
-    /** We were in control and someone else took over. */
-    data object TakenOver : PaneState
     data object Offline : PaneState
     data class Closed(val reason: String?, val interrupted: Boolean = false) : PaneState
 }
@@ -53,7 +52,7 @@ internal fun recoveryUi(status: ConnectionStatus, state: PaneState): PaneRecover
         PaneState.Live -> PaneRecovery.None
         PaneState.WaitingForLayout, PaneState.Opening -> if (hostAway) waiting else PaneRecovery.Loading
         PaneState.Offline -> if (status == ConnectionStatus.Connected) PaneRecovery.Loading else waiting
-        is PaneState.Busy, PaneState.TakenOver, is PaneState.Closed ->
+        is PaneState.Busy, is PaneState.Closed ->
             if (status == ConnectionStatus.Connected) PaneRecovery.Actions(state) else waiting
     }
 }
@@ -89,6 +88,13 @@ class TerminalController internal constructor(
         private set
     var readOnly by mutableStateOf(false)
         private set
+    /** Watching because another client took control of the pane (not by the user's choice). */
+    var controlMoved by mutableStateOf(false)
+        private set
+
+    /** The remote screen is wider or taller than this view (a watched pane keeps its controller's size). */
+    var oversizeFrame by mutableStateOf(false)
+        private set
 
     /** The active prompt's numbered options, read from every frame (the screen decides when to show them). */
     var promptOptions by mutableStateOf<List<PromptOption>>(emptyList())
@@ -106,6 +112,12 @@ class TerminalController internal constructor(
     private var rows = 0
     private var cellW = 0
     private var cellH = 0
+    /** The pane's real size from the session layout, when known; watchers open at it. */
+    private var paneSize: Pair<Int, Int>? = null
+    private var openedSize: Pair<Int, Int>? = null
+    /** [paneSize] when the current stream opened: a view that shrinks alone needs no reopen. */
+    private var openedPane: Pair<Int, Int>? = null
+    private var observeResizeJob: Job? = null
 
     init {
         scope.launch {
@@ -141,6 +153,8 @@ class TerminalController internal constructor(
             start(takeover = false, observeOnly = readOnly, recovery = false, delayMs = OPEN_DEBOUNCE_MS)
             return
         }
+        refreshWideFrame()
+        if (readOnly) return reopenIfObserveSizeChanged()
         // Debounce: pinch-zoom and keyboard animations produce bursts of sizes.
         resizeJob?.cancel()
         resizeJob = scope.launch {
@@ -149,27 +163,62 @@ class TerminalController internal constructor(
         }
     }
 
+    /**
+     * The pane's size in cells from the session layout (null when unknown). Watchers render at it,
+     * so a pane wider than this view arrives whole instead of cropped by herdr.
+     */
+    fun setPaneSize(cols: Int?, rows: Int?) {
+        val size = if (cols != null && rows != null && cols > 0 && rows > 0) cols to rows else null
+        if (size == paneSize) return
+        paneSize = size
+        if (readOnly) reopenIfObserveSizeChanged()
+    }
+
+    /** A watcher can't resize its stream: reopen it at the new size once the sizes settle. */
+    private fun reopenIfObserveSizeChanged() {
+        observeResizeJob?.cancel()
+        if (state != PaneState.Live || !observeReopenNeeded()) return
+        observeResizeJob = scope.launch {
+            delay(OPEN_DEBOUNCE_MS)
+            if (readOnly && state == PaneState.Live && observeReopenNeeded()) {
+                start(takeover = false, observeOnly = true, recovery = false, delayMs = 0, quiet = true)
+            }
+        }
+    }
+
+    private fun observeReopenNeeded(): Boolean {
+        val opened = openedSize ?: return false
+        return needsObserveReopen(opened, observeSize(cols, rows, paneSize), paneChanged = paneSize != openedPane)
+    }
+
     fun open(takeover: Boolean = false, observeOnly: Boolean = readOnly, recovery: Boolean = false) {
         retries = 0
         start(takeover, observeOnly, recovery, delayMs = 0)
     }
 
-    private fun start(takeover: Boolean, observeOnly: Boolean, recovery: Boolean, delayMs: Long) {
+    /** [quiet] keeps showing the live pane while a watcher reopens at a new size. */
+    private fun start(takeover: Boolean, observeOnly: Boolean, recovery: Boolean, delayMs: Long, quiet: Boolean = false) {
         readOnly = observeOnly
+        if (!observeOnly) controlMoved = false
         if (cols == 0) return
         closeStream()
+        observeResizeJob?.cancel()
         hostWait?.cancel()
         recovering = recovery
         if (!connection.isLive) {
             waitForHost()
             return
         }
-        state = PaneState.Opening
+        if (!quiet) state = PaneState.Opening
         val openingGeneration = generation
         streamJob = scope.launch {
             if (delayMs > 0) delay(delayMs)
+            // Sized after the debounce, so a pane size that arrived meanwhile is used.
+            val (openCols, openRows) = if (observeOnly) observeSize(cols, rows, paneSize) else cols to rows
+            openedSize = openCols to openRows
+            openedPane = paneSize
             val opened = runCatching {
-                connection.openTerminal(paneId, cols, rows, takeover, observeOnly, scope)
+                connection.openTerminal(paneId, openCols, openRows, takeover, observeOnly, scope)
             }.getOrElse { error ->
                 if (error is CancellationException) throw error
                 if (generation != openingGeneration) return@launch
@@ -182,19 +231,15 @@ class TerminalController internal constructor(
             }
             stream = opened
             launch(Dispatchers.Default) {
+                var rendered = false
                 opened.events.collect { event ->
                     when (event) {
                         is TerminalEvent.Frame -> {
                             if (!applyFrame(openingGeneration, event)) return@collect
-                            if (state != PaneState.Live) scope.launch {
-                                if (generation == openingGeneration) {
-                                    recovering = false
-                                    state = PaneState.Live
-                                    // A stream that renders a frame and dies must still run out of
-                                    // retries: only a pane that stays live earns them back.
-                                    stableJob?.cancel()
-                                    stableJob = scope.launch { delay(STABLE_LIVE_MS); retries = 0 }
-                                }
+                            // Every stream's first frame, including a watcher's quiet reopen.
+                            if (!rendered) {
+                                rendered = true
+                                scope.launch { if (generation == openingGeneration) onLive() }
                             }
                         }
                         is TerminalEvent.Closed -> scope.launch {
@@ -206,12 +251,28 @@ class TerminalController internal constructor(
         }
     }
 
+    private fun onLive() {
+        recovering = false
+        state = PaneState.Live
+        // A stream that renders a frame and dies must still run out of retries: only a pane that
+        // stays live earns them back. A quiet reopen counts as a new stream here too.
+        stableJob?.cancel()
+        stableJob = scope.launch { delay(STABLE_LIVE_MS); retries = 0 }
+        // A pane size that changed while this stream was opening applies now.
+        if (readOnly) reopenIfObserveSizeChanged()
+    }
+
     private fun onClosed(event: TerminalEvent.Closed) {
         stream = null
         stableJob?.cancel()
         state = when {
             event.needsTakeover -> PaneState.Busy(event.reason.orEmpty(), afterReconnect = recovering)
-            event.wasTakenOver -> PaneState.TakenOver
+            event.wasTakenOver -> {
+                // Keep showing the pane: watch it while the other client has control.
+                controlMoved = true
+                retries = 0
+                return start(takeover = false, observeOnly = true, recovery = false, delayMs = 0)
+            }
             event.interrupted -> return retryOrClose(event.reason)
             else -> PaneState.Closed(event.reason, interrupted = event.interrupted)
         }
@@ -256,8 +317,15 @@ class TerminalController internal constructor(
     }
 
     fun setObserveOnly(observe: Boolean) {
+        controlMoved = false
         if (observe != readOnly) open(takeover = false, observeOnly = observe)
     }
+
+    /** Control the pane even if another client has it; the pane is resized to this view. */
+    fun takeControl() = open(takeover = true, observeOnly = false)
+
+    /** The pane menu's Watch only / Take control. */
+    fun toggleWatching() = if (readOnly) takeControl() else setObserveOnly(true)
 
     private fun closeStream() {
         synchronized(model.lock) {
@@ -273,6 +341,11 @@ class TerminalController internal constructor(
     fun dispose() {
         closeStream()
         scope.cancel()
+    }
+
+    private fun refreshWideFrame() {
+        val wide = synchronized(model.lock) { model.emulator.let { isOversizeFrame(it.cols, it.rows, cols, rows) } }
+        if (wide != oversizeFrame) oversizeFrame = wide
     }
 
     private fun refreshPromptOptions() {
@@ -294,6 +367,37 @@ class TerminalController internal constructor(
         if (generation != expectedGeneration) return@synchronized false
         model.applyFrame(frame.width, frame.height, frame.full, frame.bytes)
         refreshPromptOptions()
+        refreshWideFrame()
         true
     }
+}
+
+/** herdr's frame limits: up to 512 columns or rows and 65,536 cells. */
+private const val MAX_FRAME_SIDE = 512
+private const val MAX_FRAME_CELLS = 65_536
+
+/**
+ * The size a watcher opens at: herdr crops an observer's frames to the size it asks for, so ask
+ * for the pane's real [pane] size (never smaller than this view's grid), within herdr's limits.
+ * Without a known pane size the view's grid is used, as before.
+ */
+internal fun observeSize(viewCols: Int, viewRows: Int, pane: Pair<Int, Int>?): Pair<Int, Int> {
+    val cols = max(viewCols, pane?.first ?: 0).coerceIn(1, MAX_FRAME_SIDE)
+    val rows = max(viewRows, pane?.second ?: 0).coerceIn(1, minOf(MAX_FRAME_SIDE, MAX_FRAME_CELLS / cols))
+    return cols to rows
+}
+
+/** Whether a [frameCols]x[frameRows] screen overflows a [viewCols]x[viewRows] view (so it pans, or can fit). */
+internal fun isOversizeFrame(frameCols: Int, frameRows: Int, viewCols: Int, viewRows: Int): Boolean =
+    viewCols in 1 until frameCols || viewRows in 1 until frameRows
+
+/**
+ * Whether a watcher opened at [opened] must reopen to show [next]. Not when only this view lost
+ * rows (the keyboard, the watching bar) with the pane unchanged: the taller frame is shown with a
+ * vertical offset instead, and reopening would flash the pane for nothing.
+ */
+internal fun needsObserveReopen(opened: Pair<Int, Int>, next: Pair<Int, Int>, paneChanged: Boolean): Boolean = when {
+    next == opened -> false
+    !paneChanged && next.first == opened.first && next.second < opened.second -> false
+    else -> true
 }

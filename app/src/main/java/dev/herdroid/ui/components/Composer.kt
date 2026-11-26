@@ -54,6 +54,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -70,29 +71,35 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.herdroid.herdr.AgentStatus
 
 /** A quick reply that is typed straight into the pane (raw terminal input). */
 data class QuickReply(val label: String, val input: String)
 
-val AgentQuickReplies = listOf(
+private val DefaultAnswers = listOf(QuickReply("1", "1"), QuickReply("2", "2"), QuickReply("3", "3"))
+
+val AgentQuickReplies = agentQuickReplies()
+
+/** The agent's quick keys, with the prompt's own [answers] (when known) in place of 1/2/3. */
+fun agentQuickReplies(answers: List<QuickReply> = emptyList()): List<QuickReply> = listOf(
     QuickReply("⏎ Enter", "\r"),
-    QuickReply("1", "1"),
-    QuickReply("2", "2"),
-    QuickReply("3", "3"),
+) + answers.ifEmpty { DefaultAnswers } + listOf(
     QuickReply("y", "y"),
     QuickReply("n", "n"),
     QuickReply("Esc", "\u001b"),
@@ -124,6 +131,10 @@ fun ComposerSheet(
     onQuickReply: (QuickReply) -> Unit,
     onSend: suspend (text: String, images: List<File>, uploads: AttachmentUploads) -> Result<Unit>,
     pickImagesOnOpen: Boolean = false,
+    answers: List<QuickReply> = emptyList(),
+    watchOnly: Boolean = false,
+    canTakeControl: Boolean = true,
+    onTakeControl: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -138,9 +149,13 @@ fun ComposerSheet(
     LaunchedEffect(Unit) {
         withContext(Dispatchers.IO) { ImageAttachments.pruneStale(context) }
     }
+    // Watching: keystrokes wouldn't reach the pane. A message to an agent goes through herdr instead.
+    val shellWatching = watchOnly && !isAgent
+    // The keyboard's content receiver is remembered once: it reads the current value through this.
+    val attachBlocked by rememberUpdatedState(shellWatching)
 
     fun attach(uri: Uri): Boolean {
-        if (sending || images.size + preparing >= MAX_IMAGES) return false
+        if (sending || attachBlocked || images.size + preparing >= MAX_IMAGES) return false
         preparing++
         scope.launch {
             try { images += ImageAttachments.prepare(context, uri) }
@@ -155,7 +170,7 @@ fun ComposerSheet(
         uris.take(MAX_IMAGES - images.size).forEach { attach(it) }
     }
     LaunchedEffect(Unit) {
-        if (pickImagesOnOpen) {
+        if (pickImagesOnOpen && !shellWatching) {
             picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
         }
     }
@@ -166,7 +181,7 @@ fun ComposerSheet(
             content.consume { item -> item.uri?.let { attach(it) } ?: false }
         }
     }
-    val canSend = (text.text.isNotBlank() || images.isNotEmpty()) && preparing == 0 && !sending
+    val canSend = (text.text.isNotBlank() || images.isNotEmpty()) && preparing == 0 && !sending && !shellWatching
 
     ModalBottomSheet(onDismissRequest = { if (!sending) onDismiss() }, sheetState = sheetState) {
         Column(
@@ -183,15 +198,34 @@ fun ComposerSheet(
                 if (agentStatus != null) StatusPill(agentStatus, agentStatus.name.lowercase())
             }
             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(if (isAgent) AgentQuickReplies else ShellQuickReplies) { reply ->
-                    AssistChip(enabled = !sending, onClick = { onQuickReply(reply) }, label = { Text(reply.label) })
+                items(if (isAgent) agentQuickReplies(answers) else ShellQuickReplies) { reply ->
+                    AssistChip(
+                        enabled = !sending && !watchOnly,
+                        onClick = { onQuickReply(reply) },
+                        label = {
+                            Text(reply.label, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = 180.dp))
+                        },
+                    )
                 }
             }
-            Text(
-                "Quick keys send immediately to the pane.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            if (watchOnly) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        "Watching only, take control to send keys.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.weight(1f),
+                    )
+                    // Only a live pane can be taken over, as in the watching bar.
+                    if (canTakeControl) TextButton(onClick = onTakeControl, enabled = !sending) { Text("Take control") }
+                }
+            } else {
+                Text(
+                    "Quick keys send immediately to the pane.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
             if (images.isNotEmpty() || preparing > 0) {
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     items(images, key = { it.path }) { file ->
@@ -212,8 +246,10 @@ fun ComposerSheet(
                     onAttach = {
                         picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
                     },
-                    attachEnabled = !sending && images.size + preparing < MAX_IMAGES,
+                    attachEnabled = !sending && !shellWatching && images.size + preparing < MAX_IMAGES,
                     enabled = !sending,
+                    // A watched shell can't run what is typed: don't pop the keyboard up for it.
+                    autoFocus = !shellWatching,
                     modifier = Modifier
                         .weight(1f)
                         .heightIn(min = 56.dp, max = 220.dp)
@@ -249,6 +285,7 @@ fun ComposerSheet(
             sendError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             Text(
                 when {
+                    shellWatching -> "Watching only: take control to run commands here."
                     images.isNotEmpty() -> "Images are sent to this machine with your message."
                     isAgent -> "Send a message to this agent."
                     else -> "Runs in this pane when you send."
@@ -272,6 +309,7 @@ private fun ComposerField(
     attachEnabled: Boolean,
     modifier: Modifier,
     enabled: Boolean = true,
+    autoFocus: Boolean = true,
 ) {
     val interaction = remember { MutableInteractionSource() }
     val colors = OutlinedTextFieldDefaults.colors()
@@ -307,7 +345,7 @@ private fun ComposerField(
     )
     // The bottom sheet composes its content separately. Request focus only
     // after this field's own composition has attached its focus target.
-    LaunchedEffect(enabled) { if (enabled) focus.requestFocus() }
+    LaunchedEffect(enabled, autoFocus) { if (enabled && autoFocus) focus.requestFocus() }
 }
 
 @Composable

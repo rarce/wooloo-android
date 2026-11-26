@@ -1,0 +1,136 @@
+package dev.herdroid.ui.terminal
+
+import dev.herdroid.connection.AgentAlert
+import dev.herdroid.herdr.AgentInfo
+import dev.herdroid.herdr.AgentStatus
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.runTest
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
+import org.junit.Test
+
+class AlertBannerTest {
+    private fun alert(pane: String, space: String, status: AgentStatus, label: String? = "ridium") = AgentAlert(
+        hostId = "h", hostName = "host",
+        agent = AgentInfo(paneId = pane, workspaceId = space, tabId = "t", agentStatus = status, name = "agent-$pane"),
+        workspaceLabel = label,
+    )
+
+    @Test fun ignoresTheOpenPane() {
+        assertNull(alertBanner(alert("p1", "w1", AgentStatus.BLOCKED), currentPaneId = "p1", currentWorkspaceId = "w1"))
+    }
+
+    @Test fun showsFinishedFromAnySpaceBrieflyWhenElsewhere() {
+        val here = alertBanner(alert("p2", "w1", AgentStatus.DONE), "p1", "w1")!!
+        assertEquals(false, here.elsewhere)
+        assertEquals("p2", here.paneId)
+        assertEquals(true, here.message.endsWith(" finished"))
+        assertEquals(false, here.message.contains(" in ridium"))
+        assertEquals(false, here.brief)
+        val elsewhere = alertBanner(alert("p3", "w2", AgentStatus.DONE), "p1", "w1")!!
+        assertEquals(true, elsewhere.message.endsWith(" in ridium finished"))
+        assertEquals(true, elsewhere.brief)
+        assertEquals(false, alertBanner(alert("p3", "w2", AgentStatus.BLOCKED), "p1", "w1")!!.brief)
+    }
+
+    @Test fun showsBlockedFromAnySpace() {
+        val elsewhere = alertBanner(alert("p3", "w2", AgentStatus.BLOCKED), "p1", "w1")!!
+        assertEquals(true, elsewhere.elsewhere)
+        assertEquals("w2", elsewhere.workspaceId)
+        assertEquals(true, elsewhere.message.endsWith(" in ridium needs input"))
+        assertEquals(false, alertBanner(alert("p2", "w1", AgentStatus.BLOCKED), "p1", "w1")!!.elsewhere)
+    }
+
+    @Test fun aNewAlertReplacesTheVisibleOneAndIgnoredOnesDont() = runTest(UnconfinedTestDispatcher()) {
+        val alerts = MutableSharedFlow<AgentAlert>()
+        val shown = mutableListOf<String>()
+        val replaced = mutableListOf<String>()
+        val job = launch {
+            presentAlerts(alerts, banner = { alertBanner(it, "p1", "w1") }) { banner ->
+                shown += banner.paneId
+                try { awaitCancellation() } catch (e: CancellationException) { replaced += banner.paneId; throw e }
+            }
+        }
+        alerts.emit(alert("p2", "w1", AgentStatus.BLOCKED))
+        alerts.emit(alert("p1", "w1", AgentStatus.DONE)) // the open pane's own: leaves p2 up
+        assertEquals(listOf("p2"), shown)
+        assertEquals(emptyList<String>(), replaced)
+        alerts.emit(alert("p4", "w2", AgentStatus.BLOCKED))
+        assertEquals(listOf("p2", "p4"), shown)
+        assertEquals(listOf("p2"), replaced)
+        job.cancel()
+    }
+
+    @Test fun aFinishedAgentDoesNotHideOneThatNeedsInput() = runTest(UnconfinedTestDispatcher()) {
+        val alerts = MutableSharedFlow<AgentAlert>()
+        val shown = mutableListOf<String>()
+        var dismiss = CompletableDeferred<Unit>()
+        val job = launch {
+            presentAlerts(alerts, banner = { alertBanner(it, "p1", "w1") }) { banner ->
+                shown += banner.paneId
+                dismiss.await()
+            }
+        }
+        alerts.emit(alert("p2", "w1", AgentStatus.DONE))
+        alerts.emit(alert("p3", "w1", AgentStatus.BLOCKED)) // needs input replaces finished
+        alerts.emit(alert("p4", "w2", AgentStatus.DONE))    // waits while p3 is up
+        assertEquals(listOf("p2", "p3"), shown)
+        alerts.emit(alert("p5", "w1", AgentStatus.BLOCKED)) // replaces p3; p4 keeps waiting
+        assertEquals(listOf("p2", "p3", "p5"), shown)
+        // Once the blocked banner is gone, the waiting finished one shows.
+        val blocked = dismiss
+        dismiss = CompletableDeferred()
+        blocked.complete(Unit)
+        assertEquals(listOf("p2", "p3", "p5", "p4"), shown)
+        // It is a normal banner then: a newer finished one replaces it, nothing else is left.
+        alerts.emit(alert("p6", "w1", AgentStatus.DONE))
+        dismiss.complete(Unit)
+        assertEquals(listOf("p2", "p3", "p5", "p4", "p6"), shown)
+        job.cancel()
+    }
+
+    @Test fun aBlockedAlertInTheSameBurstAsAFinishedOneShowsFirst() = runTest {
+        val shown = mutableListOf<String>()
+        val dismiss = CompletableDeferred<Unit>()
+        val job = launch {
+            // flowOf emits both without suspending: the blocked banner's job hasn't run yet.
+            presentAlerts(flowOf(alert("p2", "w1", AgentStatus.BLOCKED), alert("p3", "w1", AgentStatus.DONE)),
+                banner = { alertBanner(it, "p1", "w1") }) { banner ->
+                shown += banner.paneId
+                dismiss.await()
+            }
+        }
+        advanceUntilIdle()
+        assertEquals(listOf("p2"), shown)
+        dismiss.complete(Unit)
+        advanceUntilIdle()
+        assertEquals(listOf("p2", "p3"), shown)
+        job.cancel()
+    }
+
+    @Test fun aWaitingBannerForThePaneNowOpenIsDropped() = runTest(UnconfinedTestDispatcher()) {
+        val alerts = MutableSharedFlow<AgentAlert>()
+        val shown = mutableListOf<String>()
+        var openPane = "p1"
+        var dismiss = CompletableDeferred<Unit>()
+        val job = launch {
+            presentAlerts(alerts, banner = { alertBanner(it, openPane, "w1") }, stillWanted = { it.paneId != openPane }) { banner ->
+                shown += banner.paneId
+                dismiss.await()
+            }
+        }
+        alerts.emit(alert("p2", "w1", AgentStatus.BLOCKED))
+        alerts.emit(alert("p3", "w1", AgentStatus.DONE)) // waits
+        openPane = "p3" // the user opened p3 meanwhile
+        dismiss.complete(Unit)
+        assertEquals(listOf("p2"), shown)
+        job.cancel()
+    }
+}
