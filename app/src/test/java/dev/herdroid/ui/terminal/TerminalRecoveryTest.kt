@@ -225,9 +225,28 @@ class TerminalRecoveryTest {
         assertEquals(80 to 30, observeSize(80, 30, 40 to 10))
         assertEquals(512 to 128, observeSize(80, 24, 900 to 300))
         assertEquals(300 to 218, observeSize(80, 24, 300 to 300))
-        assertTrue(isWideFrame(147, 80))
-        assertFalse(isWideFrame(80, 80))
-        assertFalse(isWideFrame(147, 0))
+        assertTrue(isOversizeFrame(147, 24, 80, 24))
+        assertTrue("taller only", isOversizeFrame(80, 50, 80, 24))
+        assertFalse(isOversizeFrame(80, 24, 80, 24))
+        assertFalse(isOversizeFrame(147, 50, 0, 0))
+    }
+
+    @Test fun onlyAViewThatLostRowsKeepsTheWatchersStream() {
+        assertFalse(needsObserveReopen(80 to 24, 80 to 24, paneChanged = false))
+        assertFalse("keyboard opened", needsObserveReopen(80 to 24, 80 to 14, paneChanged = false))
+        assertTrue("pane shrank", needsObserveReopen(80 to 50, 80 to 40, paneChanged = true))
+        assertTrue("view grew", needsObserveReopen(80 to 14, 80 to 24, paneChanged = false))
+        assertTrue("narrower", needsObserveReopen(80 to 24, 60 to 24, paneChanged = false))
+    }
+
+    @Test(timeout = 10_000) fun aWatcherKeepsItsStreamWhenTheKeyboardShrinksTheView(): Unit = runBlocking {
+        startLive(observe = true)
+        controller.onGridSize(80, 14, 8, 16)
+        delay(400)
+        assertEquals(1, connection.opened.size)
+        controller.onGridSize(80, 30, 8, 16)
+        await { connection.opened.size == 2 }
+        assertEquals(80 to 30, connection.sizes.last())
     }
 
     private suspend fun startLive(observe: Boolean = false) {

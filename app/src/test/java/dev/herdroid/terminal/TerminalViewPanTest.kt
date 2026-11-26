@@ -69,12 +69,12 @@ class TerminalViewPanTest {
         assertEquals(after, view.cellAt(100f, 50f).first)
     }
 
-    @Test fun fitWidthShowsTheWholeScreenAndANarrowScreenNeverPans() {
+    @Test fun fitScreenShowsTheWholeScreenAndANarrowScreenNeverPans() {
         view.model.applyFrame(400, 10, true, "wide".toByteArray())
-        view.fitWidth = true
+        view.fitScreen = true
         assertEquals(399, view.cellAt(399f, 50f).first)
 
-        view.fitWidth = false
+        view.fitScreen = false
         view.model.applyFrame(20, 10, true, "narrow".toByteArray())
         drag(300f, 100f, 50f, 105f)
         assertEquals(5, view.cellAt(5 * cellWidthOf(view) + 1f, 50f).first)
@@ -87,6 +87,31 @@ class TerminalViewPanTest {
         drag(300f, 100f, 50f, 105f)
         assertEquals(399, view.cellAt(399f, 50f).first)
         assertEquals(0, view.cellAt(0f, 50f).first)
+    }
+
+    @Test fun aTallScreenKeepsTheCursorRowInView() {
+        view.model.applyFrame(20, 200, true, "top".toByteArray())
+        assertEquals("cursor on the first row", 0, view.cellAt(5f, 1f).second)
+
+        view.model.applyFrame(20, 200, true, ("\r\n".repeat(199) + "end").toByteArray())
+        assertEquals("cursor on the last row", 199, view.cellAt(5f, 399f).second)
+        assertTrue(view.cellAt(5f, 1f).second > 0)
+
+        view.model.applyFrame(20, 200, true, "\u001b[H\u001b[?25l".toByteArray())
+        assertEquals("hidden cursor shows the bottom", 199, view.cellAt(5f, 399f).second)
+    }
+
+    @Test fun fitToScreenFitsATallScreenWhole() {
+        view.model.applyFrame(20, 200, true, ("\r\n".repeat(199)).toByteArray())
+        view.fitScreen = true
+        assertEquals(0, view.cellAt(5f, 1f).second)
+        assertEquals(199, view.cellAt(5f, 399f).second)
+    }
+
+    @Test fun inControlATallScreenIsDrawnFromItsTop() {
+        view.panWide = false
+        view.model.applyFrame(20, 200, true, ("\r\n".repeat(199)).toByteArray())
+        assertEquals(0, view.cellAt(5f, 1f).second)
     }
 
     private fun cellWidthOf(v: TerminalView): Float {

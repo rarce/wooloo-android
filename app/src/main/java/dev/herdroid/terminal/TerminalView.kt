@@ -79,8 +79,9 @@ interface TerminalViewListener {
  *   taps become mouse clicks for TUIs that enable mouse reporting.
  * - If the remote screen is wider than the view it is scaled to fit, except while watching
  *   ([panWide]: the pane keeps its controller's size), where it pans sideways with a one-finger drag
- *   locked to the horizontal axis, with a position bar and a fade on the hidden edge, unless
- *   [fitWidth] asks for scaling.
+ *   locked to the horizontal axis, with a position bar and a fade on the hidden edge, and a screen
+ *   taller than the view keeps the cursor row (or, with the cursor hidden, the bottom) in view,
+ *   unless [fitScreen] asks to scale it all into the view.
  */
 @SuppressLint("ViewConstructor")
 class TerminalView(
@@ -97,12 +98,15 @@ class TerminalView(
     var panWide = false
         set(value) { if (field != value) { field = value; invalidate() } }
 
-    /** While [panWide], scale a wider screen down to fit instead of panning it. */
-    var fitWidth = false
+    /** While [panWide], scale a larger screen down to fit both ways instead of panning it. */
+    var fitScreen = false
         set(value) { if (field != value) { field = value; invalidate() } }
 
     /** How far a wide screen is panned to the left, in (scaled) pixels. */
     private var panX = 0f
+
+    /** How far a tall screen is moved up to keep the cursor in view, in (scaled) pixels. */
+    private var panY = 0f
 
     var inputEnabled = true
         set(value) {
@@ -165,6 +169,9 @@ class TerminalView(
     private var edgeShaderColor = 0
     private var leftEdge: LinearGradient? = null
     private var rightEdge: LinearGradient? = null
+    private var edgeShaderColorV = 0
+    private var topEdge: LinearGradient? = null
+    private var bottomEdge: LinearGradient? = null
 
     private var fontSizeSp = 13f
     private var cellWidth = 0f
@@ -271,27 +278,68 @@ class TerminalView(
             val scale = contentScale(emu)
             val shown = emu.cols * cellWidth * scale
             panX = WideContent.clamp(panX, shown, available)
+            val availableH = availableHeight()
+            val shownH = emu.rows * cellHeight * scale
+            updatePanY(emu, scale)
             canvas.save()
             if (panX > 0f || shown > available) {
                 canvas.clipRect(paddingLeft.toFloat(), 0f, paddingLeft + available, height.toFloat())
             }
-            canvas.translate(paddingLeft - panX, paddingTop.toFloat())
+            if (panY > 0f) canvas.clipRect(0f, paddingTop.toFloat(), width.toFloat(), paddingTop + availableH)
+            canvas.translate(paddingLeft - panX, paddingTop - panY)
             if (scale != 1f) canvas.scale(scale, scale)
             for (y in 0 until emu.rows) drawRow(canvas, emu, y)
             drawCursor(canvas, emu)
             canvas.restore()
             drawWideIndicators(canvas, shown, available)
+            drawTallIndicators(canvas, shownH, availableH)
         }
     }
 
     private fun availableWidth() = (width - paddingLeft - paddingRight).toFloat()
+    private fun availableHeight() = (height - paddingTop - paddingBottom).toFloat()
 
-    /** A screen wider than the view shrinks to fit, unless it is being panned. */
+    /**
+     * A screen wider than the view shrinks to fit its width, unless it is being panned. Fitting a
+     * panned (watched) screen fits its height too, so nothing is left to pan.
+     */
     private fun contentScale(emu: TerminalEmulator): Float {
         val contentWidth = emu.cols * cellWidth
         val available = availableWidth()
-        val fit = !panWide || fitWidth
-        return if (fit && contentWidth > available && contentWidth > 0) available / contentWidth else 1f
+        if (!panWide) return if (contentWidth > available && contentWidth > 0) available / contentWidth else 1f
+        if (!fitScreen) return 1f
+        val contentHeight = emu.rows * cellHeight
+        val byWidth = if (contentWidth > 0) available / contentWidth else 1f
+        val byHeight = if (contentHeight > 0) availableHeight() / contentHeight else 1f
+        return minOf(1f, byWidth, byHeight).takeIf { it > 0f } ?: 1f
+    }
+
+    /** While watching, a screen taller than the view follows the cursor, or shows its bottom. */
+    private fun updatePanY(emu: TerminalEmulator, scale: Float) {
+        val rowH = cellHeight * scale
+        val cursorTop = if (emu.cursorVisible) emu.cursorY * rowH else null
+        panY = if (!panWide) 0f else WideContent.follow(panY, emu.rows * rowH, availableHeight(), cursorTop, rowH)
+    }
+
+    /** Fades over the top or bottom edge while rows are hidden there. */
+    private fun drawTallIndicators(canvas: Canvas, shownH: Float, availableH: Float) {
+        val max = WideContent.maxOffset(shownH, availableH)
+        if (max == 0f) return
+        if (edgeShaderColorV != theme.background || topEdge == null) {
+            edgeShaderColorV = theme.background
+            val clear = theme.background and 0x00FFFFFF
+            topEdge = LinearGradient(0f, 0f, 0f, edgeWidth, theme.background, clear, Shader.TileMode.CLAMP)
+            bottomEdge = LinearGradient(0f, 0f, 0f, edgeWidth, clear, theme.background, Shader.TileMode.CLAMP)
+        }
+        val top = paddingTop.toFloat()
+        if (panY > 0.5f) canvas.withTranslation(0f, top) {
+            edgePaint.shader = topEdge
+            drawRect(0f, 0f, width.toFloat(), edgeWidth, edgePaint)
+        }
+        if (panY < max - 0.5f) canvas.withTranslation(0f, top + availableH - edgeWidth) {
+            edgePaint.shader = bottomEdge
+            drawRect(0f, 0f, width.toFloat(), edgeWidth, edgePaint)
+        }
     }
 
     /** Fades over the edges with hidden content and a thin bar showing the visible part. */
@@ -567,7 +615,8 @@ class TerminalView(
         val emu = model.emulator
         val scale = contentScale(emu)
         val col = WideContent.column(px - paddingLeft, panX, cellWidth, scale, emu.cols)
-        val row = ((py - paddingTop) / (cellHeight * scale)).toInt().coerceIn(0, max(0, emu.rows - 1))
+        updatePanY(emu, scale)
+        val row = ((py - paddingTop + panY) / (cellHeight * scale)).toInt().coerceIn(0, max(0, emu.rows - 1))
         return col to row
     }
 

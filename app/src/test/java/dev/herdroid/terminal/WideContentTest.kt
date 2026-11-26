@@ -15,6 +15,19 @@ class WideContentTest {
         assertEquals(0f, WideContent.clamp(250f, 300f, 400f))
     }
 
+    @Test fun aTallScreenFollowsTheCursorOrShowsTheBottom() {
+        // Fits: no offset.
+        assertEquals(0f, WideContent.follow(50f, 300f, 400f, focusTop = 280f, focusHeight = 20f))
+        // Cursor already in view: stay put.
+        assertEquals(100f, WideContent.follow(100f, 1000f, 400f, focusTop = 300f, focusHeight = 20f))
+        // Cursor below: move just enough to show its whole row.
+        assertEquals(380f, WideContent.follow(100f, 1000f, 400f, focusTop = 760f, focusHeight = 20f))
+        // Cursor above: move up to it.
+        assertEquals(40f, WideContent.follow(300f, 1000f, 400f, focusTop = 40f, focusHeight = 20f))
+        // No cursor: the bottom.
+        assertEquals(600f, WideContent.follow(0f, 1000f, 400f, focusTop = null, focusHeight = 20f))
+    }
+
     @Test fun aDragLocksToTheAxisOfItsFirstMovement() {
         assertNull(WideContent.axis(3f, 2f, slop = 8f, canPan = true))
         assertEquals(Axis.Horizontal, WideContent.axis(20f, 5f, slop = 8f, canPan = true))

@@ -25,13 +25,17 @@ class AlertBannerTest {
         assertNull(alertBanner(alert("p1", "w1", AgentStatus.BLOCKED), currentPaneId = "p1", currentWorkspaceId = "w1"))
     }
 
-    @Test fun showsFinishedOnlyFromTheSameSpace() {
+    @Test fun showsFinishedFromAnySpaceBrieflyWhenElsewhere() {
         val here = alertBanner(alert("p2", "w1", AgentStatus.DONE), "p1", "w1")!!
         assertEquals(false, here.elsewhere)
         assertEquals("p2", here.paneId)
         assertEquals(true, here.message.endsWith(" finished"))
         assertEquals(false, here.message.contains(" in ridium"))
-        assertNull(alertBanner(alert("p3", "w2", AgentStatus.DONE), "p1", "w1"))
+        assertEquals(false, here.brief)
+        val elsewhere = alertBanner(alert("p3", "w2", AgentStatus.DONE), "p1", "w1")!!
+        assertEquals(true, elsewhere.message.endsWith(" in ridium finished"))
+        assertEquals(true, elsewhere.brief)
+        assertEquals(false, alertBanner(alert("p3", "w2", AgentStatus.BLOCKED), "p1", "w1")!!.brief)
     }
 
     @Test fun showsBlockedFromAnySpace() {
@@ -53,7 +57,7 @@ class AlertBannerTest {
             }
         }
         alerts.emit(alert("p2", "w1", AgentStatus.BLOCKED))
-        alerts.emit(alert("p3", "w2", AgentStatus.DONE)) // filtered: leaves p2 up
+        alerts.emit(alert("p1", "w1", AgentStatus.DONE)) // the open pane's own: leaves p2 up
         assertEquals(listOf("p2"), shown)
         assertEquals(emptyList<String>(), replaced)
         alerts.emit(alert("p4", "w2", AgentStatus.BLOCKED))
@@ -74,13 +78,19 @@ class AlertBannerTest {
         }
         alerts.emit(alert("p2", "w1", AgentStatus.DONE))
         alerts.emit(alert("p3", "w1", AgentStatus.BLOCKED)) // needs input replaces finished
-        alerts.emit(alert("p4", "w1", AgentStatus.DONE))    // dropped while p3 is up
+        alerts.emit(alert("p4", "w2", AgentStatus.DONE))    // waits while p3 is up
         assertEquals(listOf("p2", "p3"), shown)
-        // Once the blocked banner is gone, a later finished one shows; the dropped one never does.
-        dismiss.complete(Unit)
-        dismiss = CompletableDeferred()
-        alerts.emit(alert("p5", "w1", AgentStatus.DONE))
+        alerts.emit(alert("p5", "w1", AgentStatus.BLOCKED)) // replaces p3; p4 keeps waiting
         assertEquals(listOf("p2", "p3", "p5"), shown)
+        // Once the blocked banner is gone, the waiting finished one shows.
+        val blocked = dismiss
+        dismiss = CompletableDeferred()
+        blocked.complete(Unit)
+        assertEquals(listOf("p2", "p3", "p5", "p4"), shown)
+        // It is a normal banner then: a newer finished one replaces it, nothing else is left.
+        alerts.emit(alert("p6", "w1", AgentStatus.DONE))
+        dismiss.complete(Unit)
+        assertEquals(listOf("p2", "p3", "p5", "p4", "p6"), shown)
         job.cancel()
     }
 }

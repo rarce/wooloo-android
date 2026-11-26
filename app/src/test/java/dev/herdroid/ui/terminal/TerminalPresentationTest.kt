@@ -49,7 +49,7 @@ class TerminalPresentationTest {
         var moved by mutableStateOf(true)
         var taken = 0
         compose.setContent { WoolooMobileTheme { WatchingBar(moved, onTakeControl = { taken++ }) } }
-        compose.onNodeWithText("Another screen has control").assertExists()
+        compose.onNodeWithText("Another screen took control").assertExists()
         compose.onNode(SemanticsMatcher.expectValue(SemanticsProperties.LiveRegion, LiveRegionMode.Polite)).assertExists()
         compose.onNodeWithText("Taking control resizes the pane to fit this phone.").assertExists()
         compose.onNodeWithText("Take control").performClick()
@@ -58,11 +58,26 @@ class TerminalPresentationTest {
         compose.runOnIdle { assertEquals(1, taken) }
     }
 
-    @Test fun fitWidthIsOfferedOnlyForAWideScreen() {
-        assertNull(fitWidthMenu(wideFrame = false, fitWidth = false))
-        assertNull(fitWidthMenu(wideFrame = false, fitWidth = true))
-        assertEquals(false, fitWidthMenu(wideFrame = true, fitWidth = false))
-        assertEquals(true, fitWidthMenu(wideFrame = true, fitWidth = true))
+    @Test fun aZoomedPaneIsSizedToTheWholeTab() {
+        val left = PaneLayoutPane("p1", focused = true, rect = PaneLayoutRect(0, 0, 100, 50))
+        val right = PaneLayoutPane("p2", rect = PaneLayoutRect(100, 0, 100, 50))
+        val tiled = PaneLayoutSnapshot("w", "t", zoomed = false, area = PaneLayoutRect(0, 0, 200, 50),
+            focusedPaneId = "p1", panes = listOf(left, right))
+        assertEquals(PaneLayoutRect(0, 0, 100, 50), paneRectIn(tiled, "p1"))
+        val zoomed = tiled.copy(zoomed = true)
+        assertEquals(PaneLayoutRect(0, 0, 200, 50), paneRectIn(zoomed, "p1"))
+        assertEquals("other panes keep their rect", PaneLayoutRect(100, 0, 100, 50), paneRectIn(zoomed, "p2"))
+        val noArea = zoomed.copy(area = PaneLayoutRect(0, 0, 0, 0))
+        assertEquals("bounding box without an area", PaneLayoutRect(0, 0, 200, 50), paneRectIn(noArea, "p1"))
+        assertNull(paneRectIn(zoomed, "p9"))
+        assertNull(paneRectIn(null, "p1"))
+    }
+
+    @Test fun fitScreenIsOfferedOnlyForAWideScreen() {
+        assertNull(fitScreenMenu(oversizeFrame = false, fitScreen = false))
+        assertNull(fitScreenMenu(oversizeFrame = false, fitScreen = true))
+        assertEquals(false, fitScreenMenu(oversizeFrame = true, fitScreen = false))
+        assertEquals(true, fitScreenMenu(oversizeFrame = true, fitScreen = true))
 
         var fit by mutableStateOf<Boolean?>(null)
         var toggled = 0
@@ -73,13 +88,13 @@ class TerminalPresentationTest {
                     agentName = null, agentStatus = null, agentLabel = null, onBack = {},
                     menu = true, onMenu = {}, readOnly = true, onToggleReadOnly = {},
                     onFont = {}, onCopy = {}, onZoom = {}, onSplit = {}, onRename = {},
-                    onClosePane = {}, onReconnect = {}, fitWidth = fit, onFitWidth = { toggled++ },
+                    onClosePane = {}, onReconnect = {}, fitScreen = fit, onFitScreen = { toggled++ },
                 )
             }
         }
-        compose.onNodeWithText("Fit width").assertDoesNotExist()
+        compose.onNodeWithText("Fit to screen").assertDoesNotExist()
         fit = false
-        compose.onNodeWithText("Fit width").performClick()
+        compose.onNodeWithText("Fit to screen").performClick()
         fit = true
         compose.onNodeWithText("Actual size").assertExists()
         compose.runOnIdle { assertEquals(1, toggled) }

@@ -92,8 +92,8 @@ class TerminalController internal constructor(
     var controlMoved by mutableStateOf(false)
         private set
 
-    /** The remote screen is wider than this view (a watched pane keeps its controller's size). */
-    var wideFrame by mutableStateOf(false)
+    /** The remote screen is wider or taller than this view (a watched pane keeps its controller's size). */
+    var oversizeFrame by mutableStateOf(false)
         private set
 
     /** The active prompt's numbered options, read from every frame (the screen decides when to show them). */
@@ -115,6 +115,8 @@ class TerminalController internal constructor(
     /** The pane's real size from the session layout, when known; watchers open at it. */
     private var paneSize: Pair<Int, Int>? = null
     private var openedSize: Pair<Int, Int>? = null
+    /** [paneSize] when the current stream opened: a view that shrinks alone needs no reopen. */
+    private var openedPane: Pair<Int, Int>? = null
     private var observeResizeJob: Job? = null
 
     init {
@@ -175,14 +177,18 @@ class TerminalController internal constructor(
     /** A watcher can't resize its stream: reopen it at the new size once the sizes settle. */
     private fun reopenIfObserveSizeChanged() {
         observeResizeJob?.cancel()
-        val opened = openedSize ?: return
-        if (state != PaneState.Live || observeSize(cols, rows, paneSize) == opened) return
+        if (state != PaneState.Live || !observeReopenNeeded()) return
         observeResizeJob = scope.launch {
             delay(OPEN_DEBOUNCE_MS)
-            if (readOnly && state == PaneState.Live && observeSize(cols, rows, paneSize) != openedSize) {
+            if (readOnly && state == PaneState.Live && observeReopenNeeded()) {
                 start(takeover = false, observeOnly = true, recovery = false, delayMs = 0, quiet = true)
             }
         }
+    }
+
+    private fun observeReopenNeeded(): Boolean {
+        val opened = openedSize ?: return false
+        return needsObserveReopen(opened, observeSize(cols, rows, paneSize), paneChanged = paneSize != openedPane)
     }
 
     fun open(takeover: Boolean = false, observeOnly: Boolean = readOnly, recovery: Boolean = false) {
@@ -210,6 +216,7 @@ class TerminalController internal constructor(
             // Sized after the debounce, so a pane size that arrived meanwhile is used.
             val (openCols, openRows) = if (observeOnly) observeSize(cols, rows, paneSize) else cols to rows
             openedSize = openCols to openRows
+            openedPane = paneSize
             val opened = runCatching {
                 connection.openTerminal(paneId, openCols, openRows, takeover, observeOnly, scope)
             }.getOrElse { error ->
@@ -337,8 +344,8 @@ class TerminalController internal constructor(
     }
 
     private fun refreshWideFrame() {
-        val wide = synchronized(model.lock) { isWideFrame(model.emulator.cols, cols) }
-        if (wide != wideFrame) wideFrame = wide
+        val wide = synchronized(model.lock) { model.emulator.let { isOversizeFrame(it.cols, it.rows, cols, rows) } }
+        if (wide != oversizeFrame) oversizeFrame = wide
     }
 
     private fun refreshPromptOptions() {
@@ -380,5 +387,17 @@ internal fun observeSize(viewCols: Int, viewRows: Int, pane: Pair<Int, Int>?): P
     return cols to rows
 }
 
-/** Whether a [frameCols]-wide screen overflows a view [viewCols] wide (so it pans, or can fit). */
-internal fun isWideFrame(frameCols: Int, viewCols: Int): Boolean = viewCols in 1 until frameCols
+/** Whether a [frameCols]x[frameRows] screen overflows a [viewCols]x[viewRows] view (so it pans, or can fit). */
+internal fun isOversizeFrame(frameCols: Int, frameRows: Int, viewCols: Int, viewRows: Int): Boolean =
+    viewCols in 1 until frameCols || viewRows in 1 until frameRows
+
+/**
+ * Whether a watcher opened at [opened] must reopen to show [next]. Not when only this view lost
+ * rows (the keyboard, the watching bar) with the pane unchanged: the taller frame is shown with a
+ * vertical offset instead, and reopening would flash the pane for nothing.
+ */
+internal fun needsObserveReopen(opened: Pair<Int, Int>, next: Pair<Int, Int>, paneChanged: Boolean): Boolean = when {
+    next == opened -> false
+    !paneChanged && next.first == opened.first && next.second < opened.second -> false
+    else -> true
+}

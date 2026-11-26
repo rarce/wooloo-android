@@ -4,8 +4,9 @@ import kotlin.math.abs
 import kotlin.math.max
 
 /**
- * Horizontal panning for a remote screen wider than the view (a watched pane keeps the size its
- * controller gave it). Offsets are in pixels from the left edge of the content.
+ * Panning for a remote screen larger than the view (a watched pane keeps the size its controller
+ * gave it): sideways by hand, vertically following the cursor. Offsets are in pixels from the
+ * content's left or top edge.
  */
 internal object WideContent {
     /** How far the content can move left: zero when it fits. */
@@ -29,6 +30,22 @@ internal object WideContent {
         if (contentPx <= viewPx || contentPx <= 0f) return null
         val length = viewPx / contentPx
         return clamp(offset, contentPx, viewPx) / contentPx to length
+    }
+
+    /**
+     * The vertical offset for a screen taller than the view, which can't be scrolled by hand (a
+     * vertical drag scrolls the scrollback): moves as little as possible from [previous] to keep the
+     * focus row ([focusTop] and [focusHeight] pixels tall, usually the cursor's) in view, or shows the
+     * bottom when there is no focus (the cursor is hidden). Zero when the content fits.
+     */
+    fun follow(previous: Float, contentPx: Float, viewPx: Float, focusTop: Float?, focusHeight: Float): Float {
+        val max = maxOffset(contentPx, viewPx)
+        if (max == 0f) return 0f
+        if (focusTop == null) return max
+        var offset = previous.coerceIn(0f, max)
+        if (focusTop + focusHeight > offset + viewPx) offset = focusTop + focusHeight - viewPx
+        if (focusTop < offset) offset = focusTop
+        return offset.coerceIn(0f, max)
     }
 
     /** The column under [px] (relative to the content's left padding) at [scale] and [offset]. */

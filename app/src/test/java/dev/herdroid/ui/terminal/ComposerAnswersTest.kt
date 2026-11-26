@@ -62,12 +62,13 @@ class ComposerAnswersTest {
     }
 
 
-    private fun watching(isAgent: Boolean, sent: MutableList<String>, sentKeys: MutableList<String>, takeControl: () -> Unit) {
+    private fun watching(isAgent: Boolean, sent: MutableList<String>, sentKeys: MutableList<String>,
+                         live: Boolean = true, takeControl: () -> Unit) {
         compose.setContent {
             WoolooMobileTheme {
                 ComposerSheet("Message", null, isAgent, onDismiss = {}, onQuickReply = { sentKeys += it.input },
                     onSend = { text, _, _ -> sent += text; Result.success(Unit) },
-                    watchOnly = true, onTakeControl = takeControl)
+                    watchOnly = true, canTakeControl = live, onTakeControl = takeControl)
             }
         }
     }
@@ -99,8 +100,16 @@ class ComposerAnswersTest {
         compose.onNode(hasSetTextAction()).assertIsNotFocused()
         compose.onNodeWithText("Watching only: take control to run commands here.").assertExists()
         compose.onNodeWithText("Runs in this pane when you send.").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Attach image").assertIsNotEnabled()
         compose.onNode(hasSetTextAction()).performTextInput("ls")
         compose.onNodeWithContentDescription("Send").assertIsNotEnabled()
+    }
+
+    @Test fun takeControlIsOfferedOnlyForALivePane() {
+        watching(isAgent = true, mutableListOf(), mutableListOf(), live = false) {}
+        compose.onNodeWithText("Watching only, take control to send keys.").assertExists()
+        compose.onNodeWithText("Take control").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Attach image").assertIsEnabled()
     }
 
     @Test fun inControlTheKeysWork() {

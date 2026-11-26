@@ -111,6 +111,8 @@ import dev.herdroid.connection.AgentAlert
 import dev.herdroid.connection.ConnectionStatus
 import dev.herdroid.herdr.AgentStatus
 import dev.herdroid.herdr.PaneInfo
+import dev.herdroid.herdr.PaneLayoutRect
+import dev.herdroid.herdr.PaneLayoutSnapshot
 import dev.herdroid.herdr.SessionSnapshot
 import dev.herdroid.herdr.TabInfo
 import dev.herdroid.herdr.RemoteCommand
@@ -206,9 +208,9 @@ private fun TerminalScreenContent(
     val blocked = agent?.agentStatus == AgentStatus.BLOCKED
     // The screen only shows the active prompt while scrolled to the bottom.
     val detectOptions = (pane?.scroll?.offsetFromBottom ?: 0L) == 0L && (claudeAgent || blocked)
-    val paneRect = pane?.let { p -> snapshot?.layout(p.tabId)?.panes?.firstOrNull { it.paneId == p.paneId }?.rect }
+    val paneRect = pane?.let { p -> paneRectIn(snapshot?.layout(p.tabId), p.paneId) }
     LaunchedEffect(controller, paneRect) { controller.setPaneSize(paneRect?.width, paneRect?.height) }
-    var fitWidth by rememberSaveable { mutableStateOf(false) }
+    var fitScreen by rememberSaveable { mutableStateOf(false) }
     DisposableEffect(controller) { onDispose { controller.dispose() } }
 
     var terminalView by remember { mutableStateOf<TerminalView?>(null) }
@@ -241,7 +243,7 @@ private fun TerminalScreenContent(
                 message = banner.message,
                 actionLabel = "Open",
                 withDismissAction = true,
-                duration = SnackbarDuration.Long,
+                duration = if (banner.brief) SnackbarDuration.Short else SnackbarDuration.Long,
             )
             if (result == SnackbarResult.ActionPerformed) {
                 // Same space: switch in place. Another space: go through it, so back leads there.
@@ -292,8 +294,8 @@ private fun TerminalScreenContent(
                 onMenu = { menu = it },
                 readOnly = controller.readOnly,
                 onToggleReadOnly = { controller.toggleWatching() },
-                fitWidth = fitWidthMenu(controller.readOnly && controller.wideFrame, fitWidth),
-                onFitWidth = { fitWidth = !fitWidth },
+                fitScreen = fitScreenMenu(controller.readOnly && controller.oversizeFrame, fitScreen),
+                onFitScreen = { fitScreen = !fitScreen },
                 onFont = { delta ->
                     val next = (fontSize + delta).coerceIn(TerminalView.MIN_FONT_SP, TerminalView.MAX_FONT_SP)
                     app.preferences.setFontSize(next)
@@ -341,7 +343,7 @@ private fun TerminalScreenContent(
                     update = { view ->
                         terminalView = view
                         view.panWide = controller.readOnly
-                        view.fitWidth = fitWidth
+                        view.fitScreen = fitScreen
                         view.inputEnabled = retainInputFocus
                         view.retainInputFocus = retainInputFocus
                         view.listener = object : TerminalViewListener {
@@ -434,6 +436,7 @@ private fun TerminalScreenContent(
             pickImagesOnOpen = pickComposerImages,
             answers = (if (detectOptions) controller.promptOptions else emptyList()).map { it.asQuickReply() },
             watchOnly = controller.readOnly,
+            canTakeControl = controller.state == PaneState.Live,
             onTakeControl = { controller.takeControl() },
             onQuickReply = { reply -> controller.input(reply.input) },
             onSend = { text, images, uploads ->
@@ -542,8 +545,8 @@ internal fun TerminalTopBar(
     onClosePane: () -> Unit,
     onReconnect: () -> Unit,
     onSwipeAgent: ((Int) -> Unit)? = null,
-    fitWidth: Boolean? = null,
-    onFitWidth: () -> Unit = {},
+    fitScreen: Boolean? = null,
+    onFitScreen: () -> Unit = {},
     metrics: @Composable () -> Unit = {},
     onRead: () -> Unit = {},
 ) {
@@ -604,9 +607,9 @@ internal fun TerminalTopBar(
                     MenuItem(Icons.Outlined.ContentCopy, "Copy screen") { onMenu(false); onCopy() }
                     MenuItem(if (readOnly) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility,
                         if (readOnly) "Take control" else "Watch only") { onMenu(false); onToggleReadOnly() }
-                    if (fitWidth != null) {
-                        MenuItem(Icons.Outlined.FitScreen, if (fitWidth) "Actual size" else "Fit width") {
-                            onMenu(false); onFitWidth()
+                    if (fitScreen != null) {
+                        MenuItem(Icons.Outlined.FitScreen, if (fitScreen) "Actual size" else "Fit to screen") {
+                            onMenu(false); onFitScreen()
                         }
                     }
                     MenuItem(Icons.Outlined.CropFree, "Toggle zoom") { onMenu(false); onZoom() }
@@ -763,7 +766,7 @@ internal fun WatchingBar(controlMoved: Boolean, onTakeControl: () -> Unit) {
             Icon(Icons.Outlined.Visibility, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.tertiary)
             Column(Modifier.weight(1f).padding(horizontal = 10.dp)) {
                 Text(
-                    if (controlMoved) "Another screen has control" else "Watching only",
+                    if (controlMoved) "Another screen took control" else "Watching only",
                     style = MaterialTheme.typography.labelLarge,
                     color = MaterialTheme.colorScheme.onSurface,
                 )
@@ -782,8 +785,26 @@ internal fun WatchingBar(controlMoved: Boolean, onTakeControl: () -> Unit) {
 // its resizes apply, while watchers see the pane at the controller's size.
 private const val TAKE_CONTROL_RESIZES = "Taking control resizes the pane to fit this phone."
 
-/** The pane menu's Fit width state: null (hidden) unless the remote screen is wider than the view. */
-internal fun fitWidthMenu(wideFrame: Boolean, fitWidth: Boolean): Boolean? = fitWidth.takeIf { wideFrame }
+/** The pane menu's Fit to screen state: null (hidden) unless the remote screen is wider than the view. */
+internal fun fitScreenMenu(oversizeFrame: Boolean, fitScreen: Boolean): Boolean? = fitScreen.takeIf { oversizeFrame }
+
+/**
+ * The area [paneId] covers in [layout], in cells. herdr's layout snapshot keeps the tiled rects
+ * while a tab is zoomed, but draws its focused pane over the whole tab [PaneLayoutSnapshot.area]
+ * (ui/panes.rs, compute_pane_infos_for_tab), so that pane gets the area; with no area, the
+ * bounding box of all the panes. Rects include herdr's pane borders and scrollbar gutter, so they
+ * can be a cell or two larger than the terminal: a watcher asks for slightly more, never less.
+ */
+internal fun paneRectIn(layout: PaneLayoutSnapshot?, paneId: String): PaneLayoutRect? {
+    layout ?: return null
+    val own = layout.panes.firstOrNull { it.paneId == paneId }?.rect ?: return null
+    if (!layout.zoomed || layout.focusedPaneId != paneId) return own
+    if (layout.area.width > 0 && layout.area.height > 0) return layout.area
+    val rects = layout.panes.map { it.rect }
+    val left = rects.minOf { it.x }
+    val top = rects.minOf { it.y }
+    return PaneLayoutRect(left, top, rects.maxOf { it.x + it.width } - left, rects.maxOf { it.y + it.height } - top)
+}
 
 /** A composer chip for [this] option: its number and label, sending the number. */
 internal fun PromptOption.asQuickReply() =
@@ -796,28 +817,30 @@ internal data class AlertBanner(
     val paneId: String,
     val elsewhere: Boolean,
     val blocked: Boolean,
-)
+) {
+    /** An agent finishing in another space only needs a glance: a short banner. */
+    val brief: Boolean get() = elsewhere && !blocked
+}
 
 /**
- * The banner for [alert] while [currentPaneId] (in [currentWorkspaceId]) is open, or null when it
- * isn't worth interrupting for: this pane's own alerts, and agents finishing in another space
- * (the system notification covers those). Blocked agents show from any space.
+ * The banner for [alert] while [currentPaneId] (in [currentWorkspaceId]) is open, or null for this
+ * pane's own alerts. Agents from any space show: the system notification is skipped while the app
+ * is in the foreground, so the banner is the only notice.
  */
 internal fun alertBanner(alert: AgentAlert, currentPaneId: String, currentWorkspaceId: String?): AlertBanner? {
     val agent = alert.agent
     if (agent.paneId == currentPaneId) return null
     val blocked = agent.agentStatus == AgentStatus.BLOCKED
     val elsewhere = agent.workspaceId != currentWorkspaceId
-    if (elsewhere && !blocked) return null
     val where = alert.workspaceLabel?.takeIf { elsewhere }?.let { " in $it" }.orEmpty()
     val verb = if (blocked) "needs input" else "finished"
     return AlertBanner("${agent.displayName}$where $verb", agent.workspaceId, agent.paneId, elsewhere, blocked)
 }
 
 /**
- * Shows each alert worth a [banner] with [show]; a newer one cancels the one on screen, so alerts
- * never queue up behind each other. Ignored alerts leave the current banner alone, and so does an
- * agent finishing while one that needs input is on screen (that one is dropped, not queued).
+ * Shows each alert worth a [banner] with [show]; a newer one cancels the one on screen. Ignored
+ * alerts leave the current banner alone. An agent finishing never hides one that needs input: it
+ * waits until that banner is gone, then shows (only the latest such one waits).
  */
 internal suspend fun presentAlerts(
     alerts: Flow<AgentAlert>,
@@ -826,11 +849,23 @@ internal suspend fun presentAlerts(
 ): Unit = coroutineScope {
     var current: Job? = null
     var currentBlocked = false
+    var waiting: AlertBanner? = null
     alerts.mapNotNull(banner).collect { next ->
-        if (current?.isActive == true && currentBlocked && !next.blocked) return@collect
+        if (current?.isActive == true && currentBlocked && !next.blocked) {
+            waiting = next
+            return@collect
+        }
         current?.cancelAndJoin()
-        currentBlocked = next.blocked
-        current = launch { show(next) }
+        // A finished banner shown now makes an older waiting one stale.
+        if (!next.blocked) waiting = null
+        current = launch {
+            var shown: AlertBanner? = next
+            while (shown != null) {
+                currentBlocked = shown.blocked
+                show(shown)
+                shown = waiting.also { waiting = null }
+            }
+        }
     }
 }
 

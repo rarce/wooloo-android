@@ -78,6 +78,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -132,6 +133,7 @@ fun ComposerSheet(
     pickImagesOnOpen: Boolean = false,
     answers: List<QuickReply> = emptyList(),
     watchOnly: Boolean = false,
+    canTakeControl: Boolean = true,
     onTakeControl: () -> Unit = {},
 ) {
     val context = LocalContext.current
@@ -147,9 +149,13 @@ fun ComposerSheet(
     LaunchedEffect(Unit) {
         withContext(Dispatchers.IO) { ImageAttachments.pruneStale(context) }
     }
+    // Watching: keystrokes wouldn't reach the pane. A message to an agent goes through herdr instead.
+    val shellWatching = watchOnly && !isAgent
+    // The keyboard's content receiver is remembered once: it reads the current value through this.
+    val attachBlocked by rememberUpdatedState(shellWatching)
 
     fun attach(uri: Uri): Boolean {
-        if (sending || images.size + preparing >= MAX_IMAGES) return false
+        if (sending || attachBlocked || images.size + preparing >= MAX_IMAGES) return false
         preparing++
         scope.launch {
             try { images += ImageAttachments.prepare(context, uri) }
@@ -164,7 +170,7 @@ fun ComposerSheet(
         uris.take(MAX_IMAGES - images.size).forEach { attach(it) }
     }
     LaunchedEffect(Unit) {
-        if (pickImagesOnOpen) {
+        if (pickImagesOnOpen && !shellWatching) {
             picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
         }
     }
@@ -175,8 +181,6 @@ fun ComposerSheet(
             content.consume { item -> item.uri?.let { attach(it) } ?: false }
         }
     }
-    // Watching: keystrokes wouldn't reach the pane. A message to an agent goes through herdr instead.
-    val shellWatching = watchOnly && !isAgent
     val canSend = (text.text.isNotBlank() || images.isNotEmpty()) && preparing == 0 && !sending && !shellWatching
 
     ModalBottomSheet(onDismissRequest = { if (!sending) onDismiss() }, sheetState = sheetState) {
@@ -212,7 +216,8 @@ fun ComposerSheet(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.weight(1f),
                     )
-                    TextButton(onClick = onTakeControl, enabled = !sending) { Text("Take control") }
+                    // Only a live pane can be taken over, as in the watching bar.
+                    if (canTakeControl) TextButton(onClick = onTakeControl, enabled = !sending) { Text("Take control") }
                 }
             } else {
                 Text(
@@ -241,7 +246,7 @@ fun ComposerSheet(
                     onAttach = {
                         picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
                     },
-                    attachEnabled = !sending && images.size + preparing < MAX_IMAGES,
+                    attachEnabled = !sending && !shellWatching && images.size + preparing < MAX_IMAGES,
                     enabled = !sending,
                     // A watched shell can't run what is typed: don't pop the keyboard up for it.
                     autoFocus = !shellWatching,
@@ -280,9 +285,9 @@ fun ComposerSheet(
             sendError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             Text(
                 when {
+                    shellWatching -> "Watching only: take control to run commands here."
                     images.isNotEmpty() -> "Images are sent to this machine with your message."
                     isAgent -> "Send a message to this agent."
-                    shellWatching -> "Watching only: take control to run commands here."
                     else -> "Runs in this pane when you send."
                 },
                 style = MaterialTheme.typography.bodySmall,
