@@ -10,6 +10,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
@@ -49,6 +50,7 @@ class TerminalPresentationTest {
         var taken = 0
         compose.setContent { WoolooMobileTheme { WatchingBar(moved, onTakeControl = { taken++ }) } }
         compose.onNodeWithText("Another screen has control").assertExists()
+        compose.onNode(SemanticsMatcher.expectValue(SemanticsProperties.LiveRegion, LiveRegionMode.Polite)).assertExists()
         compose.onNodeWithText("Taking control resizes the pane to fit this phone.").assertExists()
         compose.onNodeWithText("Take control").performClick()
         moved = false

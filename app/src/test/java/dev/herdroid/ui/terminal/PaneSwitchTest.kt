@@ -36,7 +36,7 @@ class PaneSwitchTest {
         val states = listOf(
             PaneState.WaitingForLayout, PaneState.Opening, PaneState.Live, PaneState.Offline,
             PaneState.Busy("use --takeover"), PaneState.Busy("use --takeover", afterReconnect = true),
-            PaneState.TakenOver, PaneState.Closed("pane exited"), PaneState.Closed(null, interrupted = true),
+            PaneState.Closed("pane exited"), PaneState.Closed(null, interrupted = true),
         )
         for (status in statuses) for (state in states) {
             val recovery = recoveryUi(status, state)
@@ -46,7 +46,7 @@ class PaneSwitchTest {
                 assertTrue("The pane waits for the host: $label", recovery is PaneRecovery.WaitingForHost)
             }
             if (status == ConnectionStatus.Connected &&
-                (state is PaneState.Busy || state == PaneState.TakenOver || state is PaneState.Closed)) {
+                (state is PaneState.Busy || state is PaneState.Closed)) {
                 assertEquals("Pane problems keep their actions: $label", PaneRecovery.Actions(state), recovery)
             }
             if (state == PaneState.Live) assertEquals(PaneRecovery.None, recovery)

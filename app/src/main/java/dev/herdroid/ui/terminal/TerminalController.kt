@@ -28,8 +28,6 @@ sealed interface PaneState {
     data object Live : PaneState
     /** Another client controls this pane; we can take it over. */
     data class Busy(val reason: String, val afterReconnect: Boolean = false) : PaneState
-    /** We were in control and someone else took over. */
-    data object TakenOver : PaneState
     data object Offline : PaneState
     data class Closed(val reason: String?, val interrupted: Boolean = false) : PaneState
 }
@@ -54,7 +52,7 @@ internal fun recoveryUi(status: ConnectionStatus, state: PaneState): PaneRecover
         PaneState.Live -> PaneRecovery.None
         PaneState.WaitingForLayout, PaneState.Opening -> if (hostAway) waiting else PaneRecovery.Loading
         PaneState.Offline -> if (status == ConnectionStatus.Connected) PaneRecovery.Loading else waiting
-        is PaneState.Busy, PaneState.TakenOver, is PaneState.Closed ->
+        is PaneState.Busy, is PaneState.Closed ->
             if (status == ConnectionStatus.Connected) PaneRecovery.Actions(state) else waiting
     }
 }
@@ -207,10 +205,11 @@ class TerminalController internal constructor(
         }
         if (!quiet) state = PaneState.Opening
         val openingGeneration = generation
-        val (openCols, openRows) = if (observeOnly) observeSize(cols, rows, paneSize) else cols to rows
-        openedSize = openCols to openRows
         streamJob = scope.launch {
             if (delayMs > 0) delay(delayMs)
+            // Sized after the debounce, so a pane size that arrived meanwhile is used.
+            val (openCols, openRows) = if (observeOnly) observeSize(cols, rows, paneSize) else cols to rows
+            openedSize = openCols to openRows
             val opened = runCatching {
                 connection.openTerminal(paneId, openCols, openRows, takeover, observeOnly, scope)
             }.getOrElse { error ->
@@ -225,19 +224,15 @@ class TerminalController internal constructor(
             }
             stream = opened
             launch(Dispatchers.Default) {
+                var rendered = false
                 opened.events.collect { event ->
                     when (event) {
                         is TerminalEvent.Frame -> {
                             if (!applyFrame(openingGeneration, event)) return@collect
-                            if (state != PaneState.Live) scope.launch {
-                                if (generation == openingGeneration) {
-                                    recovering = false
-                                    state = PaneState.Live
-                                    // A stream that renders a frame and dies must still run out of
-                                    // retries: only a pane that stays live earns them back.
-                                    stableJob?.cancel()
-                                    stableJob = scope.launch { delay(STABLE_LIVE_MS); retries = 0 }
-                                }
+                            // Every stream's first frame, including a watcher's quiet reopen.
+                            if (!rendered) {
+                                rendered = true
+                                scope.launch { if (generation == openingGeneration) onLive() }
                             }
                         }
                         is TerminalEvent.Closed -> scope.launch {
@@ -247,6 +242,17 @@ class TerminalController internal constructor(
                 }
             }
         }
+    }
+
+    private fun onLive() {
+        recovering = false
+        state = PaneState.Live
+        // A stream that renders a frame and dies must still run out of retries: only a pane that
+        // stays live earns them back. A quiet reopen counts as a new stream here too.
+        stableJob?.cancel()
+        stableJob = scope.launch { delay(STABLE_LIVE_MS); retries = 0 }
+        // A pane size that changed while this stream was opening applies now.
+        if (readOnly) reopenIfObserveSizeChanged()
     }
 
     private fun onClosed(event: TerminalEvent.Closed) {
@@ -310,6 +316,9 @@ class TerminalController internal constructor(
 
     /** Control the pane even if another client has it; the pane is resized to this view. */
     fun takeControl() = open(takeover = true, observeOnly = false)
+
+    /** The pane menu's Watch only / Take control. */
+    fun toggleWatching() = if (readOnly) takeControl() else setObserveOnly(true)
 
     private fun closeStream() {
         synchronized(model.lock) {

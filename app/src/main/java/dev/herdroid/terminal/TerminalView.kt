@@ -77,9 +77,10 @@ interface TerminalViewListener {
  *   so Gboard/SwiftKey word composition becomes correct keystrokes and backspaces.
  * - Vertical drags scroll herdr's scrollback (with fling), pinch changes font size,
  *   taps become mouse clicks for TUIs that enable mouse reporting.
- * - If the remote screen is wider than the view (a watched pane keeps its controller's size), it
- *   pans sideways with a one-finger drag locked to the horizontal axis, with a position bar and a
- *   fade on the hidden edge; [fitWidth] scales it to fit instead.
+ * - If the remote screen is wider than the view it is scaled to fit, except while watching
+ *   ([panWide]: the pane keeps its controller's size), where it pans sideways with a one-finger drag
+ *   locked to the horizontal axis, with a position bar and a fade on the hidden edge, unless
+ *   [fitWidth] asks for scaling.
  */
 @SuppressLint("ViewConstructor")
 class TerminalView(
@@ -92,7 +93,11 @@ class TerminalView(
     var theme: TerminalTheme = TerminalTheme.Default
         set(value) { field = value; invalidate() }
 
-    /** Scale a remote screen wider than the view down to fit, instead of panning it. */
+    /** Pan a remote screen wider than the view instead of scaling it (set while watching). */
+    var panWide = false
+        set(value) { if (field != value) { field = value; invalidate() } }
+
+    /** While [panWide], scale a wider screen down to fit instead of panning it. */
     var fitWidth = false
         set(value) { if (field != value) { field = value; invalidate() } }
 
@@ -281,11 +286,12 @@ class TerminalView(
 
     private fun availableWidth() = (width - paddingLeft - paddingRight).toFloat()
 
-    /** 1 unless [fitWidth] shrinks a screen wider than the view. */
+    /** A screen wider than the view shrinks to fit, unless it is being panned. */
     private fun contentScale(emu: TerminalEmulator): Float {
         val contentWidth = emu.cols * cellWidth
         val available = availableWidth()
-        return if (fitWidth && contentWidth > available && contentWidth > 0) available / contentWidth else 1f
+        val fit = !panWide || fitWidth
+        return if (fit && contentWidth > available && contentWidth > 0) available / contentWidth else 1f
     }
 
     /** Fades over the edges with hidden content and a thin bar showing the visible part. */

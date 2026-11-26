@@ -166,6 +166,50 @@ class TerminalRecoveryTest {
         assertEquals(2, connection.opened.size)
     }
 
+    @Test(timeout = 10_000) fun aPaneSizeThatArrivesWhileOpeningIsAppliedOnceLive(): Unit = runBlocking {
+        controller.setObserveOnly(true)
+        controller.onGridSize(80, 24, 8, 16)
+        await { connection.opened.size == 1 }
+        assertEquals(80 to 24, connection.sizes.last())
+        assertEquals(PaneState.Opening, controller.state)
+        controller.setPaneSize(147, 50)
+        delay(300)
+        assertEquals(1, connection.opened.size)
+        connection.opened.last().frame()
+        await { connection.opened.size == 2 }
+        assertEquals(147 to 50, connection.sizes.last())
+        connection.opened.last().frame()
+        await { controller.state == PaneState.Live }
+        delay(400)
+        assertEquals("Exactly one reopen", 2, connection.opened.size)
+    }
+
+    @Test(timeout = 10_000) fun aPaneSizeThatArrivesDuringTheFirstOpenDebounceIsUsedDirectly(): Unit = runBlocking {
+        controller.setObserveOnly(true)
+        controller.onGridSize(80, 24, 8, 16)
+        controller.setPaneSize(147, 50)
+        await { connection.opened.size == 1 }
+        assertEquals(147 to 50, connection.sizes.last())
+        connection.opened.last().frame()
+        await { controller.state == PaneState.Live }
+        delay(400)
+        assertEquals(1, connection.opened.size)
+    }
+
+    @Test(timeout = 10_000) fun theMenusTakeControlTakesOver(): Unit = runBlocking {
+        startLive(observe = true)
+        controller.toggleWatching()
+        await { connection.opened.size == 2 }
+        assertTrue(connection.takeovers.last())
+        assertFalse(controller.readOnly)
+        connection.opened.last().frame()
+        await { controller.state == PaneState.Live }
+        controller.toggleWatching()
+        await { connection.opened.size == 3 }
+        assertTrue(connection.observers.last())
+        assertFalse(connection.takeovers.last())
+    }
+
     @Test(timeout = 10_000) fun controllersKeepSizingThePaneToTheView(): Unit = runBlocking {
         controller.setPaneSize(147, 50)
         startLive()

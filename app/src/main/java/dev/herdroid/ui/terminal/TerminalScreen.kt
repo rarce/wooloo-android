@@ -95,6 +95,8 @@ import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
@@ -130,8 +132,10 @@ import dev.herdroid.ui.theme.WoolooMobileTheme
 import dev.herdroid.ui.theme.LocalStatusColors
 import dev.herdroid.ui.theme.Mono
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.mapNotNull
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 
 /**
@@ -287,8 +291,8 @@ private fun TerminalScreenContent(
                 menu = menu,
                 onMenu = { menu = it },
                 readOnly = controller.readOnly,
-                onToggleReadOnly = { controller.setObserveOnly(!controller.readOnly) },
-                fitWidth = fitWidthMenu(controller.wideFrame, fitWidth),
+                onToggleReadOnly = { controller.toggleWatching() },
+                fitWidth = fitWidthMenu(controller.readOnly && controller.wideFrame, fitWidth),
                 onFitWidth = { fitWidth = !fitWidth },
                 onFont = { delta ->
                     val next = (fontSize + delta).coerceIn(TerminalView.MIN_FONT_SP, TerminalView.MAX_FONT_SP)
@@ -336,6 +340,7 @@ private fun TerminalScreenContent(
                     },
                     update = { view ->
                         terminalView = view
+                        view.panWide = controller.readOnly
                         view.fitWidth = fitWidth
                         view.inputEnabled = retainInputFocus
                         view.retainInputFocus = retainInputFocus
@@ -429,7 +434,7 @@ private fun TerminalScreenContent(
             pickImagesOnOpen = pickComposerImages,
             answers = (if (detectOptions) controller.promptOptions else emptyList()).map { it.asQuickReply() },
             watchOnly = controller.readOnly,
-            onTakeControl = { controller.setObserveOnly(false) },
+            onTakeControl = { controller.takeControl() },
             onQuickReply = { reply -> controller.input(reply.input) },
             onSend = { text, images, uploads ->
                 when {
@@ -748,12 +753,19 @@ internal fun WatchingBar(controlMoved: Boolean, onTakeControl: () -> Unit) {
         shape = RoundedCornerShape(12.dp),
         modifier = Modifier.fillMaxWidth().padding(start = 8.dp, end = 8.dp, top = 8.dp),
     ) {
-        Row(Modifier.padding(start = 12.dp, end = 4.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            Modifier
+                // Announced when control changes hands.
+                .semantics(mergeDescendants = true) { liveRegion = LiveRegionMode.Polite }
+                .padding(start = 12.dp, end = 4.dp, top = 6.dp, bottom = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             Icon(Icons.Outlined.Visibility, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.tertiary)
             Column(Modifier.weight(1f).padding(horizontal = 10.dp)) {
                 Text(
                     if (controlMoved) "Another screen has control" else "Watching only",
                     style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurface,
                 )
                 Text(
                     TAKE_CONTROL_RESIZES,
@@ -778,7 +790,13 @@ internal fun PromptOption.asQuickReply() =
     QuickReply(if (label.isEmpty()) "$number" else "$number $label", number.toString())
 
 /** What an alert about another agent shows over the terminal. */
-internal data class AlertBanner(val message: String, val workspaceId: String, val paneId: String, val elsewhere: Boolean)
+internal data class AlertBanner(
+    val message: String,
+    val workspaceId: String,
+    val paneId: String,
+    val elsewhere: Boolean,
+    val blocked: Boolean,
+)
 
 /**
  * The banner for [alert] while [currentPaneId] (in [currentWorkspaceId]) is open, or null when it
@@ -793,19 +811,27 @@ internal fun alertBanner(alert: AgentAlert, currentPaneId: String, currentWorksp
     if (elsewhere && !blocked) return null
     val where = alert.workspaceLabel?.takeIf { elsewhere }?.let { " in $it" }.orEmpty()
     val verb = if (blocked) "needs input" else "finished"
-    return AlertBanner("${agent.displayName}$where $verb", agent.workspaceId, agent.paneId, elsewhere)
+    return AlertBanner("${agent.displayName}$where $verb", agent.workspaceId, agent.paneId, elsewhere, blocked)
 }
 
 /**
  * Shows each alert worth a [banner] with [show]; a newer one cancels the one on screen, so alerts
- * never queue up behind each other. Ignored alerts leave the current banner alone.
+ * never queue up behind each other. Ignored alerts leave the current banner alone, and so does an
+ * agent finishing while one that needs input is on screen (that one is dropped, not queued).
  */
 internal suspend fun presentAlerts(
     alerts: Flow<AgentAlert>,
     banner: (AgentAlert) -> AlertBanner?,
     show: suspend (AlertBanner) -> Unit,
-) {
-    alerts.mapNotNull(banner).collectLatest(show)
+): Unit = coroutineScope {
+    var current: Job? = null
+    var currentBlocked = false
+    alerts.mapNotNull(banner).collect { next ->
+        if (current?.isActive == true && currentBlocked && !next.blocked) return@collect
+        current?.cancelAndJoin()
+        currentBlocked = next.blocked
+        current = launch { show(next) }
+    }
 }
 
 /**
@@ -908,7 +934,6 @@ private fun PaneOverlay(
                         } else {
                             "Pane in use" to "Another client is controlling this pane. Take control here, or just watch. $TAKE_CONTROL_RESIZES"
                         }
-                        state == PaneState.TakenOver -> "Control moved" to "Another client took control of this pane."
                         state is PaneState.Closed -> "Stream ended" to (state.reason ?: "The pane stream closed.")
                         else -> "" to ""
                     }
@@ -919,7 +944,7 @@ private fun PaneOverlay(
                         recovery is PaneRecovery.WaitingForHost -> if (!recovery.failed) {
                             CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
                         }
-                        state is PaneState.Busy || state == PaneState.TakenOver -> {
+                        state is PaneState.Busy -> {
                             Button(onClick = onTakeOver, modifier = Modifier.fillMaxWidth()) { Text("Take control") }
                             OutlinedButton(onClick = onWatch, modifier = Modifier.fillMaxWidth()) { Text("Watch only") }
                         }

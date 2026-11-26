@@ -96,6 +96,9 @@ class ComposerAnswersTest {
         watching(isAgent = false, sent, mutableListOf()) {}
         compose.onNodeWithText("Ctrl‑C").assertIsNotEnabled()
         compose.onNodeWithText("Watching only, take control to send keys.").assertExists()
+        compose.onNode(hasSetTextAction()).assertIsNotFocused()
+        compose.onNodeWithText("Watching only: take control to run commands here.").assertExists()
+        compose.onNodeWithText("Runs in this pane when you send.").assertDoesNotExist()
         compose.onNode(hasSetTextAction()).performTextInput("ls")
         compose.onNodeWithContentDescription("Send").assertIsNotEnabled()
     }

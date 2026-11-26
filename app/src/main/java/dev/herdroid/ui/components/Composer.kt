@@ -176,7 +176,8 @@ fun ComposerSheet(
         }
     }
     // Watching: keystrokes wouldn't reach the pane. A message to an agent goes through herdr instead.
-    val canSend = (text.text.isNotBlank() || images.isNotEmpty()) && preparing == 0 && !sending && (isAgent || !watchOnly)
+    val shellWatching = watchOnly && !isAgent
+    val canSend = (text.text.isNotBlank() || images.isNotEmpty()) && preparing == 0 && !sending && !shellWatching
 
     ModalBottomSheet(onDismissRequest = { if (!sending) onDismiss() }, sheetState = sheetState) {
         Column(
@@ -242,6 +243,8 @@ fun ComposerSheet(
                     },
                     attachEnabled = !sending && images.size + preparing < MAX_IMAGES,
                     enabled = !sending,
+                    // A watched shell can't run what is typed: don't pop the keyboard up for it.
+                    autoFocus = !shellWatching,
                     modifier = Modifier
                         .weight(1f)
                         .heightIn(min = 56.dp, max = 220.dp)
@@ -279,6 +282,7 @@ fun ComposerSheet(
                 when {
                     images.isNotEmpty() -> "Images are sent to this machine with your message."
                     isAgent -> "Send a message to this agent."
+                    shellWatching -> "Watching only: take control to run commands here."
                     else -> "Runs in this pane when you send."
                 },
                 style = MaterialTheme.typography.bodySmall,
@@ -300,6 +304,7 @@ private fun ComposerField(
     attachEnabled: Boolean,
     modifier: Modifier,
     enabled: Boolean = true,
+    autoFocus: Boolean = true,
 ) {
     val interaction = remember { MutableInteractionSource() }
     val colors = OutlinedTextFieldDefaults.colors()
@@ -335,7 +340,7 @@ private fun ComposerField(
     )
     // The bottom sheet composes its content separately. Request focus only
     // after this field's own composition has attached its focus target.
-    LaunchedEffect(enabled) { if (enabled) focus.requestFocus() }
+    LaunchedEffect(enabled, autoFocus) { if (enabled && autoFocus) focus.requestFocus() }
 }
 
 @Composable

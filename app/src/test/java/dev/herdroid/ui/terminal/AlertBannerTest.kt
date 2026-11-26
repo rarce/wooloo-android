@@ -4,6 +4,7 @@ import dev.herdroid.connection.AgentAlert
 import dev.herdroid.herdr.AgentInfo
 import dev.herdroid.herdr.AgentStatus
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.launch
@@ -56,9 +57,30 @@ class AlertBannerTest {
         assertEquals(listOf("p2"), shown)
         assertEquals(emptyList<String>(), replaced)
         alerts.emit(alert("p4", "w2", AgentStatus.BLOCKED))
+        assertEquals(listOf("p2", "p4"), shown)
+        assertEquals(listOf("p2"), replaced)
+        job.cancel()
+    }
+
+    @Test fun aFinishedAgentDoesNotHideOneThatNeedsInput() = runTest(UnconfinedTestDispatcher()) {
+        val alerts = MutableSharedFlow<AgentAlert>()
+        val shown = mutableListOf<String>()
+        var dismiss = CompletableDeferred<Unit>()
+        val job = launch {
+            presentAlerts(alerts, banner = { alertBanner(it, "p1", "w1") }) { banner ->
+                shown += banner.paneId
+                dismiss.await()
+            }
+        }
+        alerts.emit(alert("p2", "w1", AgentStatus.DONE))
+        alerts.emit(alert("p3", "w1", AgentStatus.BLOCKED)) // needs input replaces finished
+        alerts.emit(alert("p4", "w1", AgentStatus.DONE))    // dropped while p3 is up
+        assertEquals(listOf("p2", "p3"), shown)
+        // Once the blocked banner is gone, a later finished one shows; the dropped one never does.
+        dismiss.complete(Unit)
+        dismiss = CompletableDeferred()
         alerts.emit(alert("p5", "w1", AgentStatus.DONE))
-        assertEquals(listOf("p2", "p4", "p5"), shown)
-        assertEquals(listOf("p2", "p4"), replaced)
+        assertEquals(listOf("p2", "p3", "p5"), shown)
         job.cancel()
     }
 }

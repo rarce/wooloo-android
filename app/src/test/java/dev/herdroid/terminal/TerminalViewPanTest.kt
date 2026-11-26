@@ -37,6 +37,7 @@ class TerminalViewPanTest {
             override fun onLongPress(column: Int, row: Int) {}
             override fun onFontSizeChanged(sp: Float) {}
         }
+        view.panWide = true
         activity.setContentView(FrameLayout(activity).apply { addView(view, FrameLayout.LayoutParams(400, 400)) })
         activityController.visible()
         shadowOf(Looper.getMainLooper()).idle()
@@ -77,6 +78,15 @@ class TerminalViewPanTest {
         view.model.applyFrame(20, 10, true, "narrow".toByteArray())
         drag(300f, 100f, 50f, 105f)
         assertEquals(5, view.cellAt(5 * cellWidthOf(view) + 1f, 50f).first)
+    }
+
+    @Test fun inControlAWideScreenScalesToFitAndNeverPans() {
+        view.panWide = false
+        view.model.applyFrame(400, 10, true, "wide".toByteArray())
+        assertEquals(399, view.cellAt(399f, 50f).first)
+        drag(300f, 100f, 50f, 105f)
+        assertEquals(399, view.cellAt(399f, 50f).first)
+        assertEquals(0, view.cellAt(0f, 50f).first)
     }
 
     private fun cellWidthOf(v: TerminalView): Float {
