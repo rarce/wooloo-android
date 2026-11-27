@@ -37,14 +37,14 @@ data class PromptOptions(val options: List<PromptOption> = emptyList(), val adva
     }
 
     /**
-     * What sends digit [number]. Claude's last checkbox item is a free-text field ("Type something"):
-     * with the focus there a digit is typed into it, so the focus moves up out of it first (Up keeps
-     * the typed text; the digit then toggles or answers as usual). Elsewhere, and in single-select
-     * prompts, just the digit.
+     * What sends digit [number]. In a [claude] multi-select question the last checkbox item is a
+     * free-text field ("Type something"): with the focus there a digit is typed into it, so the focus
+     * moves up out of it first (Up keeps the typed text; the digit then toggles or answers as usual).
+     * Elsewhere, in single-select prompts and for other agents, just the digit.
      */
-    fun digitInput(number: Int): String {
+    fun digitInput(number: Int, claude: Boolean): String {
         val field = options.lastOrNull { it.checked != null }
-        return if (field?.focused == true) KeyEncoder.special(SpecialKey.UP) + number else number.toString()
+        return if (claude && field?.focused == true) KeyEncoder.special(SpecialKey.UP) + number else number.toString()
     }
 
     /**
@@ -126,7 +126,11 @@ internal fun parsePrompt(rows: Sequence<String>): PromptOptions {
             // Only under a checkbox item (past its wrapped label), and only once: elsewhere "Submit"
             // is ordinary text.
             val advance = advanceItem.matchEntire(trimmed)
-            if (advance != null && underLastItem && runAdvance == null && run.lastOrNull()?.checked != null) {
+            // Claude draws it at the labels' column, deeper than the items' numbers.
+            val labelColumn = advance?.let { body.length - trimmed.length + it.groups[2]!!.range.first }
+            if (advance != null && labelColumn!! > runIndent && underLastItem && runAdvance == null &&
+                run.lastOrNull()?.checked != null
+            ) {
                 runAdvance = AdvanceRow(advance.groupValues[2], focused = advance.groupValues[1].isNotEmpty())
             } else if (trimmed.isEmpty() || body.length - trimmed.length <= runIndent) {
                 underLastItem = false

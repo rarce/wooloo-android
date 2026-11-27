@@ -20,20 +20,22 @@ import java.util.Base64
  * question "Tools" (Hammer, Saw, Drill), whose advance row says Submit instead of Next. The 5x
  * frames were streamed by `terminal session control`, each after one input record.
  */
-class ClaudeMultiSelectFixturesTest {
-    /** The screen after every record of [name], applied as [TerminalController] does. */
-    private fun frame(name: String): PromptOptions {
-        val text = checkNotNull(javaClass.getResource("/prompts/claude-multiselect/$name.ndjson")).readText()
-        val model = TerminalModel()
-        text.lineSequence().filter { it.isNotBlank() }.forEach { line ->
-            val record = herdrJson.parseToJsonElement(line).jsonObject
-            model.applyFrame(
-                record["width"]!!.jsonPrimitive.int, record["height"]!!.jsonPrimitive.int,
-                record["full"]!!.jsonPrimitive.boolean, Base64.getDecoder().decode(record["bytes"]!!.jsonPrimitive.content),
-            )
-        }
-        return parsePrompt((0 until model.emulator.rows).asSequence().map(model::rowText))
+/** The prompt on screen after every record of fixture [name], applied as [TerminalController] does. */
+internal fun claudeMultiSelectFrame(name: String): PromptOptions {
+    val text = checkNotNull(ClaudeMultiSelectFixturesTest::class.java.getResource("/prompts/claude-multiselect/$name.ndjson")).readText()
+    val model = TerminalModel()
+    text.lineSequence().filter { it.isNotBlank() }.forEach { line ->
+        val record = herdrJson.parseToJsonElement(line).jsonObject
+        model.applyFrame(
+            record["width"]!!.jsonPrimitive.int, record["height"]!!.jsonPrimitive.int,
+            record["full"]!!.jsonPrimitive.boolean, Base64.getDecoder().decode(record["bytes"]!!.jsonPrimitive.content),
+        )
     }
+    return parsePrompt((0 until model.emulator.rows).asSequence().map(model::rowText))
+}
+
+class ClaudeMultiSelectFixturesTest {
+    private fun frame(name: String) = claudeMultiSelectFrame(name)
 
     private fun PromptOptions.checked() = options.map { it.checked }
     private fun PromptOptions.focus() = options.filter { it.focused }.map { it.number }
@@ -111,15 +113,15 @@ class ClaudeMultiSelectFixturesTest {
         // Focus on "4. [ ] Type something": digits must first move the focus up out of the field.
         val field = frame("50-focus-type")
         assertEquals(listOf(4), field.focus())
-        assertEquals(up + "2", field.digitInput(2))
-        assertEquals(up + "4", field.digitInput(4))
-        assertEquals(up + "5", field.digitInput(5))
+        assertEquals(up + "2", field.digitInput(2, claude = true))
+        assertEquals(up + "4", field.digitInput(4, claude = true))
+        assertEquals(up + "5", field.digitInput(5, claude = true))
         // What a bare 2 did there: typed into the field (which checks itself), Banana untouched.
         val typed = frame("51-digit2-on-type")
         assertEquals("2", typed.options[3].label)
         assertEquals(listOf(false, false, false, true, null), typed.checked())
         assertEquals(listOf(4), typed.focus())
-        assertEquals(up + "2", typed.digitInput(2))
+        assertEquals(up + "2", typed.digitInput(2, claude = true))
     }
 
     @Test fun upThenTheDigitTogglesAndKeepsTheTypedText() {
@@ -127,17 +129,29 @@ class ClaudeMultiSelectFixturesTest {
         assertEquals(listOf(true, false, false, true, null), apple.checked())
         assertEquals("2", apple.options[3].label)
         assertEquals(listOf(3), apple.focus())
-        assertEquals("1", apple.digitInput(1))
+        assertEquals("1", apple.digitInput(1, claude = true))
         val field = frame("58-up-then-digit4-from-type")
         assertEquals(listOf(true, false, false, false, null), field.checked())
         assertEquals(listOf(3), field.focus())
     }
 
     @Test fun digitsElsewhereAreJustTheDigit() {
-        assertEquals("2", frame("01-initial").digitInput(2))
-        assertEquals("5", frame("08-focus-next").digitInput(5))
-        assertEquals("5", frame("40-focus-chat").digitInput(5))
+        assertEquals("2", frame("01-initial").digitInput(2, claude = true))
+        assertEquals("5", frame("08-focus-next").digitInput(5, claude = true))
+        assertEquals("5", frame("40-focus-chat").digitInput(5, claude = true))
         // Single-select prompts are unchanged here.
-        assertEquals("1", frame("09-q2-after-next").digitInput(1))
+        assertEquals("1", frame("09-q2-after-next").digitInput(1, claude = true))
+    }
+
+    @Test fun otherAgentsGetTheBareDigit() {
+        assertEquals("2", frame("50-focus-type").digitInput(2, claude = false))
+    }
+
+    @Test fun composerChipsSendWhatTheQuickAnswersSend() {
+        val field = frame("50-focus-type")
+        assertEquals((1..5).map { up + it }, composerAnswers(field, claude = true).map { it.input })
+        assertEquals("1 Apple", composerAnswers(field, claude = true).first().label)
+        assertEquals((1..5).map { "$it" }, composerAnswers(field, claude = false).map { it.input })
+        assertEquals((1..5).map { "$it" }, composerAnswers(frame("01-initial"), claude = true).map { it.input })
     }
 }

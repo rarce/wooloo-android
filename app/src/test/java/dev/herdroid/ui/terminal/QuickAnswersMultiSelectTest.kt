@@ -49,6 +49,7 @@ class QuickAnswersMultiSelectTest {
             .assert(role(Role.Checkbox)).assert(state(ToggleableState.On))
         compose.onNodeWithText("Apple").performScrollTo()
             .assert(role(Role.Checkbox)).assert(state(ToggleableState.Off)).assertIsSelected()
+            .assert(SemanticsMatcher("click label") { it.config[SemanticsActions.OnClick].label == "Toggle 1" })
             .performClick()
         // No optimistic flip: Apple stays unchecked until the screen says otherwise.
         compose.onNodeWithText("Apple").assert(state(ToggleableState.Off))
@@ -166,11 +167,75 @@ class QuickAnswersMultiSelectTest {
         val field = prompt(*fruits.map {
             it.replace("❯ 1. [ ] Apple", "  1. [ ] Apple").replace("  4. [ ] Type something", "❯ 4. [ ] Type something")
         }.toTypedArray())
-        compose.setContent { WoolooMobileTheme { QuickAnswers(field.options, field.advance) { keys.add(it) } } }
+        var current by mutableStateOf(field)
+        compose.setContent { WoolooMobileTheme { QuickAnswers(current.options, current.advance, claude = true) { keys.add(it) } } }
+        for ((number, label) in listOf(1 to "Apple", 4 to "Type something", 5 to "Chat about this")) {
+            compose.onNodeWithText(label).performScrollTo().performClick()
+            // The focus moved: as if the screen showed it (anything else), so the next tap counts.
+            current = PromptOptions(current.options.map { it.copy(focused = false) }, current.advance)
+            compose.waitForIdle()
+            current = field
+            compose.waitForIdle()
+            assertEquals("\u001b[A$number", keys.last())
+        }
+        assertEquals(3, keys.size)
+    }
+
+    @Test fun otherAgentsSendTheBareDigitFromTheField() {
+        val keys = mutableListOf<String>()
+        val field = prompt(*fruits.map {
+            it.replace("❯ 1. [ ] Apple", "  1. [ ] Apple").replace("  4. [ ] Type something", "❯ 4. [ ] Type something")
+        }.toTypedArray())
+        compose.setContent { WoolooMobileTheme { QuickAnswers(field.options, field.advance, claude = false) { keys.add(it) } } }
         compose.onNodeWithText("Apple").performScrollTo().performClick()
-        compose.onNodeWithText("Type something").performScrollTo().performClick()
-        compose.onNodeWithText("Chat about this").performScrollTo().performClick()
-        assertEquals(listOf("1", "4", "5").map { "\u001b[A$it" }, keys)
+        compose.onNodeWithText("Banana").performScrollTo().performClick()
+        assertEquals(listOf("1", "2"), keys)
+    }
+
+    @Test fun aDigitThatMovesTheFocusHoldsNextUntilTheScreenShowsIt() {
+        // Fixture 51 → 52: Up+1 from the free-text field toggles Apple and leaves the focus on 3.
+        val keys = mutableListOf<String>()
+        var current by mutableStateOf(claudeMultiSelectFrame("51-digit2-on-type"))
+        compose.setContent { WoolooMobileTheme { QuickAnswers(current.options, current.advance, claude = true) { keys.add(it) } } }
+        val apple = compose.onNodeWithText("Apple").performScrollTo()
+        val nextButton = compose.onNodeWithText("Next").performScrollTo()
+        val appleClick = apple.fetchSemanticsNode().config[SemanticsActions.OnClick].action!!
+        val nextClick = nextButton.fetchSemanticsNode().config[SemanticsActions.OnClick].action!!
+        compose.runOnUiThread { appleClick(); nextClick() }
+        nextButton.assertIsNotEnabled().performClick()
+        assertEquals("Down+Enter from the stale focus 4 would uncheck the field", listOf("\u001b[A1"), keys)
+        // A plain digit doesn't move the focus and doesn't hold.
+        current = claudeMultiSelectFrame("52-up-then-digit1-from-type")
+        compose.onNodeWithText("Banana").performScrollTo().assertIsEnabled().performClick()
+        compose.onNodeWithText("Next").performScrollTo().performClick()
+        assertEquals(listOf("\u001b[A1", "2", "\u001b[B\u001b[B\r"), keys)
+    }
+
+    @Test fun nextStaysHeldThroughFramesWithoutThePrompt() {
+        val keys = mutableListOf<String>()
+        val lock = AnswerLock()
+        var current by mutableStateOf(prompt(*fruits))
+        var shown by mutableStateOf(true)
+        compose.setContent {
+            WoolooMobileTheme {
+                // As the terminal screen does: the fallback when no prompt is read, nothing when not blocked.
+                val options = current.options
+                if (shown) QuickAnswers(options.ifEmpty { FallbackAnswers }, current.advance.takeIf { options.isNotEmpty() },
+                    fromScreen = options.isNotEmpty(), lock = lock) { keys.add(it) }
+            }
+        }
+        compose.onNodeWithText("Next").performScrollTo().performClick()
+        current = PromptOptions()
+        compose.onAllNodes(role(Role.Button)).onFirst().assertIsNotEnabled().performClick()
+        shown = false
+        compose.waitForIdle()
+        shown = true
+        current = prompt(*fruitsFocusOnNext)
+        compose.onNodeWithText("Next").performScrollTo().assertIsNotEnabled().performClick()
+        assertEquals("a second Enter would answer the next question", listOf(next), keys)
+        current = prompt("Pick a color", "❯ 1. Red", "  2. Blue", "  3. Type something.", "  4. Chat about this")
+        compose.onNodeWithText("Blue").assertIsEnabled().performClick()
+        assertEquals(listOf(next, "2"), keys)
     }
 
     @Test fun comingBackToAPromptAlreadyAdvancedFromAllowsNextAgain() {

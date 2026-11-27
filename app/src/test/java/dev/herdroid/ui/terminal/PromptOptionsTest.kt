@@ -236,7 +236,17 @@ class PromptOptionsTest {
 
     @Test fun digitInputLeavesSingleSelectFreeTextAlone() {
         val color = parsePrompt(sequenceOf("Pick a color", "  1. Red", "  2. Blue", "❯ 3. Type something.", "  4. Chat about this"))
-        assertEquals("1", color.digitInput(1))
+        assertEquals("1", color.digitInput(1, claude = true))
         assertEquals(PromptOptions(color.options.map { it.copy(focused = false) }).question, color.question)
+    }
+
+    @Test fun anAdvanceRowSitsDeeperThanTheItemNumbers() {
+        val items = arrayOf("Which?", "❯ 1. [ ] Apple", "  2. [ ] Banana")
+        assertEquals(AdvanceRow("Next"), parsePrompt(sequenceOf(*items, "     Next")).advance)
+        assertEquals(AdvanceRow("Next", focused = true), parsePrompt(sequenceOf("Which?", "  1. [ ] Apple", "  2. [ ] Banana", "❯    Next")).advance)
+        // At the items' indent or shallower it's some other line.
+        for (row in listOf("  Next", "Next", "Submit", "❯ Next")) {
+            assertNull(row, parsePrompt(sequenceOf(*items, row)).advance)
+        }
     }
 }
