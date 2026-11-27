@@ -1,10 +1,58 @@
 package dev.herdroid.ui.terminal
 
 import androidx.compose.runtime.Immutable
+import dev.herdroid.terminal.KeyEncoder
+import dev.herdroid.terminal.SpecialKey
 
-/** One numbered choice of the agent's active prompt; [number] is the key that selects it. */
+/**
+ * One numbered choice of the agent's active prompt; [number] is the key that selects it. [checked]
+ * is the state of a multi-select checkbox item ("[ ]", "[✔]"), and null for an ordinary item.
+ */
 @Immutable
-data class PromptOption(val number: Int, val label: String, val focused: Boolean = false)
+data class PromptOption(val number: Int, val label: String, val focused: Boolean = false, val checked: Boolean? = null)
+
+/**
+ * Claude Code's unnumbered "Next" or "Submit" row right under a multi-select question's checkboxes:
+ * no digit reaches it, only moving the focus onto it and pressing Enter.
+ */
+@Immutable
+data class AdvanceRow(val label: String, val focused: Boolean = false)
+
+/** The active prompt: its numbered [options] and, for a multi-select question, its [advance] row. */
+@Immutable
+data class PromptOptions(val options: List<PromptOption> = emptyList(), val advance: AdvanceRow? = null) {
+    /**
+     * What activates [advance] from the current focus: Enter when it has the focus, otherwise the
+     * arrows that move the focus onto it first (one step per item: checkbox items above it, items
+     * such as "Chat about this" below it). Null without an advance row.
+     */
+    val advanceInput: String? get() {
+        val row = advance ?: return null
+        val enter = KeyEncoder.special(SpecialKey.ENTER)
+        if (row.focused) return enter
+        val last = options.lastOrNull { it.checked != null }?.number ?: return null
+        val focused = options.firstOrNull { it.focused }?.number ?: return null
+        val (key, steps) = if (focused <= last) SpecialKey.DOWN to last - focused + 1 else SpecialKey.UP to focused - last
+        return KeyEncoder.special(key).repeat(steps) + enter
+    }
+
+    /**
+     * What sends digit [number]. In a [claude] multi-select question the last checkbox item is a
+     * free-text field ("Type something"): with the focus there a digit is typed into it, so the focus
+     * moves up out of it first (Up keeps the typed text; the digit then toggles or answers as usual).
+     * Elsewhere, in single-select prompts and for other agents, just the digit.
+     */
+    fun digitInput(number: Int, claude: Boolean): String {
+        val field = options.lastOrNull { it.checked != null }
+        return if (claude && field?.focused == true) KeyEncoder.special(SpecialKey.UP) + number else number.toString()
+    }
+
+    /**
+     * Which question this is, regardless of focus and checked states: its labels and advance row. A
+     * focus moving onto Next keeps it; the next question, the review menu or another prompt changes it.
+     */
+    val question: Any get() = options.map { it.label } to advance?.label
+}
 
 /** Shown for a blocked agent whose prompt couldn't be read from the screen. */
 internal val FallbackAnswers = listOf(PromptOption(1, "", focused = true), PromptOption(2, ""), PromptOption(3, ""))
@@ -12,7 +60,9 @@ internal val FallbackAnswers = listOf(PromptOption(1, "", focused = true), Promp
 // "❯ 1. Yes", "  2) No": an optional focus marker, a single-key number and a label.
 private val promptItem = Regex("""(?:([❯›>])\s*)?([1-9])[.)]\s+(\S.*?)""")
 // Claude Code's multi-select items: "[ ] Option", "[✔] Option".
-private val checkbox = Regex("""^\[[ ✔✓xX×]]\s+""")
+private val checkbox = Regex("""^\[([ ✔✓xX×])]\s+""")
+// Its "Next"/"Submit" row under the checkboxes, focusable like an item but without a number.
+private val advanceItem = Regex("""(?:([❯›>])\s*)?(Next|Submit)""")
 private val submitLabel = Regex("""Submit (?:answers|responses)""", RegexOption.IGNORE_CASE)
 
 /**
@@ -33,58 +83,96 @@ private const val MARKER_WIDTH = 2
  * box borders are ignored. A numbered list without a focus marker is ordinary output, and any
  * numbered list below a prompt means that prompt is no longer the active one.
  */
-internal fun parsePromptOptions(rows: Sequence<String>): List<PromptOption> {
+internal fun parsePromptOptions(rows: Sequence<String>): List<PromptOption> = parsePrompt(rows).options
+
+/**
+ * [parsePromptOptions] plus a multi-select question's [AdvanceRow]: the "Next"/"Submit" row right
+ * after a checkbox item, which can hold the run's one focus marker instead of an item.
+ */
+internal fun parsePrompt(rows: Sequence<String>): PromptOptions {
     val lines = rows.map(::unboxed).toList()
-    var last = emptyList<PromptOption>()
+    var last = PromptOptions()
     var lastRow = -1
     var lastIndent = 0
     var run = ArrayList<PromptOption>()
+    var runAdvance: AdvanceRow? = null
+    // Whether only rows under the run's last item (indented deeper, not blank) have passed since it.
+    var underLastItem = false
     var runIndent = 0
+    // Where the run's last item's text starts, after "N. " (its "[" for a checkbox).
+    var labelColumn = 0
     var runEnd = -1
     var runFromTop = false
     var seenItem = false
     fun close(broken: Boolean = false) {
         // An out-of-sequence item means the screen moved on from any earlier prompt.
         if (broken || run.size >= 2) {
-            last = if (!broken && run.count { it.focused } == 1) run else emptyList()
+            val focus = run.count { it.focused } + if (runAdvance?.focused == true) 1 else 0
+            last = if (!broken && focus == 1) PromptOptions(run, runAdvance) else PromptOptions()
             lastRow = runEnd
             lastIndent = runIndent
         }
         run = ArrayList()
+        runAdvance = null
     }
     fun start(option: PromptOption, indent: Int, fromTop: Boolean) {
         run = arrayListOf(option)
+        runAdvance = null
         runIndent = indent
         runFromTop = fromTop
     }
     for ((row, body) in lines.withIndex()) {
         val trimmed = body.trimStart()
-        val match = promptItem.matchEntire(trimmed) ?: continue
+        val match = promptItem.matchEntire(trimmed)
+        if (match == null) {
+            // Only under a checkbox item (past its wrapped label), and only once: elsewhere "Submit"
+            // is ordinary text.
+            val advance = advanceItem.matchEntire(trimmed)
+            // Claude draws it exactly at the items' text column; wrapped text sits elsewhere.
+            val column = advance?.let { body.length - trimmed.length + it.groups[2]!!.range.first }
+            if (advance != null && column == labelColumn && underLastItem && runAdvance == null &&
+                run.lastOrNull()?.checked != null
+            ) {
+                runAdvance = AdvanceRow(advance.groupValues[2], focused = advance.groupValues[1].isNotEmpty())
+            } else if (trimmed.isEmpty() || body.length - trimmed.length <= runIndent) {
+                underLastItem = false
+            }
+            continue
+        }
         val indent = body.length - trimmed.length + match.groups[2]!!.range.first
         // "     2. Then run migrations" under item 1 is its description, not item 2. A focus marker
         // written before the digit ("│ ❯ 2." under "│ 1.") shifts it by up to its own width.
         if (run.isNotEmpty() && indent > runIndent + MARKER_WIDTH) continue
         val (marker, digit, label) = match.destructured
-        val option = PromptOption(digit.toInt(), label.replaceFirst(checkbox, ""), focused = marker.isNotEmpty())
+        val box = checkbox.find(label)
+        val option = PromptOption(
+            digit.toInt(), if (box == null) label else label.substring(box.range.last + 1),
+            focused = marker.isNotEmpty(), checked = box?.let { it.groupValues[1] != " " },
+        )
         val next = (run.lastOrNull()?.number ?: 0) + 1
         when {
             // The top line was a scrolled-off item's description: the prompt's items start here.
             runFromTop && run.size == 1 && indent < runIndent - MARKER_WIDTH -> start(option, indent, fromTop = true)
-            option.number == next && run.isNotEmpty() -> run.add(option)
+            // A checkbox under the advance row would put that row between items: not Claude's layout.
+            option.number == next && run.isNotEmpty() -> { run.add(option); if (option.checked != null) runAdvance = null }
             option.number == 1 || !seenItem -> { close(); start(option, indent, fromTop = !seenItem) }
             else -> close(broken = true)
         }
-        if (run.lastOrNull() === option) runEnd = row
+        if (run.lastOrNull() === option) {
+            runEnd = row
+            underLastItem = true
+            labelColumn = body.length - trimmed.length + match.groups[3]!!.range.first
+        }
         seenItem = true
     }
     close()
-    if (last.isEmpty()) return last
+    if (last.options.isEmpty()) return last
     // Rows indented under the last item (its description, wrapped lines) belong to the prompt.
     val below = (lastRow + 1 until lines.size).count { row ->
         val line = lines[row]
         line.isNotBlank() && line.length - line.trimStart().length <= lastIndent
     }
-    return if (below <= MAX_ROWS_BELOW_PROMPT) last else emptyList()
+    return if (below <= MAX_ROWS_BELOW_PROMPT) last else PromptOptions()
 }
 
 /** [line] without trailing spaces and box borders; a leading border counts as indentation. */

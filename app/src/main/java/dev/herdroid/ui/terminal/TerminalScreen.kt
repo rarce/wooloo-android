@@ -3,8 +3,11 @@ package dev.herdroid.ui.terminal
 import android.app.Activity
 import android.content.Intent
 import android.net.Uri
+import android.os.SystemClock
 import android.view.WindowManager
 import android.widget.Toast
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -32,6 +35,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CheckBox
+import androidx.compose.material.icons.filled.CheckBoxOutlineBlank
 import dev.herdroid.ui.components.StatusDot
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material.icons.outlined.Terminal
@@ -73,17 +78,21 @@ import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.Stable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
@@ -99,6 +108,8 @@ import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.semantics.toggleableState
+import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -138,6 +149,7 @@ import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
@@ -204,6 +216,8 @@ private fun TerminalScreenContent(
     val snackbar = remember { SnackbarHostState() }
 
     val controller = remember(hostId, paneId) { TerminalController(connection, paneId) }
+    // Outside the quick answers, which a frame without the prompt removes for a moment.
+    val answerLock = remember(controller) { AnswerLock() }
     val claudeAgent = listOf(agent?.agent, agent?.displayAgent, pane?.agentName).any { it?.contains("claude", ignoreCase = true) == true }
     val blocked = agent?.agentStatus == AgentStatus.BLOCKED
     // The screen only shows the active prompt while scrolled to the bottom.
@@ -349,14 +363,20 @@ private fun TerminalScreenContent(
                         view.inputEnabled = retainInputFocus
                         view.retainInputFocus = retainInputFocus
                         view.listener = object : TerminalViewListener {
-                            override fun onInput(data: String) = controller.input(data)
+                            override fun onInput(data: String) {
+                                answerLock.inputSent(controller.promptOptions)
+                                controller.input(data)
+                            }
                             override fun onGridSizeChanged(cols: Int, rows: Int, cellWidthPx: Int, cellHeightPx: Int) =
                                 controller.onGridSize(cols, rows, cellWidthPx, cellHeightPx)
                             override fun onScroll(up: Boolean, lines: Int, column: Int, row: Int) =
                                 controller.scroll(up, lines, column, row)
                             override fun onTap(column: Int, row: Int) {
                                 val link = controller.model.linkAt(column, row)
-                                if (link != null) longPress = column to row else controller.tap(column, row)
+                                if (link != null) longPress = column to row else {
+                                    answerLock.inputSent(controller.promptOptions) // a click can move the focus
+                                    controller.tap(column, row)
+                                }
                             }
                             override fun onReadScreen() { readingTerminal = true }
                             override fun onLongPress(column: Int, row: Int) { longPress = column to row }
@@ -385,10 +405,14 @@ private fun TerminalScreenContent(
                     Snackbar(data, shape = RoundedCornerShape(14.dp))
                 }
             }
-            val options = if (detectOptions) controller.promptOptions else emptyList()
+            val prompt = if (detectOptions) controller.promptOptions else PromptOptions()
+            val options = prompt.options
             val claudeReview = claudeAgent && isSubmitMenu(options)
             if (controller.state == PaneState.Live && !controller.readOnly && (claudeReview || blocked)) {
-                QuickAnswers(options.ifEmpty { FallbackAnswers }, fromScreen = options.isNotEmpty(), onAnswer = { terminalView?.sendText(it) })
+                QuickAnswers(options.ifEmpty { FallbackAnswers }, prompt.advance.takeIf { options.isNotEmpty() },
+                    fromScreen = options.isNotEmpty(), claude = claudeAgent, lock = answerLock,
+                    current = { if (detectOptions) controller.promptOptions else PromptOptions() },
+                    onAnswer = { terminalView?.sendRaw(it) == true })
             }
             if (controller.state == PaneState.Live && controller.readOnly) {
                 WatchingBar(controller.controlMoved, onTakeControl = { controller.takeControl() })
@@ -436,12 +460,13 @@ private fun TerminalScreenContent(
             isAgent = isAgent,
             onDismiss = { composer = false },
             pickImagesOnOpen = pickComposerImages,
-            answers = (if (detectOptions) controller.promptOptions else emptyList()).map { it.asQuickReply() },
+            answers = if (detectOptions) composerAnswers(controller.promptOptions, claudeAgent) else emptyList(),
             watchOnly = controller.readOnly,
             canTakeControl = controller.state == PaneState.Live,
             onTakeControl = { controller.takeControl() },
-            onQuickReply = { reply -> controller.input(reply.input) },
+            onQuickReply = { reply -> answerLock.inputSent(controller.promptOptions); controller.input(reply.input) },
             onSend = { text, images, uploads ->
+                answerLock.inputSent(controller.promptOptions)
                 when {
                     isAgent -> connection.action {
                         promptAgent(paneId, ImageAttachments.withPaths(text, ImageAttachments.upload(connection, images, uploads)))
@@ -808,9 +833,13 @@ internal fun paneRectIn(layout: PaneLayoutSnapshot?, paneId: String): PaneLayout
     return PaneLayoutRect(left, top, rects.maxOf { it.x + it.width } - left, rects.maxOf { it.y + it.height } - top)
 }
 
-/** A composer chip for [this] option: its number and label, sending the number. */
-internal fun PromptOption.asQuickReply() =
-    QuickReply(if (label.isEmpty()) "$number" else "$number $label", number.toString())
+/** A composer chip for [this] option: its number and label, sending [input] (the number). */
+internal fun PromptOption.asQuickReply(input: String = number.toString()) =
+    QuickReply(if (label.isEmpty()) "$number" else "$number $label", input)
+
+/** The composer's chips for [prompt]'s options, each sending what [PromptOptions.digitInput] does. */
+internal fun composerAnswers(prompt: PromptOptions, claude: Boolean): List<QuickReply> =
+    prompt.options.map { it.asQuickReply(prompt.digitInput(it.number, claude)) }
 
 /** What an alert about another agent shows over the terminal. */
 internal data class AlertBanner(
@@ -876,46 +905,102 @@ internal suspend fun presentAlerts(
 
 /**
  * One-tap answers for a blocked agent's numbered prompt, above the extra keys (which have esc).
- * Each button sends its option's number; the focused option is filled. They share the width when
- * they fit and scroll sideways when they don't.
+ * Each button sends its option's number; the focused option is filled. A multi-select question's
+ * checkbox items are toggles (the number toggles that item; the next frame shows the result), and
+ * its [advance] row ("Next"/"Submit") is the last button. They share the width when they fit and
+ * scroll sideways when they don't. [onAnswer] gets the exact keys to send, without modifiers, and
+ * says whether they went out. The keys are worked out when tapped, from [current]: the latest prompt
+ * read from the screen, which may be newer than the one composed.
  */
 @Composable
 internal fun QuickAnswers(
     options: List<PromptOption> = FallbackAnswers,
+    advance: AdvanceRow? = null,
     // Only options read from the screen are highlighted there; the fallback's filled 1 is just a default.
     fromScreen: Boolean = options !== FallbackAnswers,
-    onAnswer: (String) -> Unit,
+    // A Claude agent's multi-select free-text field takes digits as text (see [PromptOptions.digitInput]).
+    claude: Boolean = false,
+    // Owned by the caller so a frame without the prompt doesn't drop it.
+    lock: AnswerLock = remember { AnswerLock() },
+    current: (() -> PromptOptions)? = null,
+    onAnswer: (String) -> Boolean,
 ) {
     val blocked = LocalStatusColors.current.blocked
     val onSolid = LocalStatusColors.current.onSolid
     val shape = RoundedCornerShape(12.dp)
     val spacing = 6.dp
+    val prompt = PromptOptions(options, advance)
+    val advanceInput = prompt.advanceInput
+    val composed by rememberUpdatedState(prompt)
+    val latest = current ?: { composed }
+    if (fromScreen) LaunchedEffect(lock, prompt) { lock.observe(prompt) }
+    val holds = lock.holds
+    // In case the keys were lost and the screen never changes; a deadline that passed while the
+    // buttons were hidden ends at once.
+    if (holds.isNotEmpty()) LaunchedEffect(lock, holds) {
+        delay((holds.minOf { it.until } - lock.now()).coerceAtLeast(0))
+        lock.expire()
+    }
+    val pending = holds.isNotEmpty()
+    // Dimmed only if the wait shows: the next question usually replaces the buttons sooner.
+    val alpha by animateFloatAsState(
+        if (pending) 0.38f else 1f,
+        tween(durationMillis = 150, delayMillis = if (pending) 300 else 0),
+        label = "pending",
+    )
+    val enabled = !pending
+    val count = options.size + if (advanceInput != null) 1 else 0
     BoxWithConstraints(Modifier.fillMaxWidth().padding(start = 8.dp, end = 8.dp, top = 8.dp)) {
-        val fits = options.size * QuickAnswerMinWidth.value + (options.size - 1) * spacing.value <= maxWidth.value
+        val fits = count * QuickAnswerMinWidth.value + (count - 1) * spacing.value <= maxWidth.value
         val scroll = rememberScrollState()
         Row(
-            if (fits) Modifier.fillMaxWidth() else Modifier.horizontalScroll(scroll),
+            (if (fits) Modifier.fillMaxWidth() else Modifier.horizontalScroll(scroll)).alpha(alpha),
             horizontalArrangement = Arrangement.spacedBy(spacing),
         ) {
+            @Composable
+            fun answer(solid: Boolean, action: Modifier, content: @Composable (Color) -> Unit) = Row(
+                (if (fits) Modifier.weight(1f) else Modifier.widthIn(min = QuickAnswerMinWidth, max = 168.dp))
+                    .height(44.dp)
+                    .clip(shape)
+                    .then(if (solid) Modifier.background(blocked) else Modifier.border(1.dp, blocked, shape))
+                    .then(action)
+                    .padding(horizontal = 10.dp),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically,
+            ) { content(if (solid) onSolid else MaterialTheme.colorScheme.onSurface) }
+
             options.forEach { option ->
                 val solid = option.focused
-                Row(
-                    (if (fits) Modifier.weight(1f) else Modifier.widthIn(min = QuickAnswerMinWidth, max = 168.dp))
-                        .height(44.dp)
-                        .clip(shape)
-                        .then(if (solid) Modifier.background(blocked) else Modifier.border(1.dp, blocked, shape))
-                        .then(if (fromScreen) Modifier.semantics {
-                            selected = solid
-                            if (solid) stateDescription = "Highlighted in the prompt"
-                        } else Modifier)
-                        .clickable(onClickLabel = "Answer ${option.number}", role = Role.Button) {
-                            onAnswer(option.number.toString())
+                val checked = option.checked
+                val highlight = if (fromScreen) Modifier.semantics {
+                    selected = solid
+                    if (solid) stateDescription = when (checked) {
+                        null -> "Highlighted in the prompt"
+                        true -> "Checked, highlighted in the prompt"
+                        false -> "Not checked, highlighted in the prompt"
+                    }
+                } else Modifier
+                val action = if (checked == null) {
+                    highlight.clickable(enabled = enabled, onClickLabel = "Answer ${option.number}", role = Role.Button) {
+                        lock.digit(latest(), option.number, claude, onAnswer)
+                    }
+                } else {
+                    // Not flipped here: the remote prompt toggles the item and the next frame shows it.
+                    highlight
+                        .semantics { toggleableState = ToggleableState(checked) }
+                        .clickable(enabled = enabled, onClickLabel = "Toggle ${option.number}", role = Role.Checkbox) {
+                            lock.digit(latest(), option.number, claude, onAnswer)
                         }
-                        .padding(horizontal = 10.dp),
-                    horizontalArrangement = Arrangement.Center,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    val color = if (solid) onSolid else MaterialTheme.colorScheme.onSurface
+                }
+                answer(solid, action) { color ->
+                    if (checked != null) {
+                        Icon(
+                            if (checked) Icons.Filled.CheckBox else Icons.Filled.CheckBoxOutlineBlank,
+                            contentDescription = null,
+                            tint = color,
+                            modifier = Modifier.padding(end = 4.dp).size(18.dp),
+                        )
+                    }
                     Text(
                         option.number.toString(),
                         style = MaterialTheme.typography.labelLarge,
@@ -935,11 +1020,123 @@ internal fun QuickAnswers(
                     }
                 }
             }
+            if (advance != null && advanceInput != null) {
+                val solid = advance.focused
+                val clickLabel = if (advance.label == "Submit") "Submit" else "Next question"
+                val action = Modifier
+                    .then(if (fromScreen) Modifier.semantics {
+                        selected = solid
+                        if (solid) stateDescription = "Highlighted in the prompt"
+                    } else Modifier)
+                    .clickable(enabled = enabled, onClickLabel = clickLabel, role = Role.Button) {
+                        lock.advance(latest(), onAnswer)
+                    }
+                answer(solid, action) { color ->
+                    Text(
+                        advance.label,
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = color,
+                        maxLines = 1,
+                    )
+                }
+            }
         }
     }
 }
 
 private val QuickAnswerMinWidth = 84.dp
+
+/** How long the quick answers wait for the screen to change after a held input before taking taps again. */
+internal const val AdvancePendingMillis = 1500L
+
+/** How long they wait after other input to the pane, which may change nothing (Up at the top). */
+internal const val StaleInputMillis = 700L
+
+/**
+ * Holds the quick answers while the screen may still show the prompt from before an input that
+ * changes it, since their keys depend on the screen. Each hold ends when a prompt read from the
+ * screen shows the change, or at its deadline:
+ * - after a Next, or a digit answering a Claude single-select question: another question with
+ *   options (the focus reaching Next first, or a frame without the prompt, keeps it);
+ * - after a digit sent with an Up first: any other prompt state with options;
+ * - after any other input to the pane ([inputSent]): any other prompt state.
+ * Holds start only if the keys went out, and taps check them when they land, not when composed.
+ */
+@Stable
+internal class AnswerLock(internal val now: () -> Long = SystemClock::uptimeMillis) {
+    class Hold internal constructor(
+        val until: Long,
+        internal val otherInput: Boolean,
+        internal val releasedBy: (PromptOptions) -> Boolean,
+    )
+
+    var holds by mutableStateOf(emptyList<Hold>())
+        private set
+
+    // While the quick answers send, so their own keys don't count as other input.
+    private var sending = false
+
+    private val held: Boolean get() = now().let { t -> holds.any { t < it.until } }
+
+    // Expired holds go first, and other input replaces its previous hold: typing without a prompt on
+    // screen (nothing observes or expires them) keeps at most one.
+    private fun hold(millis: Long, otherInput: Boolean = false, releasedBy: (PromptOptions) -> Boolean) {
+        val t = now()
+        holds = holds.filter { t < it.until && !(otherInput && it.otherInput) } + Hold(t + millis, otherInput, releasedBy)
+    }
+
+    private fun sent(input: String, send: (String) -> Boolean): Boolean {
+        sending = true
+        try {
+            return send(input)
+        } finally {
+            sending = false
+        }
+    }
+
+    private fun untilAnotherQuestion(current: PromptOptions) {
+        val question = current.question
+        hold(AdvancePendingMillis) { it.options.isNotEmpty() && it.question != question }
+    }
+
+    /** A Next on [current], unless held. */
+    fun advance(current: PromptOptions, send: (String) -> Boolean) {
+        val input = current.advanceInput ?: return
+        if (!held && sent(input, send)) untilAnotherQuestion(current)
+    }
+
+    /** Digit [number] on [current], unless held. */
+    fun digit(current: PromptOptions, number: Int, claude: Boolean, send: (String) -> Boolean) {
+        if (held) return
+        val input = current.digitInput(number, claude)
+        if (!sent(input, send)) return
+        when {
+            // It moved the focus: Next and the field's position are stale until the screen shows it.
+            input != number.toString() -> hold(AdvancePendingMillis) { it.options.isNotEmpty() && it != current }
+            // It answered the question; a second tap would answer the next one. Toggles don't.
+            claude && current.options.isNotEmpty() && current.options.none { it.checked != null } ->
+                untilAnotherQuestion(current)
+        }
+    }
+
+    /** Other input went to the pane while it showed [current]. */
+    fun inputSent(current: PromptOptions) {
+        if (!sending) hold(StaleInputMillis, otherInput = true) { it != current }
+    }
+
+    /** A prompt read from the screen. */
+    fun observe(prompt: PromptOptions) {
+        val left = holds.filterNot { it.releasedBy(prompt) }
+        if (left.size != holds.size) holds = left
+    }
+
+    fun expire() {
+        val t = now()
+        val left = holds.filter { t < it.until }
+        if (left.size != holds.size) holds = left
+    }
+}
 
 @Composable
 private fun PaneOverlay(

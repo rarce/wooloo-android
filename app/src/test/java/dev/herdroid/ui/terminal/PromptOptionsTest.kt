@@ -1,6 +1,7 @@
 package dev.herdroid.ui.terminal
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -185,5 +186,68 @@ class PromptOptionsTest {
     @Test fun stopsAtNine() {
         val rows = (1..10).map { if (it == 1) "❯ $it. Option $it" else "  $it. Option $it" }
         assertEquals((1..9).toList(), parse(*rows.toTypedArray()).map { it.number })
+    }
+
+    private fun prompt(vararg rows: String) = parsePrompt(rows.asSequence())
+
+    @Test fun checkboxItemsKeepTheirStateAndLoseThePrefix() {
+        val options = parse("❯ 1. [ ] Apple", "  2. [✔] Banana", "  3. [x] Cherry", "  4. Chat about this")
+        assertEquals(listOf("Apple", "Banana", "Cherry", "Chat about this"), options.map { it.label })
+        assertEquals(listOf(false, true, true, null), options.map { it.checked })
+    }
+
+    @Test fun bracketsInsideALabelAreNotACheckbox() {
+        val options = parse("❯ 1. Mark [x] as done", "  2. Leave it")
+        assertEquals(listOf(PromptOption(1, "Mark [x] as done", focused = true), PromptOption(2, "Leave it")), options)
+    }
+
+    @Test fun nextOrSubmitRightUnderACheckboxIsTheAdvanceRow() {
+        val next = prompt("❯ 1. [ ] Apple", "  2. [ ] Banana", "     Next", "  3. Chat about this")
+        assertEquals(AdvanceRow("Next"), next.advance)
+        assertEquals(listOf(1, 2, 3), next.options.map { it.number })
+        val focused = prompt("  1. [ ] Apple", "  2. [✔] Banana", "❯    Submit", "  3. Chat about this")
+        assertEquals(AdvanceRow("Submit", focused = true), focused.advance)
+        assertEquals("the row holds the one focus", emptyList<Int>(), focused.options.filter { it.focused }.map { it.number })
+    }
+
+    @Test fun nextOrSubmitElsewhereIsOrdinaryText() {
+        assertNull("not under a checkbox", prompt("❯ 1. Yes", "  2. No", "     Submit", "  3. Later").advance)
+        assertNull("not right under it", prompt("❯ 1. [ ] Apple", "  2. [ ] Banana", "", "     Next").advance)
+        assertNull("not exactly Next", prompt("❯ 1. [ ] Apple", "  2. [ ] Banana", "     Next step").advance)
+        // Without a focus on an item or the row, there is no prompt at all.
+        assertEquals(PromptOptions(), prompt("  1. [ ] Apple", "  2. [ ] Banana", "     Next"))
+        assertEquals("two focus markers", PromptOptions(), prompt("❯ 1. [ ] Apple", "  2. [ ] Banana", "❯    Next"))
+    }
+
+    @Test fun aWrappedLastLabelCanSitBetweenTheCheckboxAndNext() {
+        val wrapped = prompt(
+            "❯ 1. [ ] Apple",
+            "  2. [✔] Type something: a long answer that the phone's",
+            "         narrow screen wraps onto a second row",
+            "     Next",
+            "  3. Chat about this",
+        )
+        assertEquals(AdvanceRow("Next"), wrapped.advance)
+        assertEquals(listOf(1, 2, 3), wrapped.options.map { it.number })
+        assertNull("a row at the items' indent ends the checkbox", prompt(
+            "❯ 1. [ ] Apple", "  2. [ ] Banana", "  Some note", "     Next",
+        ).advance)
+    }
+
+    @Test fun digitInputLeavesSingleSelectFreeTextAlone() {
+        val color = parsePrompt(sequenceOf("Pick a color", "  1. Red", "  2. Blue", "❯ 3. Type something.", "  4. Chat about this"))
+        assertEquals("1", color.digitInput(1, claude = true))
+        assertEquals(PromptOptions(color.options.map { it.copy(focused = false) }).question, color.question)
+    }
+
+    @Test fun anAdvanceRowSitsDeeperThanTheItemNumbers() {
+        val items = arrayOf("Which?", "❯ 1. [ ] Apple", "  2. [ ] Banana")
+        assertEquals(AdvanceRow("Next"), parsePrompt(sequenceOf(*items, "     Next")).advance)
+        assertEquals(AdvanceRow("Next", focused = true), parsePrompt(sequenceOf("Which?", "  1. [ ] Apple", "  2. [ ] Banana", "❯    Next")).advance)
+        // At the items' indent or shallower it's some other line.
+        // Only at the items' text column (the "["): not at the label after "[ ] ", nor in between.
+        for (row in listOf("  Next", "Next", "Submit", "❯ Next", "         Next", "      Next", "    Next")) {
+            assertNull(row, parsePrompt(sequenceOf(*items, row)).advance)
+        }
     }
 }

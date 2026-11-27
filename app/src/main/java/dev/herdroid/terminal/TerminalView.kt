@@ -720,6 +720,21 @@ class TerminalView(
         restoreInputFocus()
     }
 
+    /**
+     * [text] exactly as given, for input that is already the remote's key sequence (the quick
+     * answers): sticky and held Ctrl/Alt/Shift neither apply nor get used up, so a modifier armed
+     * for the next key stays armed. It is not typed text, so the IME's context starts over. Returns
+     * whether it was handed on (input enabled, something to send, a listener).
+     */
+    fun sendRaw(text: String): Boolean {
+        val listener = listener
+        if (!inputEnabled || text.isEmpty() || listener == null) return false
+        resetInputContext()
+        listener.onInput(text)
+        restoreInputFocus()
+        return true
+    }
+
     /** Cursor movement, Enter and shortcuts change the remote line in ways the IME can't follow. */
     private fun resetInputContext(force: Boolean = false) {
         if (!force && imeText.isEmpty()) return

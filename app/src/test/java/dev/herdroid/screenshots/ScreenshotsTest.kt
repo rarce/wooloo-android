@@ -170,7 +170,7 @@ class ScreenshotsTest {
                             }
                         },
                     )
-                    QuickAnswers {}
+                    QuickAnswers { true }
                     ExtraKeysBar(
                         modifiers = ModifierState().apply { ctrl = true },
                         haptics = false,

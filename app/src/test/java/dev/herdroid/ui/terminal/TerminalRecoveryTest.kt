@@ -34,12 +34,12 @@ class TerminalRecoveryTest {
 
     @Test(timeout = 10_000) fun promptOptionsAreReadFromEveryFrameWithoutAToggle(): Unit = runBlocking {
         startLive()
-        assertEquals(emptyList<PromptOption>(), controller.promptOptions)
+        assertEquals(PromptOptions(), controller.promptOptions)
         // "❯ 1. Yes\r\n  2. No"
         connection.opened.last().record("""{"type":"terminal.frame","width":80,"height":24,"full":true,"bytes":"4p2vIDEuIFllcw0KICAyLiBObw=="}""")
-        await { controller.promptOptions.isNotEmpty() }
-        assertEquals(listOf(1, 2), controller.promptOptions.map { it.number })
-        assertEquals(1, controller.promptOptions.single { it.focused }.number)
+        await { controller.promptOptions.options.isNotEmpty() }
+        assertEquals(listOf(1, 2), controller.promptOptions.options.map { it.number })
+        assertEquals(1, controller.promptOptions.options.single { it.focused }.number)
     }
 
     @Test(timeout = 10_000) fun channelFailureWhileConnectedRetriesThePaneWithoutStealingControl(): Unit = runBlocking {
