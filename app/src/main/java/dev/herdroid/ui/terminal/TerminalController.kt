@@ -97,7 +97,7 @@ class TerminalController internal constructor(
         private set
 
     /** The active prompt's numbered options, read from every frame (the screen decides when to show them). */
-    var promptOptions by mutableStateOf<List<PromptOption>>(emptyList())
+    var promptOptions by mutableStateOf(PromptOptions())
         private set
 
     private var recovering = false
@@ -330,7 +330,7 @@ class TerminalController internal constructor(
     private fun closeStream() {
         synchronized(model.lock) {
             generation++
-            promptOptions = emptyList()
+            promptOptions = PromptOptions()
         }
         stableJob?.cancel()
         streamJob?.cancel()
@@ -351,7 +351,7 @@ class TerminalController internal constructor(
     private fun refreshPromptOptions() {
         val grid = model.emulator
         // Parsed on every frame, so the screen can show them as soon as it wants them.
-        val options = parsePromptOptions((0 until grid.rows).asSequence().map(grid::rowText))
+        val options = parsePrompt((0 until grid.rows).asSequence().map(grid::rowText))
         // Only publish a change, so Compose doesn't recompose on every frame.
         if (options != promptOptions) promptOptions = options
     }

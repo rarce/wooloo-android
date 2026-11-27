@@ -8,6 +8,8 @@ import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
@@ -32,6 +34,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CheckBox
+import androidx.compose.material.icons.filled.CheckBoxOutlineBlank
 import dev.herdroid.ui.components.StatusDot
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material.icons.outlined.Terminal
@@ -385,10 +389,12 @@ private fun TerminalScreenContent(
                     Snackbar(data, shape = RoundedCornerShape(14.dp))
                 }
             }
-            val options = if (detectOptions) controller.promptOptions else emptyList()
+            val prompt = if (detectOptions) controller.promptOptions else PromptOptions()
+            val options = prompt.options
             val claudeReview = claudeAgent && isSubmitMenu(options)
             if (controller.state == PaneState.Live && !controller.readOnly && (claudeReview || blocked)) {
-                QuickAnswers(options.ifEmpty { FallbackAnswers }, fromScreen = options.isNotEmpty(), onAnswer = { terminalView?.sendText(it) })
+                QuickAnswers(options.ifEmpty { FallbackAnswers }, prompt.advance.takeIf { options.isNotEmpty() },
+                    fromScreen = options.isNotEmpty(), onAnswer = { terminalView?.sendText(it) })
             }
             if (controller.state == PaneState.Live && controller.readOnly) {
                 WatchingBar(controller.controlMoved, onTakeControl = { controller.takeControl() })
@@ -436,7 +442,7 @@ private fun TerminalScreenContent(
             isAgent = isAgent,
             onDismiss = { composer = false },
             pickImagesOnOpen = pickComposerImages,
-            answers = (if (detectOptions) controller.promptOptions else emptyList()).map { it.asQuickReply() },
+            answers = (if (detectOptions) controller.promptOptions.options else emptyList()).map { it.asQuickReply() },
             watchOnly = controller.readOnly,
             canTakeControl = controller.state == PaneState.Live,
             onTakeControl = { controller.takeControl() },
@@ -876,12 +882,15 @@ internal suspend fun presentAlerts(
 
 /**
  * One-tap answers for a blocked agent's numbered prompt, above the extra keys (which have esc).
- * Each button sends its option's number; the focused option is filled. They share the width when
- * they fit and scroll sideways when they don't.
+ * Each button sends its option's number; the focused option is filled. A multi-select question's
+ * checkbox items are toggles (the number toggles that item; the next frame shows the result), and
+ * its [advance] row ("Next"/"Submit") is the last button. They share the width when they fit and
+ * scroll sideways when they don't.
  */
 @Composable
 internal fun QuickAnswers(
     options: List<PromptOption> = FallbackAnswers,
+    advance: AdvanceRow? = null,
     // Only options read from the screen are highlighted there; the fallback's filled 1 is just a default.
     fromScreen: Boolean = options !== FallbackAnswers,
     onAnswer: (String) -> Unit,
@@ -890,32 +899,55 @@ internal fun QuickAnswers(
     val onSolid = LocalStatusColors.current.onSolid
     val shape = RoundedCornerShape(12.dp)
     val spacing = 6.dp
+    val advanceInput = PromptOptions(options, advance).advanceInput
+    val count = options.size + if (advanceInput != null) 1 else 0
     BoxWithConstraints(Modifier.fillMaxWidth().padding(start = 8.dp, end = 8.dp, top = 8.dp)) {
-        val fits = options.size * QuickAnswerMinWidth.value + (options.size - 1) * spacing.value <= maxWidth.value
+        val fits = count * QuickAnswerMinWidth.value + (count - 1) * spacing.value <= maxWidth.value
         val scroll = rememberScrollState()
         Row(
             if (fits) Modifier.fillMaxWidth() else Modifier.horizontalScroll(scroll),
             horizontalArrangement = Arrangement.spacedBy(spacing),
         ) {
+            @Composable
+            fun answer(solid: Boolean, action: Modifier, content: @Composable (Color) -> Unit) = Row(
+                (if (fits) Modifier.weight(1f) else Modifier.widthIn(min = QuickAnswerMinWidth, max = 168.dp))
+                    .height(44.dp)
+                    .clip(shape)
+                    .then(if (solid) Modifier.background(blocked) else Modifier.border(1.dp, blocked, shape))
+                    .then(action)
+                    .padding(horizontal = 10.dp),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically,
+            ) { content(if (solid) onSolid else MaterialTheme.colorScheme.onSurface) }
+
             options.forEach { option ->
                 val solid = option.focused
-                Row(
-                    (if (fits) Modifier.weight(1f) else Modifier.widthIn(min = QuickAnswerMinWidth, max = 168.dp))
-                        .height(44.dp)
-                        .clip(shape)
-                        .then(if (solid) Modifier.background(blocked) else Modifier.border(1.dp, blocked, shape))
-                        .then(if (fromScreen) Modifier.semantics {
-                            selected = solid
-                            if (solid) stateDescription = "Highlighted in the prompt"
-                        } else Modifier)
-                        .clickable(onClickLabel = "Answer ${option.number}", role = Role.Button) {
-                            onAnswer(option.number.toString())
-                        }
-                        .padding(horizontal = 10.dp),
-                    horizontalArrangement = Arrangement.Center,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    val color = if (solid) onSolid else MaterialTheme.colorScheme.onSurface
+                val checked = option.checked
+                val highlight = if (fromScreen) Modifier.semantics {
+                    selected = solid
+                    if (solid) stateDescription = when (checked) {
+                        null -> "Highlighted in the prompt"
+                        true -> "Checked, highlighted in the prompt"
+                        false -> "Not checked, highlighted in the prompt"
+                    }
+                } else Modifier
+                val action = if (checked == null) {
+                    highlight.clickable(onClickLabel = "Answer ${option.number}", role = Role.Button) {
+                        onAnswer(option.number.toString())
+                    }
+                } else {
+                    // Not flipped here: the remote prompt toggles the item and the next frame shows it.
+                    highlight.toggleable(value = checked, role = Role.Checkbox) { onAnswer(option.number.toString()) }
+                }
+                answer(solid, action) { color ->
+                    if (checked != null) {
+                        Icon(
+                            if (checked) Icons.Filled.CheckBox else Icons.Filled.CheckBoxOutlineBlank,
+                            contentDescription = null,
+                            tint = color,
+                            modifier = Modifier.padding(end = 4.dp).size(18.dp),
+                        )
+                    }
                     Text(
                         option.number.toString(),
                         style = MaterialTheme.typography.labelLarge,
@@ -933,6 +965,25 @@ internal fun QuickAnswers(
                             modifier = Modifier.padding(start = 6.dp),
                         )
                     }
+                }
+            }
+            if (advance != null && advanceInput != null) {
+                val solid = advance.focused
+                val clickLabel = if (advance.label == "Submit") "Submit" else "Next question"
+                val action = Modifier
+                    .then(if (fromScreen) Modifier.semantics {
+                        selected = solid
+                        if (solid) stateDescription = "Highlighted in the prompt"
+                    } else Modifier)
+                    .clickable(onClickLabel = clickLabel, role = Role.Button) { onAnswer(advanceInput) }
+                answer(solid, action) { color ->
+                    Text(
+                        advance.label,
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = color,
+                        maxLines = 1,
+                    )
                 }
             }
         }
