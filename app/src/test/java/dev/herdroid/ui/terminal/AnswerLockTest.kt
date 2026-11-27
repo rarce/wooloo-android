@@ -88,6 +88,31 @@ class AnswerLockTest {
         assertEquals(listOf(next), sent)
     }
 
+    @Test fun typingWithoutAPromptKeepsOneHold() {
+        // Nothing observes or expires holds while no quick answers are shown.
+        repeat(1000) {
+            lock.inputSent(PromptOptions())
+            time += 10
+        }
+        assertEquals(1, lock.holds.size)
+    }
+
+    @Test fun otherInputDoesNotReplaceANextHold() {
+        lock.advance(fruits, send)
+        repeat(50) {
+            lock.inputSent(fruits)
+            time += 10
+        }
+        assertEquals(2, lock.holds.size)
+        time = StaleInputMillis + 600 // the last key's hold is over, the Next's isn't
+        lock.observe(fruits)
+        lock.advance(fruits, send)
+        assertEquals("still held by the Next", listOf(next), sent)
+        lock.observe(color) // the next question
+        lock.digit(color, 2, claude = false, send)
+        assertEquals(listOf(next, "2"), sent)
+    }
+
     @Test fun anExtraKeyFromTheViewHoldsButTheQuickAnswersOwnKeysDoNot() {
         val activity = activityController.setup().get()
         val output = mutableListOf<String>()

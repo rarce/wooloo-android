@@ -1065,7 +1065,11 @@ internal const val StaleInputMillis = 700L
  */
 @Stable
 internal class AnswerLock(internal val now: () -> Long = SystemClock::uptimeMillis) {
-    class Hold internal constructor(val until: Long, internal val releasedBy: (PromptOptions) -> Boolean)
+    class Hold internal constructor(
+        val until: Long,
+        internal val otherInput: Boolean,
+        internal val releasedBy: (PromptOptions) -> Boolean,
+    )
 
     var holds by mutableStateOf(emptyList<Hold>())
         private set
@@ -1075,8 +1079,11 @@ internal class AnswerLock(internal val now: () -> Long = SystemClock::uptimeMill
 
     private val held: Boolean get() = now().let { t -> holds.any { t < it.until } }
 
-    private fun hold(millis: Long, releasedBy: (PromptOptions) -> Boolean) {
-        holds = holds + Hold(now() + millis, releasedBy)
+    // Expired holds go first, and other input replaces its previous hold: typing without a prompt on
+    // screen (nothing observes or expires them) keeps at most one.
+    private fun hold(millis: Long, otherInput: Boolean = false, releasedBy: (PromptOptions) -> Boolean) {
+        val t = now()
+        holds = holds.filter { t < it.until && !(otherInput && it.otherInput) } + Hold(t + millis, otherInput, releasedBy)
     }
 
     private fun sent(input: String, send: (String) -> Boolean): Boolean {
@@ -1115,7 +1122,7 @@ internal class AnswerLock(internal val now: () -> Long = SystemClock::uptimeMill
 
     /** Other input went to the pane while it showed [current]. */
     fun inputSent(current: PromptOptions) {
-        if (!sending) hold(StaleInputMillis) { it != current }
+        if (!sending) hold(StaleInputMillis, otherInput = true) { it != current }
     }
 
     /** A prompt read from the screen. */
