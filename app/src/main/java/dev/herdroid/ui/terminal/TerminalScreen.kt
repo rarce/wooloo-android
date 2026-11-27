@@ -953,12 +953,12 @@ internal fun QuickAnswers(
                 } else Modifier
                 val action = if (checked == null) {
                     highlight.clickable(enabled = enabled, onClickLabel = "Answer ${option.number}", role = Role.Button) {
-                        onAnswer(prompt.digitInput(option.number))
+                        if (!pending) onAnswer(prompt.digitInput(option.number))
                     }
                 } else {
                     // Not flipped here: the remote prompt toggles the item and the next frame shows it.
                     highlight.toggleable(value = checked, enabled = enabled, role = Role.Checkbox) {
-                        onAnswer(prompt.digitInput(option.number))
+                        if (!pending) onAnswer(prompt.digitInput(option.number))
                     }
                 }
                 answer(solid, action) { color ->
@@ -998,8 +998,11 @@ internal fun QuickAnswers(
                         if (solid) stateDescription = "Highlighted in the prompt"
                     } else Modifier)
                     .clickable(enabled = enabled, onClickLabel = clickLabel, role = Role.Button) {
-                        pending = true
-                        onAnswer(advanceInput)
+                        // Checked again here: taps before the next composition still see `enabled`.
+                        if (!pending) {
+                            pending = true
+                            onAnswer(advanceInput)
+                        }
                     }
                 answer(solid, action) { color ->
                     Text(

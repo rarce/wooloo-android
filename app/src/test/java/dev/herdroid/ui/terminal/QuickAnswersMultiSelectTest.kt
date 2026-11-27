@@ -117,6 +117,22 @@ class QuickAnswersMultiSelectTest {
         assertEquals("arrows or digits sent now would answer the next question", listOf(next), keys)
     }
 
+    @Test fun tapsBeforeTheNextCompositionAreHeldToo() {
+        val keys = mutableListOf<String>()
+        compose.setContent { WoolooMobileTheme { prompt(*fruits).let { QuickAnswers(it.options, it.advance) { k -> keys.add(k) } } } }
+        val nextButton = compose.onNodeWithText("Next").performScrollTo()
+        val cherry = compose.onNodeWithText("Cherry").performScrollTo()
+        // Fetch both nodes first: a query waits for idle, which would recompose in between.
+        val nextClick = nextButton.fetchSemanticsNode().config[SemanticsActions.OnClick].action!!
+        val cherryClick = cherry.fetchSemanticsNode().config[SemanticsActions.OnClick].action!!
+        compose.runOnUiThread {
+            nextClick()
+            nextClick()
+            cherryClick()
+        }
+        assertEquals("one Next, and no toggle that would land on the next question", listOf(next), keys)
+    }
+
     @Test fun theNextQuestionTakesTapsAgain() {
         val keys = mutableListOf<String>()
         var current by mutableStateOf(prompt(*fruits))
