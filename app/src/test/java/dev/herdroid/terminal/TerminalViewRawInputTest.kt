@@ -66,8 +66,9 @@ class TerminalViewRawInputTest {
     }
 
     @Test fun readOnlyViewSendsNothing() {
+        assertTrue("says the keys went out", view.sendRaw("2"))
         view.inputEnabled = false
-        view.sendRaw("1")
-        assertTrue(output.isEmpty())
+        assertFalse(view.sendRaw("1"))
+        assertEquals(listOf("2"), output)
     }
 }

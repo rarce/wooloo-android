@@ -3,6 +3,7 @@ package dev.herdroid.ui.terminal
 import android.app.Activity
 import android.content.Intent
 import android.net.Uri
+import android.os.SystemClock
 import android.view.WindowManager
 import android.widget.Toast
 import androidx.compose.animation.core.animateFloatAsState
@@ -84,6 +85,7 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -361,14 +363,20 @@ private fun TerminalScreenContent(
                         view.inputEnabled = retainInputFocus
                         view.retainInputFocus = retainInputFocus
                         view.listener = object : TerminalViewListener {
-                            override fun onInput(data: String) = controller.input(data)
+                            override fun onInput(data: String) {
+                                answerLock.inputSent(controller.promptOptions)
+                                controller.input(data)
+                            }
                             override fun onGridSizeChanged(cols: Int, rows: Int, cellWidthPx: Int, cellHeightPx: Int) =
                                 controller.onGridSize(cols, rows, cellWidthPx, cellHeightPx)
                             override fun onScroll(up: Boolean, lines: Int, column: Int, row: Int) =
                                 controller.scroll(up, lines, column, row)
                             override fun onTap(column: Int, row: Int) {
                                 val link = controller.model.linkAt(column, row)
-                                if (link != null) longPress = column to row else controller.tap(column, row)
+                                if (link != null) longPress = column to row else {
+                                    answerLock.inputSent(controller.promptOptions) // a click can move the focus
+                                    controller.tap(column, row)
+                                }
                             }
                             override fun onReadScreen() { readingTerminal = true }
                             override fun onLongPress(column: Int, row: Int) { longPress = column to row }
@@ -403,7 +411,8 @@ private fun TerminalScreenContent(
             if (controller.state == PaneState.Live && !controller.readOnly && (claudeReview || blocked)) {
                 QuickAnswers(options.ifEmpty { FallbackAnswers }, prompt.advance.takeIf { options.isNotEmpty() },
                     fromScreen = options.isNotEmpty(), claude = claudeAgent, lock = answerLock,
-                    onAnswer = { terminalView?.sendRaw(it) })
+                    current = { if (detectOptions) controller.promptOptions else PromptOptions() },
+                    onAnswer = { terminalView?.sendRaw(it) == true })
             }
             if (controller.state == PaneState.Live && controller.readOnly) {
                 WatchingBar(controller.controlMoved, onTakeControl = { controller.takeControl() })
@@ -455,8 +464,9 @@ private fun TerminalScreenContent(
             watchOnly = controller.readOnly,
             canTakeControl = controller.state == PaneState.Live,
             onTakeControl = { controller.takeControl() },
-            onQuickReply = { reply -> controller.input(reply.input) },
+            onQuickReply = { reply -> answerLock.inputSent(controller.promptOptions); controller.input(reply.input) },
             onSend = { text, images, uploads ->
+                answerLock.inputSent(controller.promptOptions)
                 when {
                     isAgent -> connection.action {
                         promptAgent(paneId, ImageAttachments.withPaths(text, ImageAttachments.upload(connection, images, uploads)))
@@ -898,7 +908,9 @@ internal suspend fun presentAlerts(
  * Each button sends its option's number; the focused option is filled. A multi-select question's
  * checkbox items are toggles (the number toggles that item; the next frame shows the result), and
  * its [advance] row ("Next"/"Submit") is the last button. They share the width when they fit and
- * scroll sideways when they don't. [onAnswer] gets the exact keys to send, without modifiers.
+ * scroll sideways when they don't. [onAnswer] gets the exact keys to send, without modifiers, and
+ * says whether they went out. The keys are worked out when tapped, from [current]: the latest prompt
+ * read from the screen, which may be newer than the one composed.
  */
 @Composable
 internal fun QuickAnswers(
@@ -910,7 +922,8 @@ internal fun QuickAnswers(
     claude: Boolean = false,
     // Owned by the caller so a frame without the prompt doesn't drop it.
     lock: AnswerLock = remember { AnswerLock() },
-    onAnswer: (String) -> Unit,
+    current: (() -> PromptOptions)? = null,
+    onAnswer: (String) -> Boolean,
 ) {
     val blocked = LocalStatusColors.current.blocked
     val onSolid = LocalStatusColors.current.onSolid
@@ -918,14 +931,17 @@ internal fun QuickAnswers(
     val spacing = 6.dp
     val prompt = PromptOptions(options, advance)
     val advanceInput = prompt.advanceInput
+    val composed by rememberUpdatedState(prompt)
+    val latest = current ?: { composed }
     if (fromScreen) LaunchedEffect(lock, prompt) { lock.observe(prompt) }
-    val hold = lock.hold
-    // In case the keys were lost and the screen never changes.
-    if (hold != null) LaunchedEffect(lock, hold) {
-        delay(AdvancePendingMillis)
-        lock.release(hold)
+    val holds = lock.holds
+    // In case the keys were lost and the screen never changes; a deadline that passed while the
+    // buttons were hidden ends at once.
+    if (holds.isNotEmpty()) LaunchedEffect(lock, holds) {
+        delay((holds.minOf { it.until } - lock.now()).coerceAtLeast(0))
+        lock.expire()
     }
-    val pending = hold != null
+    val pending = holds.isNotEmpty()
     // Dimmed only if the wait shows: the next question usually replaces the buttons sooner.
     val alpha by animateFloatAsState(
         if (pending) 0.38f else 1f,
@@ -966,14 +982,14 @@ internal fun QuickAnswers(
                 } else Modifier
                 val action = if (checked == null) {
                     highlight.clickable(enabled = enabled, onClickLabel = "Answer ${option.number}", role = Role.Button) {
-                        lock.digit(prompt, option.number, claude)?.let(onAnswer)
+                        lock.digit(latest(), option.number, claude, onAnswer)
                     }
                 } else {
                     // Not flipped here: the remote prompt toggles the item and the next frame shows it.
                     highlight
                         .semantics { toggleableState = ToggleableState(checked) }
                         .clickable(enabled = enabled, onClickLabel = "Toggle ${option.number}", role = Role.Checkbox) {
-                            lock.digit(prompt, option.number, claude)?.let(onAnswer)
+                            lock.digit(latest(), option.number, claude, onAnswer)
                         }
                 }
                 answer(solid, action) { color ->
@@ -1013,7 +1029,7 @@ internal fun QuickAnswers(
                         if (solid) stateDescription = "Highlighted in the prompt"
                     } else Modifier)
                     .clickable(enabled = enabled, onClickLabel = clickLabel, role = Role.Button) {
-                        lock.advance(prompt)?.let(onAnswer)
+                        lock.advance(latest(), onAnswer)
                     }
                 answer(solid, action) { color ->
                     Text(
@@ -1034,44 +1050,84 @@ private val QuickAnswerMinWidth = 84.dp
 /** How long the quick answers wait for the screen to change after a held input before taking taps again. */
 internal const val AdvancePendingMillis = 1500L
 
+/** How long they wait after other input to the pane, which may change nothing (Up at the top). */
+internal const val StaleInputMillis = 700L
+
 /**
- * Holds the quick answers while the screen still shows the prompt from before an input that moves
- * the prompt on, whose keys depend on the screen: after a Next until another question with options
- * shows (the focus reaching Next first, or a frame without the prompt, keeps it), after a digit sent
- * with an Up first until any other prompt state shows, or after [AdvancePendingMillis] (restarted if
- * the quick answers were hidden meanwhile). Taps check it when they land, not when composed.
+ * Holds the quick answers while the screen may still show the prompt from before an input that
+ * changes it, since their keys depend on the screen. Each hold ends when a prompt read from the
+ * screen shows the change, or at its deadline:
+ * - after a Next, or a digit answering a Claude single-select question: another question with
+ *   options (the focus reaching Next first, or a frame without the prompt, keeps it);
+ * - after a digit sent with an Up first: any other prompt state with options;
+ * - after any other input to the pane ([inputSent]): any other prompt state.
+ * Holds start only if the keys went out, and taps check them when they land, not when composed.
  */
 @Stable
-internal class AnswerLock {
-    class Hold internal constructor(internal val releasedBy: (PromptOptions) -> Boolean)
+internal class AnswerLock(internal val now: () -> Long = SystemClock::uptimeMillis) {
+    class Hold internal constructor(val until: Long, internal val releasedBy: (PromptOptions) -> Boolean)
 
-    var hold by mutableStateOf<Hold?>(null)
+    var holds by mutableStateOf(emptyList<Hold>())
         private set
 
-    /** The keys for a Next from [prompt], holding until the next question; null while held. */
-    fun advance(prompt: PromptOptions): String? {
-        val input = prompt.advanceInput
-        if (hold != null || input == null) return null
-        val question = prompt.question
-        hold = Hold { it.options.isNotEmpty() && it.question != question }
-        return input
+    // While the quick answers send, so their own keys don't count as other input.
+    private var sending = false
+
+    private val held: Boolean get() = now().let { t -> holds.any { t < it.until } }
+
+    private fun hold(millis: Long, releasedBy: (PromptOptions) -> Boolean) {
+        holds = holds + Hold(now() + millis, releasedBy)
     }
 
-    /** The keys for digit [number] on [prompt]; one that moves the focus holds until the screen shows it. */
-    fun digit(prompt: PromptOptions, number: Int, claude: Boolean): String? {
-        if (hold != null) return null
-        val input = prompt.digitInput(number, claude)
-        if (input != number.toString()) hold = Hold { it.options.isNotEmpty() && it != prompt }
-        return input
+    private fun sent(input: String, send: (String) -> Boolean): Boolean {
+        sending = true
+        try {
+            return send(input)
+        } finally {
+            sending = false
+        }
+    }
+
+    private fun untilAnotherQuestion(current: PromptOptions) {
+        val question = current.question
+        hold(AdvancePendingMillis) { it.options.isNotEmpty() && it.question != question }
+    }
+
+    /** A Next on [current], unless held. */
+    fun advance(current: PromptOptions, send: (String) -> Boolean) {
+        val input = current.advanceInput ?: return
+        if (!held && sent(input, send)) untilAnotherQuestion(current)
+    }
+
+    /** Digit [number] on [current], unless held. */
+    fun digit(current: PromptOptions, number: Int, claude: Boolean, send: (String) -> Boolean) {
+        if (held) return
+        val input = current.digitInput(number, claude)
+        if (!sent(input, send)) return
+        when {
+            // It moved the focus: Next and the field's position are stale until the screen shows it.
+            input != number.toString() -> hold(AdvancePendingMillis) { it.options.isNotEmpty() && it != current }
+            // It answered the question; a second tap would answer the next one. Toggles don't.
+            claude && current.options.isNotEmpty() && current.options.none { it.checked != null } ->
+                untilAnotherQuestion(current)
+        }
+    }
+
+    /** Other input went to the pane while it showed [current]. */
+    fun inputSent(current: PromptOptions) {
+        if (!sending) hold(StaleInputMillis) { it != current }
     }
 
     /** A prompt read from the screen. */
     fun observe(prompt: PromptOptions) {
-        if (hold?.releasedBy?.invoke(prompt) == true) hold = null
+        val left = holds.filterNot { it.releasedBy(prompt) }
+        if (left.size != holds.size) holds = left
     }
 
-    fun release(hold: Hold) {
-        if (this.hold === hold) this.hold = null
+    fun expire() {
+        val t = now()
+        val left = holds.filter { t < it.until }
+        if (left.size != holds.size) holds = left
     }
 }
 

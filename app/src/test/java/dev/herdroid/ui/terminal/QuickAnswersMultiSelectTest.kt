@@ -146,7 +146,8 @@ class QuickAnswersMultiSelectTest {
 
     @Test fun aLostNextStopsWaitingAfterATimeout() {
         val keys = mutableListOf<String>()
-        compose.setContent { WoolooMobileTheme { prompt(*fruits).let { QuickAnswers(it.options, it.advance) { k -> keys.add(k) } } } }
+        val lock = AnswerLock { compose.mainClock.currentTime }
+        compose.setContent { WoolooMobileTheme { prompt(*fruits).let { QuickAnswers(it.options, it.advance, lock = lock) { k -> keys.add(k) } } } }
         val nextButton = compose.onNodeWithText("Next").performScrollTo()
         // The same screen keeps coming, as if the keys were lost; only the clock moves.
         compose.mainClock.autoAdvance = false
@@ -236,6 +237,37 @@ class QuickAnswersMultiSelectTest {
         current = prompt("Pick a color", "❯ 1. Red", "  2. Blue", "  3. Type something.", "  4. Chat about this")
         compose.onNodeWithText("Blue").assertIsEnabled().performClick()
         assertEquals(listOf(next, "2"), keys)
+    }
+
+    private val fruitsFocusOn2 = fruits.map {
+        it.replace("❯ 1. [ ] Apple", "  1. [ ] Apple").replace("  2. [✔] Banana", "❯ 2. [✔] Banana")
+    }.toTypedArray()
+
+    @Test fun afterAnExtraKeyNextWaitsForTheFrameAndUsesItsFocus() {
+        val keys = mutableListOf<String>()
+        val lock = AnswerLock()
+        var remote by mutableStateOf(prompt(*fruitsFocusOn2))
+        compose.setContent {
+            WoolooMobileTheme { QuickAnswers(remote.options, remote.advance, lock = lock, current = { remote }) { keys.add(it) } }
+        }
+        // ↑ on the extra keys, as the screen's listener reports it: the focus goes 2 → 1 remotely.
+        lock.inputSent(remote)
+        compose.onNodeWithText("Next").performScrollTo().performClick()
+        assertEquals("3×Down from the stale focus 2 would land on Type something", emptyList<String>(), keys)
+        remote = prompt(*fruits)
+        compose.onNodeWithText("Next").performScrollTo().assertIsEnabled().performClick()
+        assertEquals(listOf(next), keys)
+    }
+
+    @Test fun keysComeFromTheLatestPromptNotTheComposedOne() {
+        val keys = mutableListOf<String>()
+        val composed = prompt(*fruitsFocusOn2)
+        val latest = prompt(*fruits)
+        compose.setContent {
+            WoolooMobileTheme { QuickAnswers(composed.options, composed.advance, current = { latest }) { keys.add(it) } }
+        }
+        compose.onNodeWithText("Next").performScrollTo().performClick()
+        assertEquals("from the focus on 1", listOf(next), keys)
     }
 
     @Test fun comingBackToAPromptAlreadyAdvancedFromAllowsNextAgain() {

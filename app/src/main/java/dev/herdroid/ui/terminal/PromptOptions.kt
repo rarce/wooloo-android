@@ -99,6 +99,8 @@ internal fun parsePrompt(rows: Sequence<String>): PromptOptions {
     // Whether only rows under the run's last item (indented deeper, not blank) have passed since it.
     var underLastItem = false
     var runIndent = 0
+    // Where the run's last item's text starts, after "N. " (its "[" for a checkbox).
+    var labelColumn = 0
     var runEnd = -1
     var runFromTop = false
     var seenItem = false
@@ -126,9 +128,9 @@ internal fun parsePrompt(rows: Sequence<String>): PromptOptions {
             // Only under a checkbox item (past its wrapped label), and only once: elsewhere "Submit"
             // is ordinary text.
             val advance = advanceItem.matchEntire(trimmed)
-            // Claude draws it at the labels' column, deeper than the items' numbers.
-            val labelColumn = advance?.let { body.length - trimmed.length + it.groups[2]!!.range.first }
-            if (advance != null && labelColumn!! > runIndent && underLastItem && runAdvance == null &&
+            // Claude draws it exactly at the items' text column; wrapped text sits elsewhere.
+            val column = advance?.let { body.length - trimmed.length + it.groups[2]!!.range.first }
+            if (advance != null && column == labelColumn && underLastItem && runAdvance == null &&
                 run.lastOrNull()?.checked != null
             ) {
                 runAdvance = AdvanceRow(advance.groupValues[2], focused = advance.groupValues[1].isNotEmpty())
@@ -156,7 +158,11 @@ internal fun parsePrompt(rows: Sequence<String>): PromptOptions {
             option.number == 1 || !seenItem -> { close(); start(option, indent, fromTop = !seenItem) }
             else -> close(broken = true)
         }
-        if (run.lastOrNull() === option) { runEnd = row; underLastItem = true }
+        if (run.lastOrNull() === option) {
+            runEnd = row
+            underLastItem = true
+            labelColumn = body.length - trimmed.length + match.groups[3]!!.range.first
+        }
         seenItem = true
     }
     close()

@@ -245,7 +245,8 @@ class PromptOptionsTest {
         assertEquals(AdvanceRow("Next"), parsePrompt(sequenceOf(*items, "     Next")).advance)
         assertEquals(AdvanceRow("Next", focused = true), parsePrompt(sequenceOf("Which?", "  1. [ ] Apple", "  2. [ ] Banana", "❯    Next")).advance)
         // At the items' indent or shallower it's some other line.
-        for (row in listOf("  Next", "Next", "Submit", "❯ Next")) {
+        // Only at the items' text column (the "["): not at the label after "[ ] ", nor in between.
+        for (row in listOf("  Next", "Next", "Submit", "❯ Next", "         Next", "      Next", "    Next")) {
             assertNull(row, parsePrompt(sequenceOf(*items, row)).advance)
         }
     }
