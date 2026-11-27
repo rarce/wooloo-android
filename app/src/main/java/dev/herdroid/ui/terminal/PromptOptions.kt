@@ -79,6 +79,8 @@ internal fun parsePrompt(rows: Sequence<String>): PromptOptions {
     var lastIndent = 0
     var run = ArrayList<PromptOption>()
     var runAdvance: AdvanceRow? = null
+    // Whether only rows under the run's last item (indented deeper, not blank) have passed since it.
+    var underLastItem = false
     var runIndent = 0
     var runEnd = -1
     var runFromTop = false
@@ -104,10 +106,13 @@ internal fun parsePrompt(rows: Sequence<String>): PromptOptions {
         val trimmed = body.trimStart()
         val match = promptItem.matchEntire(trimmed)
         if (match == null) {
-            // Only right under a checkbox item, and only once: elsewhere "Submit" is ordinary text.
+            // Only under a checkbox item (past its wrapped label), and only once: elsewhere "Submit"
+            // is ordinary text.
             val advance = advanceItem.matchEntire(trimmed)
-            if (advance != null && runAdvance == null && run.lastOrNull()?.checked != null && runEnd == row - 1) {
+            if (advance != null && underLastItem && runAdvance == null && run.lastOrNull()?.checked != null) {
                 runAdvance = AdvanceRow(advance.groupValues[2], focused = advance.groupValues[1].isNotEmpty())
+            } else if (trimmed.isEmpty() || body.length - trimmed.length <= runIndent) {
+                underLastItem = false
             }
             continue
         }
@@ -130,7 +135,7 @@ internal fun parsePrompt(rows: Sequence<String>): PromptOptions {
             option.number == 1 || !seenItem -> { close(); start(option, indent, fromTop = !seenItem) }
             else -> close(broken = true)
         }
-        if (run.lastOrNull() === option) runEnd = row
+        if (run.lastOrNull() === option) { runEnd = row; underLastItem = true }
         seenItem = true
     }
     close()

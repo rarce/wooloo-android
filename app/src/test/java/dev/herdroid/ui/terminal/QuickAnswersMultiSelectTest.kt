@@ -97,4 +97,35 @@ class QuickAnswersMultiSelectTest {
         compose.onNodeWithText("Blue").assert(role(Role.Button)).performClick()
         assertEquals(listOf("2"), keys)
     }
+
+    @Test fun aSecondNextWaitsForTheScreenToChange() {
+        val keys = mutableListOf<String>()
+        var current by mutableStateOf(prompt(*fruits))
+        compose.setContent { WoolooMobileTheme { QuickAnswers(current.options, current.advance) { keys.add(it) } } }
+        val nextButton = compose.onNodeWithText("Next").performScrollTo()
+        nextButton.performClick()
+        nextButton.performClick()
+        assertEquals("arrows sent twice would walk past the row", listOf("\u001b[B".repeat(4) + "\r"), keys)
+        // Toggles are absolute and stay live meanwhile.
+        compose.onNodeWithText("Cherry").performScrollTo().performClick()
+        assertEquals("3", keys.last())
+
+        current = prompt(*fruits.map { it.replace("[ ] Cherry", "[✔] Cherry") }.toTypedArray())
+        compose.onNodeWithText("Next").performScrollTo().assertIsEnabled().performClick()
+        assertEquals(listOf("\u001b[B".repeat(4) + "\r", "3", "\u001b[B".repeat(4) + "\r"), keys)
+    }
+
+    @Test fun comingBackToAPromptAlreadyAdvancedFromAllowsNextAgain() {
+        val keys = mutableListOf<String>()
+        val first = prompt(*fruits)
+        var current by mutableStateOf(first)
+        compose.setContent { WoolooMobileTheme { QuickAnswers(current.options, current.advance) { keys.add(it) } } }
+        compose.onNodeWithText("Next").performScrollTo().performClick()
+        // The next question, then back (←) to the same screen as before.
+        current = prompt("❯ 1. Red", "  2. Blue", "  3. Type something.", "  4. Chat about this")
+        compose.waitForIdle()
+        current = first
+        compose.onNodeWithText("Next").performScrollTo().performClick()
+        assertEquals(List(2) { "\u001b[B".repeat(4) + "\r" }, keys)
+    }
 }

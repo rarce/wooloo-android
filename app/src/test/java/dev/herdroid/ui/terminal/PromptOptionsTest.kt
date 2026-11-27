@@ -218,4 +218,19 @@ class PromptOptionsTest {
         assertEquals(PromptOptions(), prompt("  1. [ ] Apple", "  2. [ ] Banana", "     Next"))
         assertEquals("two focus markers", PromptOptions(), prompt("❯ 1. [ ] Apple", "  2. [ ] Banana", "❯    Next"))
     }
+
+    @Test fun aWrappedLastLabelCanSitBetweenTheCheckboxAndNext() {
+        val wrapped = prompt(
+            "❯ 1. [ ] Apple",
+            "  2. [✔] Type something: a long answer that the phone's",
+            "         narrow screen wraps onto a second row",
+            "     Next",
+            "  3. Chat about this",
+        )
+        assertEquals(AdvanceRow("Next"), wrapped.advance)
+        assertEquals(listOf(1, 2, 3), wrapped.options.map { it.number })
+        assertNull("a row at the items' indent ends the checkbox", prompt(
+            "❯ 1. [ ] Apple", "  2. [ ] Banana", "  Some note", "     Next",
+        ).advance)
+    }
 }

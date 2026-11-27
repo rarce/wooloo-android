@@ -8,8 +8,6 @@ import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.selection.toggleable
-import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
@@ -32,6 +30,7 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckBox
@@ -88,6 +87,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
@@ -394,7 +394,7 @@ private fun TerminalScreenContent(
             val claudeReview = claudeAgent && isSubmitMenu(options)
             if (controller.state == PaneState.Live && !controller.readOnly && (claudeReview || blocked)) {
                 QuickAnswers(options.ifEmpty { FallbackAnswers }, prompt.advance.takeIf { options.isNotEmpty() },
-                    fromScreen = options.isNotEmpty(), onAnswer = { terminalView?.sendText(it) })
+                    fromScreen = options.isNotEmpty(), onAnswer = { terminalView?.sendRaw(it) })
             }
             if (controller.state == PaneState.Live && controller.readOnly) {
                 WatchingBar(controller.controlMoved, onTakeControl = { controller.takeControl() })
@@ -885,7 +885,7 @@ internal suspend fun presentAlerts(
  * Each button sends its option's number; the focused option is filled. A multi-select question's
  * checkbox items are toggles (the number toggles that item; the next frame shows the result), and
  * its [advance] row ("Next"/"Submit") is the last button. They share the width when they fit and
- * scroll sideways when they don't.
+ * scroll sideways when they don't. [onAnswer] gets the exact keys to send, without modifiers.
  */
 @Composable
 internal fun QuickAnswers(
@@ -899,7 +899,11 @@ internal fun QuickAnswers(
     val onSolid = LocalStatusColors.current.onSolid
     val shape = RoundedCornerShape(12.dp)
     val spacing = 6.dp
-    val advanceInput = PromptOptions(options, advance).advanceInput
+    val prompt = PromptOptions(options, advance)
+    val advanceInput = prompt.advanceInput
+    // Whether a Next was sent for this prompt: arrows sent twice would walk past the row, so a
+    // second tap waits for the screen to change (any other prompt, even one seen before, resets it).
+    var advanceSent by remember(prompt) { mutableStateOf(false) }
     val count = options.size + if (advanceInput != null) 1 else 0
     BoxWithConstraints(Modifier.fillMaxWidth().padding(start = 8.dp, end = 8.dp, top = 8.dp)) {
         val fits = count * QuickAnswerMinWidth.value + (count - 1) * spacing.value <= maxWidth.value
@@ -975,7 +979,12 @@ internal fun QuickAnswers(
                         selected = solid
                         if (solid) stateDescription = "Highlighted in the prompt"
                     } else Modifier)
-                    .clickable(onClickLabel = clickLabel, role = Role.Button) { onAnswer(advanceInput) }
+                    .clickable(onClickLabel = clickLabel, role = Role.Button) {
+                        if (!advanceSent) {
+                            advanceSent = true
+                            onAnswer(advanceInput)
+                        }
+                    }
                 answer(solid, action) { color ->
                     Text(
                         advance.label,
