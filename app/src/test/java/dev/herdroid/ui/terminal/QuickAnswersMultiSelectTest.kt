@@ -65,16 +65,16 @@ class QuickAnswersMultiSelectTest {
         compose.setContent {
             WoolooMobileTheme { prompt(*fruits).let { QuickAnswers(it.options, it.advance) { k -> keys.add(k) } } }
         }
-        compose.onNodeWithText("Next").performScrollTo()
-            .assert(role(Role.Button)).assertIsNotSelected()
-            .assert(SemanticsMatcher("click label") { it.config[SemanticsActions.OnClick].label == "Next question" })
-            .performClick()
         // Chat about this stays a plain button with its digit.
         compose.onNodeWithText("Chat about this").performScrollTo()
             .assert(role(Role.Button))
             .assert(SemanticsMatcher.keyNotDefined(SemanticsProperties.ToggleableState))
             .performClick()
-        assertEquals(listOf("\u001b[B".repeat(4) + "\r", "5"), keys)
+        compose.onNodeWithText("Next").performScrollTo()
+            .assert(role(Role.Button)).assertIsNotSelected()
+            .assert(SemanticsMatcher("click label") { it.config[SemanticsActions.OnClick].label == "Next question" })
+            .performClick()
+        assertEquals(listOf("5", "\u001b[B".repeat(4) + "\r"), keys)
     }
 
     @Test fun aFocusedSubmitRowIsHighlightedAndOnlyPressesEnter() {
@@ -98,21 +98,63 @@ class QuickAnswersMultiSelectTest {
         assertEquals(listOf("2"), keys)
     }
 
-    @Test fun aSecondNextWaitsForTheScreenToChange() {
+    private val next = "\u001b[B".repeat(4) + "\r"
+    private val fruitsFocusOnNext = fruits.map {
+        it.replace("❯ 1. [ ] Apple", "  1. [ ] Apple").replace("     Next", "❯    Next")
+    }.toTypedArray()
+
+    @Test fun afterNextEveryButtonWaitsWhileTheQuestionIsTheSame() {
         val keys = mutableListOf<String>()
         var current by mutableStateOf(prompt(*fruits))
         compose.setContent { WoolooMobileTheme { QuickAnswers(current.options, current.advance) { keys.add(it) } } }
-        val nextButton = compose.onNodeWithText("Next").performScrollTo()
-        nextButton.performClick()
-        nextButton.performClick()
-        assertEquals("arrows sent twice would walk past the row", listOf("\u001b[B".repeat(4) + "\r"), keys)
-        // Toggles are absolute and stay live meanwhile.
-        compose.onNodeWithText("Cherry").performScrollTo().performClick()
-        assertEquals("3", keys.last())
+        compose.onNodeWithText("Next").performScrollTo().performClick()
+        // The intermediate frame: the focus is on Next, the question hasn't changed yet.
+        current = prompt(*fruitsFocusOnNext)
+        compose.onNodeWithText("Next").performScrollTo().assertIsNotEnabled().performClick()
+        // A toggle or digit now would land on the next question.
+        compose.onNodeWithText("Cherry").performScrollTo().assertIsNotEnabled().performClick()
+        compose.onNodeWithText("Chat about this").performScrollTo().assertIsNotEnabled().performClick()
+        assertEquals("arrows or digits sent now would answer the next question", listOf(next), keys)
+    }
 
-        current = prompt(*fruits.map { it.replace("[ ] Cherry", "[✔] Cherry") }.toTypedArray())
-        compose.onNodeWithText("Next").performScrollTo().assertIsEnabled().performClick()
-        assertEquals(listOf("\u001b[B".repeat(4) + "\r", "3", "\u001b[B".repeat(4) + "\r"), keys)
+    @Test fun theNextQuestionTakesTapsAgain() {
+        val keys = mutableListOf<String>()
+        var current by mutableStateOf(prompt(*fruits))
+        compose.setContent { WoolooMobileTheme { QuickAnswers(current.options, current.advance) { keys.add(it) } } }
+        compose.onNodeWithText("Next").performScrollTo().performClick()
+        current = prompt("Pick a color", "❯ 1. Red", "  2. Blue", "  3. Type something.", "  4. Chat about this")
+        compose.onNodeWithText("Blue").assertIsEnabled().performClick()
+        assertEquals(listOf(next, "2"), keys)
+    }
+
+    @Test fun aLostNextStopsWaitingAfterATimeout() {
+        val keys = mutableListOf<String>()
+        compose.setContent { WoolooMobileTheme { prompt(*fruits).let { QuickAnswers(it.options, it.advance) { k -> keys.add(k) } } } }
+        val nextButton = compose.onNodeWithText("Next").performScrollTo()
+        // The same screen keeps coming, as if the keys were lost; only the clock moves.
+        compose.mainClock.autoAdvance = false
+        // A gesture needs frames the paused clock doesn't give; the click action runs right away.
+        nextButton.performSemanticsAction(SemanticsActions.OnClick)
+        assertEquals(listOf(next), keys)
+        compose.waitForIdle() // applies the click's state change; the clock stays put
+        compose.mainClock.advanceTimeBy(AdvancePendingMillis / 2)
+        compose.onNodeWithText("Apple").assertIsNotEnabled()
+        compose.mainClock.advanceTimeBy(AdvancePendingMillis / 2 + 100)
+        compose.onNodeWithText("Apple").assertIsEnabled()
+        nextButton.assertIsEnabled().performSemanticsAction(SemanticsActions.OnClick)
+        assertEquals(listOf(next, next), keys)
+    }
+
+    @Test fun withTheFocusInTheFreeTextFieldDigitsMoveUpFirst() {
+        val keys = mutableListOf<String>()
+        val field = prompt(*fruits.map {
+            it.replace("❯ 1. [ ] Apple", "  1. [ ] Apple").replace("  4. [ ] Type something", "❯ 4. [ ] Type something")
+        }.toTypedArray())
+        compose.setContent { WoolooMobileTheme { QuickAnswers(field.options, field.advance) { keys.add(it) } } }
+        compose.onNodeWithText("Apple").performScrollTo().performClick()
+        compose.onNodeWithText("Type something").performScrollTo().performClick()
+        compose.onNodeWithText("Chat about this").performScrollTo().performClick()
+        assertEquals(listOf("1", "4", "5").map { "\u001b[A$it" }, keys)
     }
 
     @Test fun comingBackToAPromptAlreadyAdvancedFromAllowsNextAgain() {

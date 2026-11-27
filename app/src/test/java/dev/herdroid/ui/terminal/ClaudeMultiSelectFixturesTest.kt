@@ -17,7 +17,8 @@ import java.util.Base64
  * Real frames of Claude Code's AskUserQuestion with a multiSelect question, captured with
  * `herdr terminal session observe` at the pane's size (131x50; only the cwd redacted). Q1 "Fruits" (multiSelect:
  * Apple, Banana, Cherry), Q2 "Color" (single: Red, Blue); a second form has one multiSelect
- * question "Tools" (Hammer, Saw, Drill), whose advance row says Submit instead of Next.
+ * question "Tools" (Hammer, Saw, Drill), whose advance row says Submit instead of Next. The 5x
+ * frames were streamed by `terminal session control`, each after one input record.
  */
 class ClaudeMultiSelectFixturesTest {
     /** The screen after every record of [name], applied as [TerminalController] does. */
@@ -104,5 +105,39 @@ class ClaudeMultiSelectFixturesTest {
         assertEquals(AdvanceRow("Submit", focused = true), focused.advance)
         assertEquals("\r", focused.advanceInput)
         assertFalse(isSubmitMenu(focused.options))
+    }
+
+    @Test fun aDigitTypedWithTheFocusOnTheFreeTextFieldGoesIntoIt() {
+        // Focus on "4. [ ] Type something": digits must first move the focus up out of the field.
+        val field = frame("50-focus-type")
+        assertEquals(listOf(4), field.focus())
+        assertEquals(up + "2", field.digitInput(2))
+        assertEquals(up + "4", field.digitInput(4))
+        assertEquals(up + "5", field.digitInput(5))
+        // What a bare 2 did there: typed into the field (which checks itself), Banana untouched.
+        val typed = frame("51-digit2-on-type")
+        assertEquals("2", typed.options[3].label)
+        assertEquals(listOf(false, false, false, true, null), typed.checked())
+        assertEquals(listOf(4), typed.focus())
+        assertEquals(up + "2", typed.digitInput(2))
+    }
+
+    @Test fun upThenTheDigitTogglesAndKeepsTheTypedText() {
+        val apple = frame("52-up-then-digit1-from-type")
+        assertEquals(listOf(true, false, false, true, null), apple.checked())
+        assertEquals("2", apple.options[3].label)
+        assertEquals(listOf(3), apple.focus())
+        assertEquals("1", apple.digitInput(1))
+        val field = frame("58-up-then-digit4-from-type")
+        assertEquals(listOf(true, false, false, false, null), field.checked())
+        assertEquals(listOf(3), field.focus())
+    }
+
+    @Test fun digitsElsewhereAreJustTheDigit() {
+        assertEquals("2", frame("01-initial").digitInput(2))
+        assertEquals("5", frame("08-focus-next").digitInput(5))
+        assertEquals("5", frame("40-focus-chat").digitInput(5))
+        // Single-select prompts are unchanged here.
+        assertEquals("1", frame("09-q2-after-next").digitInput(1))
     }
 }

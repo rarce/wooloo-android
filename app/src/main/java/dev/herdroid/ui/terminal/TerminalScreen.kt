@@ -5,6 +5,8 @@ import android.content.Intent
 import android.net.Uri
 import android.view.WindowManager
 import android.widget.Toast
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -86,6 +88,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
@@ -142,6 +145,7 @@ import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
@@ -901,15 +905,27 @@ internal fun QuickAnswers(
     val spacing = 6.dp
     val prompt = PromptOptions(options, advance)
     val advanceInput = prompt.advanceInput
-    // Whether a Next was sent for this prompt: arrows sent twice would walk past the row, so a
-    // second tap waits for the screen to change (any other prompt, even one seen before, resets it).
-    var advanceSent by remember(prompt) { mutableStateOf(false) }
+    // After a Next, the frames until the next question shows (focus on the row, then the question)
+    // would turn a second Next or a toggle into an answer to that question: every button waits for
+    // the question to change (even back to one seen before), or for a while in case the keys were lost.
+    var pending by remember(prompt.question) { mutableStateOf(false) }
+    if (pending) LaunchedEffect(prompt.question) {
+        delay(AdvancePendingMillis)
+        pending = false
+    }
+    // Dimmed only if the wait shows: the next question usually replaces the buttons sooner.
+    val alpha by animateFloatAsState(
+        if (pending) 0.38f else 1f,
+        tween(durationMillis = 150, delayMillis = if (pending) 300 else 0),
+        label = "pending",
+    )
+    val enabled = !pending
     val count = options.size + if (advanceInput != null) 1 else 0
     BoxWithConstraints(Modifier.fillMaxWidth().padding(start = 8.dp, end = 8.dp, top = 8.dp)) {
         val fits = count * QuickAnswerMinWidth.value + (count - 1) * spacing.value <= maxWidth.value
         val scroll = rememberScrollState()
         Row(
-            if (fits) Modifier.fillMaxWidth() else Modifier.horizontalScroll(scroll),
+            (if (fits) Modifier.fillMaxWidth() else Modifier.horizontalScroll(scroll)).alpha(alpha),
             horizontalArrangement = Arrangement.spacedBy(spacing),
         ) {
             @Composable
@@ -936,12 +952,14 @@ internal fun QuickAnswers(
                     }
                 } else Modifier
                 val action = if (checked == null) {
-                    highlight.clickable(onClickLabel = "Answer ${option.number}", role = Role.Button) {
-                        onAnswer(option.number.toString())
+                    highlight.clickable(enabled = enabled, onClickLabel = "Answer ${option.number}", role = Role.Button) {
+                        onAnswer(prompt.digitInput(option.number))
                     }
                 } else {
                     // Not flipped here: the remote prompt toggles the item and the next frame shows it.
-                    highlight.toggleable(value = checked, role = Role.Checkbox) { onAnswer(option.number.toString()) }
+                    highlight.toggleable(value = checked, enabled = enabled, role = Role.Checkbox) {
+                        onAnswer(prompt.digitInput(option.number))
+                    }
                 }
                 answer(solid, action) { color ->
                     if (checked != null) {
@@ -979,11 +997,9 @@ internal fun QuickAnswers(
                         selected = solid
                         if (solid) stateDescription = "Highlighted in the prompt"
                     } else Modifier)
-                    .clickable(onClickLabel = clickLabel, role = Role.Button) {
-                        if (!advanceSent) {
-                            advanceSent = true
-                            onAnswer(advanceInput)
-                        }
+                    .clickable(enabled = enabled, onClickLabel = clickLabel, role = Role.Button) {
+                        pending = true
+                        onAnswer(advanceInput)
                     }
                 answer(solid, action) { color ->
                     Text(
@@ -1000,6 +1016,9 @@ internal fun QuickAnswers(
 }
 
 private val QuickAnswerMinWidth = 84.dp
+
+/** How long the quick answers wait after a Next for the next question before taking taps again. */
+internal const val AdvancePendingMillis = 1500L
 
 @Composable
 private fun PaneOverlay(

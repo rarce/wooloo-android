@@ -233,4 +233,10 @@ class PromptOptionsTest {
             "❯ 1. [ ] Apple", "  2. [ ] Banana", "  Some note", "     Next",
         ).advance)
     }
+
+    @Test fun digitInputLeavesSingleSelectFreeTextAlone() {
+        val color = parsePrompt(sequenceOf("Pick a color", "  1. Red", "  2. Blue", "❯ 3. Type something.", "  4. Chat about this"))
+        assertEquals("1", color.digitInput(1))
+        assertEquals(PromptOptions(color.options.map { it.copy(focused = false) }).question, color.question)
+    }
 }

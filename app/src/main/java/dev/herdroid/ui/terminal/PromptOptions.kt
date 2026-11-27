@@ -35,6 +35,23 @@ data class PromptOptions(val options: List<PromptOption> = emptyList(), val adva
         val (key, steps) = if (focused <= last) SpecialKey.DOWN to last - focused + 1 else SpecialKey.UP to focused - last
         return KeyEncoder.special(key).repeat(steps) + enter
     }
+
+    /**
+     * What sends digit [number]. Claude's last checkbox item is a free-text field ("Type something"):
+     * with the focus there a digit is typed into it, so the focus moves up out of it first (Up keeps
+     * the typed text; the digit then toggles or answers as usual). Elsewhere, and in single-select
+     * prompts, just the digit.
+     */
+    fun digitInput(number: Int): String {
+        val field = options.lastOrNull { it.checked != null }
+        return if (field?.focused == true) KeyEncoder.special(SpecialKey.UP) + number else number.toString()
+    }
+
+    /**
+     * Which question this is, regardless of focus and checked states: its labels and advance row. A
+     * focus moving onto Next keeps it; the next question, the review menu or another prompt changes it.
+     */
+    val question: Any get() = options.map { it.label } to advance?.label
 }
 
 /** Shown for a blocked agent whose prompt couldn't be read from the screen. */
